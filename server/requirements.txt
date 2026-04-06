@@ -12,7 +12,7 @@ gunicorn==25.3.0
 flask-swagger-ui==5.32.1.post2
 flasgger==0.9.7.1
 psutil==7.2.2
-requests==2.33.0
+requests==2.33.1
 packaging==26.0
 werkzeug>=2.3.8 # not directly required, pinned by Snyk to avoid a vulnerability
 zipp>=3.19.1 # not directly required, pinned by Snyk to avoid a vulnerability
