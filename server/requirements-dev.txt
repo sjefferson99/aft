@@ -4,7 +4,7 @@
 # so production dependencies are NOT needed here.
 
 # Testing dependencies
-sqlalchemy==2.0.49
+sqlalchemy==2.0.50
 pymysql==1.1.3
 pytest==9.0.3
 requests==2.34.2
