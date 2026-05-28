@@ -70,8 +70,12 @@ jobs:
             type=semver,pattern={{version}}
             # Major.minor tag:               ghcr.io/sjefferson99/aft:1.2
             type=semver,pattern={{major}}.{{minor}}
-            # Always update latest:          ghcr.io/sjefferson99/aft:latest
-            type=raw,value=latest
+            # Branch test tag (safe for dev branches): ghcr.io/sjefferson99/aft:dev-my-branch
+            type=ref,event=branch,prefix=dev-
+            # Commit tag for traceability:             ghcr.io/sjefferson99/aft:sha-abc1234
+            type=sha,prefix=sha-
+            # Only update latest on main/release events
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
 
       - name: Build and push aft (server)
         uses: docker/build-push-action@v6
@@ -93,7 +97,9 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
+            type=ref,event=branch,prefix=dev-
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
 
       - name: Build and push aft-web (nginx + UI)
         uses: docker/build-push-action@v6
