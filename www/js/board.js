@@ -5133,8 +5133,12 @@ class BoardManager {
   }
 
   openEditCardModal(cardId, cardData) {
-    // Check database connection before opening modal
-    if (window.header && !window.header.dbConnected) {
+    // Check database connection before opening modal.
+    // This guards against losing unsaved edits if the DB drops while the user
+    // is editing. Public users cannot edit cards, so the check is unnecessary
+    // and would always block them (the db-status widget is not present on the
+    // public board page and dbConnected is never set true there).
+    if (!this.isPublicMode && window.header && !window.header.dbConnected) {
       this.showErrorToast('Cannot edit card: Database is not connected. Please wait for the connection to be restored.');
       return;
     }
@@ -5364,9 +5368,16 @@ class BoardManager {
       });
     }
 
-    // Load and display assignee data asynchronously
+    // Load and display assignee data asynchronously.
+    // Public board users are not authenticated so the assignees endpoint is not
+    // accessible; assignee info is intentionally excluded from the public API.
     if (!isTemplate) {
-      this.loadCardAssigneeDisplay(cardId);
+      if (this.isPublicMode) {
+        const primaryEl = document.getElementById('card-primary-assignee-display');
+        if (primaryEl) primaryEl.textContent = '—';
+      } else {
+        this.loadCardAssigneeDisplay(cardId);
+      }
     }
 
     // Handle archive button
@@ -6057,9 +6068,13 @@ class BoardManager {
     // Fetch single card data from dedicated endpoint
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
+
+    const url = this.isPublicMode
+      ? `/api/public/boards/${encodeURIComponent(this.publicSlug)}/cards/${cardId}`
+      : `/api/cards/${cardId}`;
+
     try {
-      const response = await fetch(`/api/cards/${cardId}`, {
+      const response = await fetch(url, {
         signal: controller.signal
       });
       

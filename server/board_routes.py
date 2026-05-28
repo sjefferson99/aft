@@ -2012,6 +2012,112 @@ def get_public_board(slug):
         db.close()
 
 
+@board_bp.route("/api/public/boards/<string:slug>/cards/<int:card_id>", methods=["GET"])
+def get_public_card(slug, card_id):
+    """Get a single card from a public board by slug and card ID.
+    ---
+    tags:
+      - Cards
+    parameters:
+      - name: slug
+        in: path
+        type: string
+        required: true
+        description: Public board slug
+      - name: card_id
+        in: path
+        type: integer
+        required: true
+        description: The ID of the card to retrieve
+    responses:
+      200:
+        description: Card data retrieved successfully
+      404:
+        description: Public board or card not found
+      429:
+        description: Too many requests
+      500:
+        description: Server error
+    """
+    db = SessionLocal()
+    try:
+        is_limited, retry_after = _check_public_endpoint_rate_limit()
+        if is_limited:
+            response, status_code = create_error_response("Too many requests", 429)
+            response.headers["Retry-After"] = str(retry_after)
+            response.headers["Cache-Control"] = "private, no-store, max-age=0"
+            return response, status_code
+
+        safe_slug = (slug or "").strip().lower()
+        if not safe_slug or not PUBLIC_SLUG_PATTERN.fullmatch(safe_slug):
+            return create_error_response("Board not found", 404)
+
+        board = (
+            db.query(Board)
+            .filter(Board.public_slug == safe_slug, Board.is_public.is_(True))
+            .first()
+        )
+        if not board:
+            return create_error_response("Board not found", 404)
+
+        card = (
+            db.query(Card)
+            .join(BoardColumn, Card.column_id == BoardColumn.id)
+            .filter(BoardColumn.board_id == board.id, Card.id == card_id)
+            .options(
+                selectinload(Card.checklist_items),
+                selectinload(Card.comments),
+            )
+            .first()
+        )
+        if not card:
+            return create_error_response("Card not found", 404)
+
+        card_data = {
+            "id": card.id,
+            "title": card.title,
+            "description": card.description,
+            "column_id": card.column_id,
+            "order": card.order,
+            "archived": card.archived,
+            "done": card.done,
+            "created_at": serialize_datetime(card.created_at),
+            "updated_at": serialize_datetime(card.updated_at),
+            "checklist_items": [
+                {
+                    "id": item.id,
+                    "card_id": item.card_id,
+                    "name": item.name,
+                    "checked": item.checked,
+                    "order": item.order,
+                    "created_at": serialize_datetime(item.created_at),
+                    "updated_at": serialize_datetime(item.updated_at),
+                }
+                for item in sorted(card.checklist_items, key=lambda x: x.order)
+            ],
+            "comments": [
+                {
+                    "id": comment.id,
+                    "card_id": comment.card_id,
+                    "comment": comment.comment,
+                    "order": comment.order,
+                    "created_at": serialize_datetime(comment.created_at),
+                }
+                for comment in card.comments
+            ],
+        }
+
+        response, status_code = create_success_response({"card": card_data})
+        response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        return response, status_code
+    except Exception as e:
+        logger.error(f"Error getting public card {card_id} for board '{slug}': {str(e)}")
+        return create_error_response("Failed to load card", 500)
+    finally:
+        db.close()
+
+
 @board_bp.route("/api/boards/<int:board_id>/owner", methods=["PUT"])
 @require_board_access()
 def reassign_board_owner(board_id):

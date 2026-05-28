@@ -266,6 +266,227 @@ class TestPublicBoardsAPI:
         delete_board_response = requests.delete(f"{api_client}/api/boards/{sample_board['id']}")
         assert delete_board_response.status_code == 401
 
+@pytest.mark.api
+class TestPublicCardAPI:
+    """Test cases for the public single-card read endpoint."""
+
+    def _make_board_public(self, api_client, authenticated_session, board_id):
+        """Helper: make a board public and return its slug."""
+        response = authenticated_session.patch(
+            f"{api_client}/api/boards/{board_id}",
+            json={"is_public": True},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["board"]["public_slug"]
+
+    def test_anonymous_can_read_public_card(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Anonymous users can fetch a single card from a public board."""
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Test Card", "description": "Visible to public"},
+        )
+        assert card_response.status_code == 201
+        card_id = card_response.json()["card"]["id"]
+
+        slug = self._make_board_public(api_client, authenticated_session, sample_board["id"])
+
+        response = requests.get(f"{api_client}/api/public/boards/{slug}/cards/{card_id}")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["success"] is True
+        card = data["card"]
+        assert card["id"] == card_id
+        assert card["title"] == "Test Card"
+        assert card["description"] == "Visible to public"
+        assert "column_id" in card
+        assert "checklist_items" in card
+        assert "comments" in card
+
+    def test_public_card_excludes_sensitive_fields(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Public card endpoint should not expose assignee, scheduled, or schedule fields."""
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Sensitive Card"},
+        )
+        assert card_response.status_code == 201
+        card_id = card_response.json()["card"]["id"]
+
+        slug = self._make_board_public(api_client, authenticated_session, sample_board["id"])
+
+        response = requests.get(f"{api_client}/api/public/boards/{slug}/cards/{card_id}")
+        assert response.status_code == 200
+
+        card = response.json()["card"]
+        assert "assigned_to" not in card
+        assert "assigned_to_id" not in card
+        assert "schedule" not in card
+        assert "scheduled" not in card
+
+    def test_public_card_includes_checklist_and_comments(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Public card endpoint should include checklist items and comments."""
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Card with items"},
+        )
+        assert card_response.status_code == 201
+        card_id = card_response.json()["card"]["id"]
+
+        authenticated_session.post(
+            f"{api_client}/api/cards/{card_id}/checklist-items",
+            json={"name": "Do something", "checked": False},
+        )
+        authenticated_session.post(
+            f"{api_client}/api/cards/{card_id}/comments",
+            json={"comment": "A public comment"},
+        )
+
+        slug = self._make_board_public(api_client, authenticated_session, sample_board["id"])
+
+        response = requests.get(f"{api_client}/api/public/boards/{slug}/cards/{card_id}")
+        assert response.status_code == 200
+
+        card = response.json()["card"]
+        assert len(card["checklist_items"]) == 1
+        assert card["checklist_items"][0]["name"] == "Do something"
+        assert len(card["comments"]) == 1
+        assert card["comments"][0]["comment"] == "A public comment"
+        assert "user_id" not in card["comments"][0]
+        assert "author" not in card["comments"][0]
+
+    def test_public_card_not_found_for_private_board(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Card on a private board should not be accessible via public endpoint."""
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Private Card"},
+        )
+        assert card_response.status_code == 201
+        card_id = card_response.json()["card"]["id"]
+
+        # Make public to get the slug, then revoke public access
+        slug = self._make_board_public(api_client, authenticated_session, sample_board["id"])
+        authenticated_session.patch(
+            f"{api_client}/api/boards/{sample_board['id']}",
+            json={"is_public": False},
+        )
+
+        response = requests.get(f"{api_client}/api/public/boards/{slug}/cards/{card_id}")
+        assert response.status_code == 404
+
+    def test_public_card_not_found_for_invalid_slug(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Public card endpoint should return 404 for an invalid board slug."""
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Card"},
+        )
+        assert card_response.status_code == 201
+        card_id = card_response.json()["card"]["id"]
+
+        response = requests.get(f"{api_client}/api/public/boards/invalidslug/cards/{card_id}")
+        assert response.status_code == 404
+
+    def test_public_card_not_found_for_nonexistent_card(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+    ):
+        """Public card endpoint returns 404 for a card ID that does not exist on the board."""
+        slug = self._make_board_public(api_client, authenticated_session, sample_board["id"])
+
+        response = requests.get(f"{api_client}/api/public/boards/{slug}/cards/999999")
+        assert response.status_code == 404
+
+    def test_public_card_response_headers(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Public card endpoint should include correct crawler/cache headers."""
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Header Test Card"},
+        )
+        assert card_response.status_code == 201
+        card_id = card_response.json()["card"]["id"]
+
+        slug = self._make_board_public(api_client, authenticated_session, sample_board["id"])
+
+        response = requests.get(f"{api_client}/api/public/boards/{slug}/cards/{card_id}")
+        assert response.status_code == 200
+        assert response.headers.get("X-Robots-Tag") == "noindex, nofollow, noarchive"
+        assert "no-store" in (response.headers.get("Cache-Control") or "")
+
+    def test_anonymous_cannot_write_cards_on_public_board(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Public board visibility must not allow anonymous card creation or updates."""
+        slug = self._make_board_public(api_client, authenticated_session, sample_board["id"])
+
+        create_response = requests.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Anonymous Card"},
+        )
+        assert create_response.status_code == 401
+
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Existing Card"},
+        )
+        assert card_response.status_code == 201
+        card_id = card_response.json()["card"]["id"]
+
+        patch_response = requests.patch(
+            f"{api_client}/api/cards/{card_id}",
+            json={"title": "Modified by anon"},
+        )
+        assert patch_response.status_code == 401
+
+        delete_response = requests.delete(f"{api_client}/api/cards/{card_id}")
+        assert delete_response.status_code == 401
+
+
+
+@pytest.mark.api
+class TestPublicBoardThrottling:
+    """Burst-traffic throttling tests — run last to avoid polluting the rate-limit window."""
+
     def test_public_board_read_throttling_engages_under_burst_traffic(
         self,
         api_client,
@@ -284,7 +505,6 @@ class TestPublicBoardsAPI:
         for _ in range(95):
             response = requests.get(f"{api_client}/api/public/boards/{slug}", timeout=5)
             statuses.append(response.status_code)
-
         # Proxy limiting may return 503 by default; app limiter returns 429.
         throttled_statuses = [status for status in statuses if status in (429, 503)]
         assert throttled_statuses, f"Expected throttling under burst traffic, got statuses: {set(statuses)}"
