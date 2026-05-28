@@ -325,6 +325,9 @@ class Header {
     // Initialize public-link rotation action in settings menu
     this.initializeRotatePublicLinkMenu();
 
+    // Initialize embed code copy action in settings menu
+    this.initializeCopyEmbedCodeMenu();
+
     // Initialize board reassignment in settings menu
     await this.initializeBoardReassignMenu();
     
@@ -1294,6 +1297,25 @@ class Header {
     return `${window.location.origin}/public-board.html?slug=${encodeURIComponent(slug)}`;
   }
 
+  getPublicBoardEmbedCode(slug) {
+    const publicUrl = this.getPublicBoardShareUrl(slug);
+    if (!publicUrl) {
+      return '';
+    }
+
+    return [
+      '<iframe',
+      `  src="${publicUrl}"`,
+      '  title="AFT Public Board"',
+      '  width="100%"',
+      '  height="900"',
+      '  style="border:0;"',
+      '  loading="lazy"',
+      '  referrerpolicy="strict-origin-when-cross-origin">',
+      '</iframe>'
+    ].join('\n');
+  }
+
   initializeBoardVisibilityToggleMenu() {
     const menuItems = [
       document.getElementById('toggle-board-visibility-menu-item'),
@@ -1376,6 +1398,43 @@ class Header {
     this.updateRotatePublicLinkMenuVisibility();
   }
 
+  initializeCopyEmbedCodeMenu() {
+    const menuItems = [
+      document.getElementById('copy-embed-code-menu-item'),
+      document.getElementById('mobile-copy-embed-code-menu-item')
+    ].filter(Boolean);
+
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    if (!this.currentBoardId || this.isPublicBoardPage) {
+      menuItems.forEach((menuItem) => {
+        menuItem.style.display = 'none';
+      });
+      return;
+    }
+
+    if (!this.boardOwnerDataListenerBound) {
+      window.addEventListener('boardOwnerDataLoaded', this.boardOwnerDataLoadedHandler);
+      this.boardOwnerDataListenerBound = true;
+    }
+
+    menuItems.forEach((menuItem) => {
+      if (!menuItem.dataset.boundCopyEmbedCodeHandler) {
+        menuItem.addEventListener('click', async (e) => {
+          e.preventDefault();
+          await this.copyPublicBoardEmbedCode();
+          closeAllMenusExcept(null);
+          updateMenuHoverState();
+        });
+        menuItem.dataset.boundCopyEmbedCodeHandler = 'true';
+      }
+    });
+
+    this.updateCopyEmbedCodeMenuVisibility();
+  }
+
   hydrateBoardVisibilityState(detail) {
     if (!detail) {
       return;
@@ -1389,6 +1448,7 @@ class Header {
 
     this.updateBoardVisibilityMenuState();
     this.updateRotatePublicLinkMenuVisibility();
+    this.updateCopyEmbedCodeMenuVisibility();
 
     this.setPublicBoardContext({
       isPublicBoard: this.boardIsPublic,
@@ -1438,6 +1498,60 @@ class Header {
     });
   }
 
+  updateCopyEmbedCodeMenuVisibility() {
+    const menuItems = [
+      document.getElementById('copy-embed-code-menu-item'),
+      document.getElementById('mobile-copy-embed-code-menu-item')
+    ].filter(Boolean);
+
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    const visible = !!this.currentBoardId
+      && !this.isPublicBoardPage
+      && this.boardVisibilityEditable
+      && this.boardIsPublic
+      && !!this.boardPublicSlug;
+
+    menuItems.forEach((menuItem) => {
+      menuItem.style.display = visible ? '' : 'none';
+    });
+  }
+
+  async copyPublicBoardEmbedCode() {
+    if (!this.currentBoardId || !this.boardVisibilityEditable || !this.boardIsPublic || !this.boardPublicSlug) {
+      return;
+    }
+
+    const embedCode = this.getPublicBoardEmbedCode(this.boardPublicSlug);
+    if (!embedCode) {
+      this.showBoardPageToast('Unable to generate embed code for this board.');
+      return;
+    }
+
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(embedCode);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = embedCode;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+
+      this.showHeaderToast('Embed code copied to clipboard');
+    } catch (error) {
+      console.error('Error copying embed code:', error);
+      this.showBoardPageToast('Unable to copy embed code automatically.');
+    }
+  }
+
   async toggleBoardVisibility() {
     if (!this.currentBoardId || !this.boardVisibilityEditable || this.isPublicBoardPage) {
       return;
@@ -1485,6 +1599,7 @@ class Header {
 
       this.updateBoardVisibilityMenuState();
       this.updateRotatePublicLinkMenuVisibility();
+      this.updateCopyEmbedCodeMenuVisibility();
       this.setPublicBoardContext({
         isPublicBoard: this.boardIsPublic,
         publicUrl: this.getPublicBoardShareUrl(this.boardPublicSlug),
@@ -1535,6 +1650,7 @@ class Header {
 
       this.updateBoardVisibilityMenuState();
       this.updateRotatePublicLinkMenuVisibility();
+      this.updateCopyEmbedCodeMenuVisibility();
       this.setPublicBoardContext({
         isPublicBoard: this.boardIsPublic,
         publicUrl: this.getPublicBoardShareUrl(this.boardPublicSlug),

@@ -344,6 +344,23 @@ CORS_ALLOWED_ORIGINS=http://your-docker-host-ip,https://your-docker-host-ip,http
 
 Provide a comma-separated list of all origins that should be allowed to connect, including the exact scheme and host you use in the browser (for example https://staustell). This prevents Cross-Site Request Forgery and Cross-Site WebSocket Hijacking attacks by only accepting connections from trusted sources.
 
+### Public Board iframe Embedding (Trusted Sites)
+If you plan to embed public boards on external websites, keep framing restricted to trusted partner origins only.
+
+Set `EMBED_ALLOWED_ORIGINS` in `.env` as a comma-separated list of exact origins:
+
+```
+EMBED_ALLOWED_ORIGINS=https://partner-a.example,https://portal.partner-b.example
+```
+
+Notes:
+
+- This setting is for frame-embedding allowlists (clickjacking protection), not API CORS.
+- Keep the list minimal and avoid wildcards.
+- Public board iframe use and parent-site direct API calls are different:
+  - iframe usage: board interactions run inside the AFT origin and should not require parent-origin CORS.
+  - parent-site direct API calls: still require that parent origin in `CORS_ALLOWED_ORIGINS`.
+
 ### HTTPS and Session Cookie Security
 By default, the stack now enforces secure session cookies and redirects direct HTTP requests to HTTPS.
 
