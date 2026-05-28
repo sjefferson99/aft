@@ -33,6 +33,10 @@ if [ -n "$EMBED_ALLOWED_ORIGINS" ]; then
     for raw_origin in $EMBED_ALLOWED_ORIGINS; do
         origin=$(printf '%s' "$raw_origin" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
+        # Normalize common admin input with a trailing slash to origin form.
+        # Example: https://partner.example/ -> https://partner.example
+        origin=$(printf '%s' "$origin" | sed 's:/*$::')
+
         if [ -z "$origin" ]; then
             continue
         fi
