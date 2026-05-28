@@ -5,6 +5,8 @@ const COLUMN_AUTO_SCROLL_HOVER_DELAY_MS = 500;
 const COLUMN_AUTO_SCROLL_BASE_STEP_PX = 6;
 const COLUMN_AUTO_SCROLL_MAX_EXTRA_STEP_PX = 12;
 const COLUMN_AUTO_SCROLL_MIN_STEP_PX = 4;
+const MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX = 900;
+const MOBILE_BOARD_TOUCH_SCROLL_LOCK_THRESHOLD_PX = 8;
 const BOARD_LOADING_OVERLAY_DELAY_MS = 500;
 const INITIAL_BOARD_LOAD_TIMEOUT_MS = 15000;
 const SUBSEQUENT_BOARD_LOAD_TIMEOUT_MS = 10000;
@@ -842,6 +844,9 @@ class BoardManager {
     this.closeDropdownHandler = this.handleCloseDropdown.bind(this);
     this.beforeUnloadHandler = this.handleBeforeUnload.bind(this);
     this.viewportMetricsHandler = this.queueMobileViewportMetricsUpdate.bind(this);
+    this.boardTouchStartHandler = this.handleBoardTouchStart.bind(this);
+    this.boardTouchMoveHandler = this.handleBoardTouchMove.bind(this);
+    this.boardTouchEndHandler = this.handleBoardTouchEnd.bind(this);
     this.viewportMetricsRafId = null;
     this.currentLoadController = null; // Track in-flight board load requests
     this.currentViewState = null; // Track the view state for the current load
@@ -857,6 +862,7 @@ class BoardManager {
     this.autoScrollPointerY = 0;
     this.autoScrollPendingContainer = null;
     this.autoScrollPendingDirection = 0;
+    this.boardTouchScrollState = null;
     this.assigneeFilterUsers = [];
     this.assigneeFilterVisible = false;
     this.assigneeFilterSelectedUserIds = new Set();
@@ -868,6 +874,10 @@ class BoardManager {
     this.boardWorkingStyleChangedHandler = this.handleBoardWorkingStyleChanged.bind(this);
     this.assigneeFilterVisibilityLoadedForUserId = null;
     this.assigneeFilterVisibilityWatcherId = null;
+
+    if (this.container) {
+      this.setupBoardTouchScrolling();
+    }
   }
 
   isValidPublicSlug(slug) {
@@ -1168,6 +1178,114 @@ class BoardManager {
       window.visualViewport.addEventListener('resize', this.viewportMetricsHandler);
       window.visualViewport.addEventListener('scroll', this.viewportMetricsHandler, { passive: true });
     }
+  }
+
+  setupBoardTouchScrolling() {
+    this.container.addEventListener('touchstart', this.boardTouchStartHandler, { passive: true });
+    this.container.addEventListener('touchmove', this.boardTouchMoveHandler, { passive: false });
+    this.container.addEventListener('touchend', this.boardTouchEndHandler, { passive: true });
+    this.container.addEventListener('touchcancel', this.boardTouchEndHandler, { passive: true });
+  }
+
+  resetBoardTouchScrollingState() {
+    this.boardTouchScrollState = null;
+  }
+
+  getTrackedBoardTouch(event, touchId) {
+    if (!event.touches || event.touches.length === 0) {
+      return null;
+    }
+
+    return Array.from(event.touches).find(touch => touch.identifier === touchId) || event.touches[0];
+  }
+
+  handleBoardTouchStart(event) {
+    if (!window.matchMedia(`(max-width: ${MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX}px)`).matches) {
+      return;
+    }
+
+    if (event.touches.length !== 1) {
+      this.resetBoardTouchScrollingState();
+      return;
+    }
+
+    const columnsContainer = this.container?.querySelector('.columns-container');
+    if (!columnsContainer) {
+      return;
+    }
+
+    const touch = event.touches[0];
+    const columnCardsContainer = event.target instanceof Element
+      ? event.target.closest('.column-cards')
+      : null;
+
+    this.boardTouchScrollState = {
+      active: true,
+      touchId: touch.identifier,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      lastX: touch.clientX,
+      lastY: touch.clientY,
+      axis: null,
+      columnsContainer,
+      columnCardsContainer
+    };
+  }
+
+  handleBoardTouchMove(event) {
+    const state = this.boardTouchScrollState;
+    if (!state?.active) {
+      return;
+    }
+
+    const touch = this.getTrackedBoardTouch(event, state.touchId);
+    if (!touch) {
+      this.resetBoardTouchScrollingState();
+      return;
+    }
+
+    const deltaX = touch.clientX - state.lastX;
+    const deltaY = touch.clientY - state.lastY;
+    const totalDeltaX = touch.clientX - state.startX;
+    const totalDeltaY = touch.clientY - state.startY;
+
+    if (!state.axis) {
+      const movementDistance = Math.max(Math.abs(totalDeltaX), Math.abs(totalDeltaY));
+      if (movementDistance < MOBILE_BOARD_TOUCH_SCROLL_LOCK_THRESHOLD_PX) {
+        return;
+      }
+
+      if (Math.abs(totalDeltaX) > Math.abs(totalDeltaY)) {
+        state.axis = 'horizontal';
+      } else if (state.columnCardsContainer) {
+        state.axis = 'vertical';
+      } else {
+        this.resetBoardTouchScrollingState();
+        return;
+      }
+    }
+
+    if (state.axis === 'horizontal') {
+      event.preventDefault();
+      state.columnsContainer.scrollLeft -= deltaX;
+      state.lastX = touch.clientX;
+      state.lastY = touch.clientY;
+      return;
+    }
+
+    if (state.axis === 'vertical' && state.columnCardsContainer?.isConnected) {
+      event.preventDefault();
+      state.columnCardsContainer.scrollTop -= deltaY;
+      state.lastX = touch.clientX;
+      state.lastY = touch.clientY;
+      return;
+    }
+
+    this.resetBoardTouchScrollingState();
+  }
+
+  handleBoardTouchEnd() {
+    this.resetBoardTouchScrollingState();
   }
 
   queueMobileViewportMetricsUpdate() {
