@@ -863,6 +863,7 @@ class BoardManager {
     this.autoScrollPendingContainer = null;
     this.autoScrollPendingDirection = 0;
     this.boardTouchScrollState = null;
+    this.boardTouchScrollingSetup = false;
     this.assigneeFilterUsers = [];
     this.assigneeFilterVisible = false;
     this.assigneeFilterSelectedUserIds = new Set();
@@ -874,10 +875,6 @@ class BoardManager {
     this.boardWorkingStyleChangedHandler = this.handleBoardWorkingStyleChanged.bind(this);
     this.assigneeFilterVisibilityLoadedForUserId = null;
     this.assigneeFilterVisibilityWatcherId = null;
-
-    if (this.container) {
-      this.setupBoardTouchScrolling();
-    }
   }
 
   isValidPublicSlug(slug) {
@@ -1181,10 +1178,15 @@ class BoardManager {
   }
 
   setupBoardTouchScrolling() {
+    if (!this.container || this.boardTouchScrollingSetup) {
+      return;
+    }
+
     this.container.addEventListener('touchstart', this.boardTouchStartHandler, { passive: true });
     this.container.addEventListener('touchmove', this.boardTouchMoveHandler, { passive: false });
     this.container.addEventListener('touchend', this.boardTouchEndHandler, { passive: true });
     this.container.addEventListener('touchcancel', this.boardTouchEndHandler, { passive: true });
+    this.boardTouchScrollingSetup = true;
   }
 
   resetBoardTouchScrollingState() {
@@ -1215,9 +1217,11 @@ class BoardManager {
     }
 
     const touch = event.touches[0];
-    const columnCardsContainer = event.target instanceof Element
-      ? event.target.closest('.column-cards')
-      : null;
+    const targetElement = event.target instanceof Element ? event.target : null;
+    const touchedColumn = targetElement?.closest('.column');
+    const columnCardsContainer = targetElement?.closest('.column-cards') ||
+      touchedColumn?.querySelector('.column-cards') ||
+      null;
 
     this.boardTouchScrollState = {
       active: true,
@@ -1587,6 +1591,7 @@ class BoardManager {
       if (!this.isPublicMode) {
         this.notifyBoardFilterActiveStateChanged();
       }
+      this.setupBoardTouchScrolling();
       this.setupMobileViewportSync();
       this.setupKeyboardShortcuts();
       this.setupDropdownClickOutside();
@@ -2088,6 +2093,15 @@ class BoardManager {
       window.visualViewport.removeEventListener('resize', this.viewportMetricsHandler);
       window.visualViewport.removeEventListener('scroll', this.viewportMetricsHandler);
     }
+
+    if (this.container && this.boardTouchScrollingSetup) {
+      this.container.removeEventListener('touchstart', this.boardTouchStartHandler);
+      this.container.removeEventListener('touchmove', this.boardTouchMoveHandler);
+      this.container.removeEventListener('touchend', this.boardTouchEndHandler);
+      this.container.removeEventListener('touchcancel', this.boardTouchEndHandler);
+      this.boardTouchScrollingSetup = false;
+    }
+    this.resetBoardTouchScrollingState();
 
     if (this.viewportMetricsRafId) {
       cancelAnimationFrame(this.viewportMetricsRafId);
