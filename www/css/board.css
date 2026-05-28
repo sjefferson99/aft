@@ -1896,7 +1896,7 @@ button.readonly-disabled,
     align-items: flex-start;
     scroll-snap-type: none;
     scroll-padding-inline: 0;
-    touch-action: pan-x;
+    touch-action: none;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in srgb, var(--primary-color) 65%, transparent) transparent;
   }
@@ -1955,7 +1955,7 @@ button.readonly-disabled,
   }
 
   .column-cards {
-    touch-action: pan-y;
+    touch-action: none;
   }
 
   .column-menu-dropdown {
