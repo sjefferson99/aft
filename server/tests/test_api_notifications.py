@@ -56,12 +56,17 @@ class TestNotificationsAPI:
         assert response.status_code == 200
         data = response.json()
         assert data['success'] is True
-        assert len(data['notifications']) == 2
-        
-        # Verify newest is first (most recent creation)
-        subjects = [n['subject'] for n in data['notifications']]
-        assert subjects[0] == "New Notification"
-        assert subjects[1] == "Old Notification"
+
+        # Background services can add unrelated notifications during the test run.
+        # Verify the two notifications created here are present and ordered newest-first.
+        notifications = data['notifications']
+        subjects = [n['subject'] for n in notifications]
+        assert "Old Notification" in subjects
+        assert "New Notification" in subjects
+        assert subjects.index("New Notification") < subjects.index("Old Notification")
+
+        ordered_subjects = [n['subject'] for n in notifications if n['subject'] in {"Old Notification", "New Notification"}]
+        assert ordered_subjects == ["New Notification", "Old Notification"]
     
     def test_create_notification_success(self, api_client, authenticated_session):
         """Test creating a notification with valid data."""
