@@ -55,6 +55,8 @@ class Board(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+    is_public = Column(Boolean, nullable=False, default=False)
+    public_slug = Column(String(64), nullable=True, unique=True, index=True)
     
     # Owner has full control over the board
     owner_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=True, index=True)

@@ -1,5 +1,6 @@
 """Tests for board API endpoints."""
 import json
+import uuid
 
 import pytest
 
@@ -571,7 +572,8 @@ class TestBoardsAPI:
 
     def test_import_board_success_and_assignees_not_mapped(self, api_client, authenticated_session):
         """Import succeeds and imported assignees are intentionally not mapped."""
-        payload = build_minimal_board_import_payload('Imported Board Success')
+        unique_board_name = f'Imported Board Success {uuid.uuid4().hex[:8]}'
+        payload = build_minimal_board_import_payload(unique_board_name)
 
         import_response = authenticated_session.post(
             f'{api_client}/api/boards/import',
@@ -582,7 +584,7 @@ class TestBoardsAPI:
 
         data = import_response.json()
         assert data['success'] is True
-        assert data['board']['name'] == 'Imported Board Success'
+        assert data['board']['name'] == unique_board_name
         assert data['import_meta']['assignee_mapping'] == 'not_mapped'
         assert data['import_meta']['ignored_primary_assignees_count'] == 1
         assert data['import_meta']['ignored_secondary_assignees_count'] == 1

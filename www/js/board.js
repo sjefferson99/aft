@@ -824,6 +824,10 @@ class BoardManager {
   constructor() {
     this.container = document.getElementById('board-container');
     this.boardId = null;
+    this.publicSlug = null;
+    this.isBoardPublic = false;
+    this.isPublicMode = (window.location.pathname || '').includes('/public-board.html');
+    this.publicBoardShareUrl = null;
     this.boardName = '';
     this.columns = [];
     this.originalColumns = []; // Store original unfiltered columns for accurate card counting
@@ -864,6 +868,18 @@ class BoardManager {
     this.boardWorkingStyleChangedHandler = this.handleBoardWorkingStyleChanged.bind(this);
     this.assigneeFilterVisibilityLoadedForUserId = null;
     this.assigneeFilterVisibilityWatcherId = null;
+  }
+
+  isValidPublicSlug(slug) {
+    return /^[a-z0-9]{6,64}$/.test(slug);
+  }
+
+  getPublicBoardShareUrl(slug) {
+    if (!slug) {
+      return null;
+    }
+
+    return `${window.location.origin}/public-board.html?slug=${encodeURIComponent(slug)}`;
   }
 
   getColumnScrollStorageKey() {
@@ -1395,48 +1411,64 @@ class BoardManager {
     this.isBootstrappingBoard = true;
 
     try {
-
-      // Get board ID from URL query parameter
       const urlParams = new URLSearchParams(window.location.search);
-      const boardIdParam = urlParams.get('id');
-      
-      // Parse and validate board ID to prevent XSS
-      this.boardId = boardIdParam ? parseInt(boardIdParam, 10) : null;
-      
-      if (!this.boardId || isNaN(this.boardId)) {
-        this.showError('Invalid or missing board ID');
-        return;
-      }
+      if (this.isPublicMode) {
+        const slugParam = (urlParams.get('slug') || '').trim().toLowerCase();
+        if (!this.isValidPublicSlug(slugParam)) {
+          this.showError('Invalid or missing public board slug');
+          return;
+        }
+        this.publicSlug = slugParam;
+        this.publicBoardShareUrl = this.getPublicBoardShareUrl(this.publicSlug);
+      } else {
+        // Get board ID from URL query parameter
+        const boardIdParam = urlParams.get('id');
 
-      // Initialize Permission Manager with board context
-      console.log('Initializing PermissionManager for board:', this.boardId);
-      const permissionInitSuccess = await PermissionManager.init(this.boardId);
-      
-      if (!permissionInitSuccess) {
-        console.warn('Failed to initialize PermissionManager - some features may not be available');
-        // Continue anyway - the user is logged in if we're here
+        // Parse and validate board ID to prevent XSS
+        this.boardId = boardIdParam ? parseInt(boardIdParam, 10) : null;
+
+        if (!this.boardId || isNaN(this.boardId)) {
+          this.showError('Invalid or missing board ID');
+          return;
+        }
+
+        // Initialize Permission Manager with board context
+        console.log('Initializing PermissionManager for board:', this.boardId);
+        const permissionInitSuccess = await PermissionManager.init(this.boardId);
+
+        if (!permissionInitSuccess) {
+          console.warn('Failed to initialize PermissionManager - some features may not be available');
+          // Continue anyway - the user is logged in if we're here
+        }
       }
 
       this.render();
       this.showBoardLoading();
       this.loadPersistedColumnScrollPositions();
-      this.loadPersistedAssigneeFilterVisibility();
-      this.watchForAssigneeFilterVisibilityUser();
-      this.notifyBoardFilterVisibilityChanged();
       window.addEventListener('beforeunload', this.beforeUnloadHandler);
-      window.addEventListener('boardFiltersToggleRequested', this.boardFiltersToggleRequestHandler);
-      window.addEventListener('boardFiltersStateRequest', this.boardFiltersStateRequestHandler);
-      window.addEventListener('boardFiltersClearRequest', this.boardFiltersClearRequestHandler);
-      window.addEventListener('boardWorkingStyleChanged', this.boardWorkingStyleChangedHandler);
-      
-      // Initialize WebSocket for real-time updates
-      this.wsManager = new WebSocketManager(this.boardId, this);
+
+      if (!this.isPublicMode) {
+        this.loadPersistedAssigneeFilterVisibility();
+        this.watchForAssigneeFilterVisibilityUser();
+        this.notifyBoardFilterVisibilityChanged();
+        window.addEventListener('boardFiltersToggleRequested', this.boardFiltersToggleRequestHandler);
+        window.addEventListener('boardFiltersStateRequest', this.boardFiltersStateRequestHandler);
+        window.addEventListener('boardFiltersClearRequest', this.boardFiltersClearRequestHandler);
+        window.addEventListener('boardWorkingStyleChanged', this.boardWorkingStyleChangedHandler);
+
+        // Initialize WebSocket for real-time updates
+        this.wsManager = new WebSocketManager(this.boardId, this);
+      } else {
+        this.canEdit = false;
+      }
       
       // Load working style preference
       await this.loadWorkingStyle();
       
       await this.loadBoard();
-      this.notifyBoardFilterActiveStateChanged();
+      if (!this.isPublicMode) {
+        this.notifyBoardFilterActiveStateChanged();
+      }
       this.setupMobileViewportSync();
       this.setupKeyboardShortcuts();
       this.setupDropdownClickOutside();
@@ -1453,6 +1485,12 @@ class BoardManager {
       }
       return value === 'agile' ? 'agile' : 'kanban';
     };
+
+    if (this.isPublicMode) {
+      this.workingStyle = 'kanban';
+      this.updateArchivedViewVisibility();
+      return;
+    }
 
     const headerWorkingStylePromise = window.header?.workingStyleLoadPromise;
     if (window.header?.currentBoardId === this.boardId && headerWorkingStylePromise) {
@@ -1493,9 +1531,11 @@ class BoardManager {
     const applyVisibility = () => {
       const archivedViewItem = document.querySelector('.views-dropdown-item[data-view="archived"]');
       const mobileArchivedViewItem = document.querySelector('.mobile-view-item[data-view="archived"]');
+      const scheduledViewItem = document.querySelector('.views-dropdown-item[data-view="scheduled"]');
+      const mobileScheduledViewItem = document.querySelector('.mobile-view-item[data-view="scheduled"]');
 
       // If neither element exists yet, signal that we need to retry later
-      if (!archivedViewItem && !mobileArchivedViewItem) {
+      if (!archivedViewItem && !mobileArchivedViewItem && !scheduledViewItem && !mobileScheduledViewItem) {
         return false;
       }
 
@@ -1506,6 +1546,14 @@ class BoardManager {
       }
       if (mobileArchivedViewItem) {
         mobileArchivedViewItem.style.display = displayValue;
+      }
+
+      const scheduledDisplayValue = this.isPublicMode ? 'none' : '';
+      if (scheduledViewItem) {
+        scheduledViewItem.style.display = scheduledDisplayValue;
+      }
+      if (mobileScheduledViewItem) {
+        mobileScheduledViewItem.style.display = scheduledDisplayValue;
       }
 
       return true;
@@ -1545,6 +1593,13 @@ class BoardManager {
     // Listen for view changes from header
     window.addEventListener('viewChanged', async (e) => {
       const newView = e.detail.view;
+
+      if (this.isPublicMode && newView === 'scheduled') {
+        if (window.header && typeof window.header.setView === 'function') {
+          window.header.setView('task');
+        }
+        return;
+      }
       
       // Show loading overlay
       this.showBoardLoading();
@@ -1643,8 +1698,21 @@ class BoardManager {
 
       try {
         let response;
-        
-        if (this.currentView === 'scheduled') {
+
+        if (this.isPublicMode) {
+          const queryParams = new URLSearchParams();
+          queryParams.set('archived', this.showArchived ? 'true' : 'false');
+
+          if (this.workingStyle === 'agile') {
+            queryParams.set('done', this.showDone ? 'true' : 'false');
+          } else {
+            queryParams.set('done', 'both');
+          }
+
+          response = await fetch(`/api/public/boards/${encodeURIComponent(this.publicSlug)}?${queryParams.toString()}`, {
+            signal: requestController.signal
+          });
+        } else if (this.currentView === 'scheduled') {
           // Load board with all scheduled cards in a single request
           const scheduledParams = this.buildAssigneeFilterQueryParams();
           const scheduledQuery = scheduledParams.toString();
@@ -1695,7 +1763,9 @@ class BoardManager {
         const board = data.board;
         this.processBoard(board);
         // Cache only after a successful board load so header links target valid/authorized boards.
-        sessionStorage.setItem('lastVisitedBoardId', String(this.boardId));
+        if (!this.isPublicMode && this.boardId) {
+          sessionStorage.setItem('lastVisitedBoardId', String(this.boardId));
+        }
         this.hideBoardLoading();
         return;
       } catch (error) {
@@ -1736,13 +1806,32 @@ class BoardManager {
   processBoard(board) {
     try {
       this.boardName = board.name;
+      if (this.isPublicMode && Number.isInteger(board.id) && board.id > 0) {
+        this.boardId = board.id;
+      }
+
+      if (typeof board.working_style === 'string') {
+        this.workingStyle = board.working_style === 'agile' ? 'agile' : 'kanban';
+      }
+
+      const isBoardPublic = board.is_public === true;
+      this.isBoardPublic = isBoardPublic;
+      if (isBoardPublic && typeof board.public_slug === 'string' && board.public_slug.length > 0) {
+        this.publicSlug = board.public_slug;
+      } else {
+        this.publicSlug = null;
+      }
+      this.publicBoardShareUrl = this.getPublicBoardShareUrl(this.publicSlug);
+
       this.boardOwnerData = {
         owner_id: board.owner_id,
         owner: board.owner || null,
         can_reassign_owner: board.can_reassign_owner === true,
         available_owner_users: Array.isArray(board.available_owner_users) ? board.available_owner_users : []
       };
-      this.assigneeFilterUsers = Array.isArray(board.assignee_filter_users) ? board.assignee_filter_users : [];
+      this.assigneeFilterUsers = this.isPublicMode
+        ? []
+        : (Array.isArray(board.assignee_filter_users) ? board.assignee_filter_users : []);
 
       const eligibleUserIds = new Set(this.assigneeFilterUsers.map((u) => u.id));
       this.assigneeFilterSelectedUserIds = new Set(
@@ -1754,7 +1843,8 @@ class BoardManager {
       this.columns = board.columns;
       
       // Store edit permission flag (default to true for backwards compatibility)
-      this.canEdit = board.can_edit !== undefined ? board.can_edit : true;
+      this.canEdit = this.isPublicMode ? false : (board.can_edit !== undefined ? board.can_edit : true);
+      this.updateArchivedViewVisibility();
       
       // Filter cards based on done status and view
       if (this.workingStyle === 'agile') {
@@ -1775,12 +1865,27 @@ class BoardManager {
       
       // Update header with board name and page title
       this.updateBoardTitle();
-      window.dispatchEvent(new CustomEvent('boardOwnerDataLoaded', {
-        detail: {
-          boardId: this.boardId,
-          ...this.boardOwnerData,
-        }
-      }));
+      if (!this.isPublicMode) {
+        window.dispatchEvent(new CustomEvent('boardOwnerDataLoaded', {
+          detail: {
+            boardId: this.boardId,
+            can_edit: this.canEdit,
+            is_public: this.isBoardPublic,
+            public_slug: this.publicSlug,
+            ...this.boardOwnerData,
+          }
+        }));
+      }
+
+      if (window.header && typeof window.header.setPublicBoardContext === 'function') {
+        window.header.setPublicBoardContext({
+          isPublicBoard: isBoardPublic,
+          publicUrl: this.publicBoardShareUrl || '',
+          isPublicPage: this.isPublicMode,
+          showLoginCta: this.isPublicMode && !window.currentUser,
+        });
+      }
+
       this.hasLoadedBoardData = true;
       
       this.renderBoard();

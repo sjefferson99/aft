@@ -635,6 +635,56 @@
   flex: 0 0 auto;
 }
 
+.public-board-badge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--header-text-color);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.public-board-badge-btn:hover,
+.public-board-badge-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+}
+
+.public-board-login-link {
+  background-color: var(--success-color);
+}
+
+.public-board-login-link:hover {
+  background-color: var(--primary-hover);
+}
+
+.public-board-badge-mobile-btn {
+  display: none;
+}
+
+.header-inline-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.22);
+  z-index: 1200;
+  transition: opacity 0.2s ease;
+}
+
+.header-inline-toast.fade-out {
+  opacity: 0;
+}
+
 /* Views Dropdown */
 .views-dropdown {
   position: relative;
@@ -904,7 +954,47 @@
 
   .header-right {
     margin-left: auto;
-    gap: 0;
+    gap: 8px;
+  }
+
+  .header-public-board .header-nav {
+    display: flex !important;
+    min-width: 0;
+  }
+
+  .header-public-board .views-dropdown {
+    display: flex !important;
+  }
+
+  .header-public-board .boards-dropdown {
+    display: none !important;
+  }
+
+  .header-public-board .nav-board-name {
+    font-size: 14px;
+    padding: 0 8px;
+    justify-content: flex-start;
+  }
+
+  .header-public-board .public-board-badge-btn {
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+
+  .header-public-board .public-board-login-link {
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  .public-board-badge-mobile-btn {
+    display: inline-flex;
+    font-size: 10px;
+    padding: 6px 10px;
+    margin-right: 2px;
+    max-width: min(42vw, 180px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .mobile-menu-toggle {

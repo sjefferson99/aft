@@ -331,7 +331,13 @@ def get_board_cards(board_id):
         )
 
         # Build nested structure
-        result = {"id": board.id, "name": board.name, "columns": []}
+        result = {
+          "id": board.id,
+          "name": board.name,
+          "is_public": bool(board.is_public),
+          "public_slug": board.public_slug,
+          "columns": [],
+        }
         result.update(_build_board_owner_metadata(board, g.user.id, db, include_candidates=include_owner_candidates))
         eligible_users = _get_board_assignee_users(db, board_id)
         result["assignee_filter_users"] = [_user_summary(u) for u in eligible_users]

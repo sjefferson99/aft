@@ -70,7 +70,8 @@ function isPublicPagePath(pathname) {
     '/logout.html',
     '/setup.html',
     '/about.html',
-    '/docs.html'
+    '/docs.html',
+    '/public-board.html'
   ];
 
   return publicPages.some((pagePath) => pathname.includes(pagePath));
@@ -197,6 +198,9 @@ class Header {
     this.currentView = 'task'; // Default view
     this.workingStyle = 'kanban'; // Working style: 'kanban' or 'agile'
     this.boardStyleEditable = false;
+    this.boardVisibilityEditable = false;
+    this.boardIsPublic = false;
+    this.boardPublicSlug = null;
     this.currentBoardId = null;
     this.dbConnected = false; // Track database connection status
     this.wsConnected = false; // Track WebSocket connection status
@@ -211,6 +215,7 @@ class Header {
     this.boardReassignmentOptions = null;
     this.boardOwnerDataListenerBound = false;
     this._prevUnhealthyServices = null; // Track previous scheduler health state for toast deduplication
+    this.isPublicBoardPage = (window.location.pathname || '').includes('/public-board.html');
   }
 
   getLastVisitedBoardId() {
@@ -314,28 +319,64 @@ class Header {
     // Initialize board style toggle in settings menu
     this.initializeBoardStyleToggleMenu();
 
+    // Initialize board visibility toggle in settings menu
+    this.initializeBoardVisibilityToggleMenu();
+
+    // Initialize public-link rotation action in settings menu
+    this.initializeRotatePublicLinkMenu();
+
     // Initialize board reassignment in settings menu
     await this.initializeBoardReassignMenu();
     
     // Initialize views dropdown
     this.initializeViewsDropdown();
-    
-    // Load boards dropdown
-    this.loadBoardsDropdown();
-    
-    // Fetch version info immediately (without checking status)
-    this.loadVersionInfo();
-    
-    // Poll database status every 5 seconds
-    this.statusCheckInterval = setInterval(() => {
-      this.checkDatabaseStatus();
-    }, 5000);
-    
-    // Initialize WebSocket monitoring
-    this.monitorWebSocketConnection();
-    
-    // Store last WebSocket state to detect changes
-    this.lastWsState = null;
+
+    if (!this.isPublicBoardPage) {
+      // Load boards dropdown
+      this.loadBoardsDropdown();
+
+      // Fetch version info immediately (without checking status)
+      this.loadVersionInfo();
+
+      // Poll database status every 5 seconds
+      this.statusCheckInterval = setInterval(() => {
+        this.checkDatabaseStatus();
+      }, 5000);
+
+      // Initialize WebSocket monitoring
+      this.monitorWebSocketConnection();
+
+      // Store last WebSocket state to detect changes
+      this.lastWsState = null;
+    } else {
+      this.setPublicBoardContext({
+        isPublicBoard: false,
+        publicUrl: '',
+        isPublicPage: true,
+        showLoginCta: !window.currentUser,
+      });
+
+      let attempts = 0;
+      const maxAttempts = 40;
+      const hydrateInterval = setInterval(() => {
+        attempts += 1;
+        const manager = window.boardManager;
+        if (manager && manager.hasLoadedBoardData) {
+          this.setPublicBoardContext({
+            isPublicBoard: true,
+            publicUrl: manager.publicBoardShareUrl || '',
+            isPublicPage: true,
+            showLoginCta: !window.currentUser,
+          });
+          clearInterval(hydrateInterval);
+          return;
+        }
+
+        if (attempts >= maxAttempts) {
+          clearInterval(hydrateInterval);
+        }
+      }, 150);
+    }
   }
 
   /**
@@ -515,6 +556,160 @@ class Header {
         document.title = 'AFT';
       }
     }
+  }
+
+  setPublicBoardContext(options = {}) {
+    const {
+      isPublicBoard = false,
+      publicUrl = '',
+      isPublicPage = false,
+      showLoginCta = false,
+    } = options;
+
+    const useMinimalPublicChrome = isPublicPage === true;
+    const headerEl = document.querySelector('.header');
+    if (headerEl) {
+      headerEl.classList.toggle('header-public-board', useMinimalPublicChrome);
+    }
+
+    const selectorsToHideInMinimalMode = [
+      '.boards-dropdown',
+      '.notifications-dropdown',
+      '.settings-dropdown',
+      '.user-dropdown',
+      '.db-status'
+    ];
+
+    selectorsToHideInMinimalMode.forEach((selector) => {
+      const element = document.querySelector(selector);
+      if (element) {
+        element.style.display = useMinimalPublicChrome ? 'none' : '';
+      }
+    });
+
+    const mobileToggle = document.getElementById('mobile-menu-toggle');
+    if (mobileToggle) {
+      mobileToggle.style.display = useMinimalPublicChrome ? 'none' : '';
+    }
+
+    const shouldShowPublicBadge = isPublicBoard && !!window.currentUser;
+    this.ensurePublicBoardBadge(shouldShowPublicBadge, publicUrl);
+    this.ensureMobilePublicBoardBadge(shouldShowPublicBadge && !useMinimalPublicChrome, publicUrl);
+    this.ensurePublicBoardLoginCta(useMinimalPublicChrome && showLoginCta);
+  }
+
+  ensurePublicBoardBadge(showBadge, publicUrl) {
+    const navBoardName = document.querySelector('.nav-board-name');
+    if (!navBoardName) {
+      return;
+    }
+
+    let badgeButton = document.getElementById('public-board-badge-btn');
+    if (!badgeButton) {
+      badgeButton = document.createElement('button');
+      badgeButton.id = 'public-board-badge-btn';
+      badgeButton.type = 'button';
+      badgeButton.className = 'public-board-badge-btn';
+      badgeButton.setAttribute('aria-label', 'Copy public board link');
+      badgeButton.textContent = 'Public: Copy Share Link';
+      navBoardName.appendChild(badgeButton);
+    }
+
+    this.applyPublicLinkBadgeState(badgeButton, showBadge, publicUrl);
+  }
+
+  ensureMobilePublicBoardBadge(showBadge, publicUrl) {
+    const headerRight = document.querySelector('.header-right');
+    if (!headerRight) {
+      return;
+    }
+
+    let badgeButton = document.getElementById('public-board-badge-mobile-btn');
+    if (!badgeButton) {
+      badgeButton = document.createElement('button');
+      badgeButton.id = 'public-board-badge-mobile-btn';
+      badgeButton.type = 'button';
+      badgeButton.className = 'public-board-badge-btn public-board-badge-mobile-btn';
+      badgeButton.setAttribute('aria-label', 'Copy public board link');
+      badgeButton.textContent = 'Copy Link';
+      const mobileToggle = document.getElementById('mobile-menu-toggle');
+      if (mobileToggle && mobileToggle.parentElement === headerRight) {
+        headerRight.insertBefore(badgeButton, mobileToggle);
+      } else {
+        headerRight.appendChild(badgeButton);
+      }
+    }
+
+    this.applyPublicLinkBadgeState(badgeButton, showBadge, publicUrl);
+  }
+
+  applyPublicLinkBadgeState(badgeButton, showBadge, publicUrl) {
+    if (!badgeButton) {
+      return;
+    }
+
+    if (!showBadge || !publicUrl) {
+      badgeButton.style.display = 'none';
+      badgeButton.onclick = null;
+      return;
+    }
+
+    // Clear inline style so responsive CSS controls visibility (desktop vs mobile).
+    badgeButton.style.display = '';
+    badgeButton.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(publicUrl);
+        this.showHeaderToast('Public board link copied to clipboard');
+      } catch (error) {
+        this.showHeaderToast('Unable to copy link automatically', true);
+      }
+    };
+  }
+
+  ensurePublicBoardLoginCta(showLoginCta) {
+    const headerRight = document.querySelector('.header-right');
+    if (!headerRight) {
+      return;
+    }
+
+    let loginLink = document.getElementById('public-board-login-link');
+    if (!loginLink) {
+      loginLink = document.createElement('a');
+      loginLink.id = 'public-board-login-link';
+      loginLink.className = 'header-link public-board-login-link';
+      loginLink.textContent = 'Login';
+      headerRight.insertBefore(loginLink, headerRight.firstChild);
+    }
+
+    if (!showLoginCta) {
+      loginLink.style.display = 'none';
+      loginLink.onclick = null;
+      return;
+    }
+
+    const redirectPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    loginLink.href = '/login.html';
+    loginLink.onclick = () => {
+      // Keep redirect behavior aligned with login.js expectations.
+      sessionStorage.setItem('redirectAfterLogin', redirectPath);
+    };
+    loginLink.style.display = 'inline-flex';
+  }
+
+  showHeaderToast(message, isError = false) {
+    const toast = document.createElement('div');
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+    toast.className = 'header-inline-toast';
+    toast.textContent = message;
+    toast.style.background = isError ? 'var(--error-color)' : 'var(--success-color)';
+
+    document.body.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add('fade-out');
+      setTimeout(() => toast.remove(), 220);
+    }, 2200);
   }
 
   // Show or hide the views dropdown
@@ -1091,6 +1286,646 @@ class Header {
     });
   }
 
+  getPublicBoardShareUrl(slug) {
+    if (typeof slug !== 'string' || slug.trim().length === 0) {
+      return '';
+    }
+
+    return `${window.location.origin}/public-board.html?slug=${encodeURIComponent(slug)}`;
+  }
+
+  initializeBoardVisibilityToggleMenu() {
+    const menuItems = [
+      document.getElementById('toggle-board-visibility-menu-item'),
+      document.getElementById('mobile-toggle-board-visibility-menu-item')
+    ].filter(Boolean);
+
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    if (!this.currentBoardId || this.isPublicBoardPage) {
+      menuItems.forEach((menuItem) => {
+        menuItem.style.display = 'none';
+      });
+      return;
+    }
+
+    if (!this.boardOwnerDataListenerBound) {
+      window.addEventListener('boardOwnerDataLoaded', this.boardOwnerDataLoadedHandler);
+      this.boardOwnerDataListenerBound = true;
+    }
+
+    if (window.boardManager && window.boardManager.boardId === this.currentBoardId) {
+      this.hydrateBoardVisibilityState({
+        can_edit: window.boardManager.canEdit === true,
+        is_public: window.boardManager.isBoardPublic === true,
+        public_slug: window.boardManager.publicSlug || null,
+      });
+    }
+
+    menuItems.forEach((menuItem) => {
+      if (!menuItem.dataset.boundVisibilityToggleHandler) {
+        menuItem.addEventListener('click', async (e) => {
+          e.preventDefault();
+          await this.toggleBoardVisibility();
+          closeAllMenusExcept(null);
+          updateMenuHoverState();
+        });
+        menuItem.dataset.boundVisibilityToggleHandler = 'true';
+      }
+    });
+
+    this.updateBoardVisibilityMenuState();
+  }
+
+  initializeRotatePublicLinkMenu() {
+    const menuItems = [
+      document.getElementById('rotate-public-link-menu-item'),
+      document.getElementById('mobile-rotate-public-link-menu-item')
+    ].filter(Boolean);
+
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    if (!this.currentBoardId || this.isPublicBoardPage) {
+      menuItems.forEach((menuItem) => {
+        menuItem.style.display = 'none';
+      });
+      return;
+    }
+
+    if (!this.boardOwnerDataListenerBound) {
+      window.addEventListener('boardOwnerDataLoaded', this.boardOwnerDataLoadedHandler);
+      this.boardOwnerDataListenerBound = true;
+    }
+
+    menuItems.forEach((menuItem) => {
+      if (!menuItem.dataset.boundRotatePublicLinkHandler) {
+        menuItem.addEventListener('click', async (e) => {
+          e.preventDefault();
+          await this.rotatePublicLink();
+          closeAllMenusExcept(null);
+          updateMenuHoverState();
+        });
+        menuItem.dataset.boundRotatePublicLinkHandler = 'true';
+      }
+    });
+
+    this.updateRotatePublicLinkMenuVisibility();
+  }
+
+  hydrateBoardVisibilityState(detail) {
+    if (!detail) {
+      return;
+    }
+
+    this.boardVisibilityEditable = detail.can_edit === true;
+    this.boardIsPublic = detail.is_public === true;
+    this.boardPublicSlug = typeof detail.public_slug === 'string' && detail.public_slug.length > 0
+      ? detail.public_slug
+      : null;
+
+    this.updateBoardVisibilityMenuState();
+    this.updateRotatePublicLinkMenuVisibility();
+
+    this.setPublicBoardContext({
+      isPublicBoard: this.boardIsPublic,
+      publicUrl: this.getPublicBoardShareUrl(this.boardPublicSlug),
+      isPublicPage: this.isPublicBoardPage,
+      showLoginCta: this.isPublicBoardPage && !window.currentUser,
+    });
+  }
+
+  updateBoardVisibilityMenuState() {
+    const menuItems = [
+      document.getElementById('toggle-board-visibility-menu-item'),
+      document.getElementById('mobile-toggle-board-visibility-menu-item')
+    ].filter(Boolean);
+
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    const visible = !!this.currentBoardId && !this.isPublicBoardPage && this.boardVisibilityEditable;
+    const label = this.boardIsPublic ? 'Access: Public' : 'Access: Private';
+
+    menuItems.forEach((menuItem) => {
+      menuItem.style.display = visible ? '' : 'none';
+      menuItem.textContent = label;
+    });
+  }
+
+  updateRotatePublicLinkMenuVisibility() {
+    const menuItems = [
+      document.getElementById('rotate-public-link-menu-item'),
+      document.getElementById('mobile-rotate-public-link-menu-item')
+    ].filter(Boolean);
+
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    const visible = !!this.currentBoardId
+      && !this.isPublicBoardPage
+      && this.boardVisibilityEditable
+      && this.boardIsPublic
+      && !!this.boardPublicSlug;
+
+    menuItems.forEach((menuItem) => {
+      menuItem.style.display = visible ? '' : 'none';
+    });
+  }
+
+  async toggleBoardVisibility() {
+    if (!this.currentBoardId || !this.boardVisibilityEditable || this.isPublicBoardPage) {
+      return;
+    }
+
+    const nextPublicState = !this.boardIsPublic;
+
+    if (nextPublicState) {
+      const confirmed = await this.confirmMakeBoardPublic();
+      if (!confirmed) {
+        return;
+      }
+    } else {
+      const confirmed = await this.confirmMakeBoardPrivate();
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    try {
+      const response = await fetch(`/api/boards/${this.currentBoardId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ is_public: nextPublicState })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `HTTP error ${response.status}`);
+      }
+
+      const board = data.board || {};
+      this.boardIsPublic = board.is_public === true;
+      this.boardPublicSlug = typeof board.public_slug === 'string' && board.public_slug.length > 0
+        ? board.public_slug
+        : null;
+
+      if (window.boardManager && window.boardManager.boardId === this.currentBoardId) {
+        window.boardManager.isBoardPublic = this.boardIsPublic;
+        window.boardManager.publicSlug = this.boardPublicSlug;
+        window.boardManager.publicBoardShareUrl = this.getPublicBoardShareUrl(this.boardPublicSlug) || null;
+      }
+
+      this.updateBoardVisibilityMenuState();
+      this.updateRotatePublicLinkMenuVisibility();
+      this.setPublicBoardContext({
+        isPublicBoard: this.boardIsPublic,
+        publicUrl: this.getPublicBoardShareUrl(this.boardPublicSlug),
+        isPublicPage: this.isPublicBoardPage,
+        showLoginCta: this.isPublicBoardPage && !window.currentUser,
+      });
+      this.showHeaderToast(this.boardIsPublic ? 'Board is now public' : 'Board is now private');
+    } catch (error) {
+      console.error('Error toggling board visibility:', error);
+      this.showBoardPageToast(error.message || 'Failed to update board visibility.');
+    }
+  }
+
+  async rotatePublicLink() {
+    if (!this.currentBoardId || !this.boardVisibilityEditable || !this.boardIsPublic || !this.boardPublicSlug) {
+      return;
+    }
+
+    const confirmed = await this.confirmRotatePublicLink();
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/boards/${this.currentBoardId}/public-link/rotate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `HTTP error ${response.status}`);
+      }
+
+      const board = data.board || {};
+      this.boardIsPublic = board.is_public === true;
+      this.boardPublicSlug = typeof board.public_slug === 'string' && board.public_slug.length > 0
+        ? board.public_slug
+        : null;
+
+      if (window.boardManager && window.boardManager.boardId === this.currentBoardId) {
+        window.boardManager.isBoardPublic = this.boardIsPublic;
+        window.boardManager.publicSlug = this.boardPublicSlug;
+        window.boardManager.publicBoardShareUrl = this.getPublicBoardShareUrl(this.boardPublicSlug) || null;
+      }
+
+      this.updateBoardVisibilityMenuState();
+      this.updateRotatePublicLinkMenuVisibility();
+      this.setPublicBoardContext({
+        isPublicBoard: this.boardIsPublic,
+        publicUrl: this.getPublicBoardShareUrl(this.boardPublicSlug),
+        isPublicPage: this.isPublicBoardPage,
+        showLoginCta: this.isPublicBoardPage && !window.currentUser,
+      });
+      this.showHeaderToast('Public board link rotated');
+    } catch (error) {
+      console.error('Error rotating public board link:', error);
+      this.showBoardPageToast(error.message || 'Failed to rotate public board link.');
+    }
+  }
+
+  async confirmMakeBoardPublic() {
+    const existingModal = document.getElementById('board-visibility-confirm-modal');
+    if (existingModal) {
+      existingModal.remove();
+    }
+
+    return new Promise((resolve) => {
+      const previousActiveElement = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      const previousOverflow = document.body.style.overflow;
+
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.id = 'board-visibility-confirm-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'board-visibility-confirm-title');
+      modal.setAttribute('aria-describedby', 'board-visibility-confirm-description');
+
+      const modalContent = document.createElement('div');
+      modalContent.className = 'modal-content board-owner-modal-content';
+
+      const modalHeader = document.createElement('div');
+      modalHeader.className = 'modal-header';
+
+      const title = document.createElement('h2');
+      title.id = 'board-visibility-confirm-title';
+      title.textContent = 'Make Board Public?';
+
+      modalHeader.appendChild(title);
+
+      const description = document.createElement('p');
+      description.id = 'board-visibility-confirm-description';
+      description.className = 'modal-description';
+      description.textContent = 'This will make this board publicly viewable (read-only) to anyone who can access this server, including over the internet if the server is internet-accessible.';
+
+      const details = document.createElement('p');
+      details.className = 'modal-description';
+      details.textContent = 'All board content and card data will be visible. User identity details such as usernames and assignee metadata are redacted in public view. You can switch the board back to private at any time.';
+
+      const actions = document.createElement('div');
+      actions.className = 'modal-header-actions';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn btn-secondary';
+      cancelBtn.textContent = 'Cancel';
+
+      const okBtn = document.createElement('button');
+      okBtn.type = 'button';
+      okBtn.className = 'btn btn-primary';
+      okBtn.textContent = 'Make Public';
+
+      actions.append(okBtn, cancelBtn);
+      modalContent.append(modalHeader, description, details, actions);
+      modal.appendChild(modalContent);
+      document.body.appendChild(modal);
+      document.body.style.overflow = 'hidden';
+
+      let mouseDownOnBackground = false;
+      let settled = false;
+
+      const settle = (accepted) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        modal.remove();
+        document.body.style.overflow = previousOverflow;
+        if (previousActiveElement) {
+          previousActiveElement.focus();
+        }
+        resolve(accepted);
+      };
+
+      modal.addEventListener('mousedown', (event) => {
+        mouseDownOnBackground = event.target === modal;
+      });
+
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal && mouseDownOnBackground) {
+          settle(false);
+        }
+        mouseDownOnBackground = false;
+      });
+
+      const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          settle(false);
+          return;
+        }
+
+        if (event.key !== 'Tab') {
+          return;
+        }
+
+        const focusable = Array.from(modal.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ));
+
+        if (focusable.length === 0) {
+          return;
+        }
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      };
+
+      modal.addEventListener('keydown', handleKeydown);
+      cancelBtn.addEventListener('click', () => settle(false));
+      okBtn.addEventListener('click', () => settle(true));
+      okBtn.focus();
+    });
+  }
+
+  async confirmMakeBoardPrivate() {
+    const existingModal = document.getElementById('board-visibility-confirm-modal');
+    if (existingModal) {
+      existingModal.remove();
+    }
+
+    return new Promise((resolve) => {
+      const previousActiveElement = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      const previousOverflow = document.body.style.overflow;
+
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.id = 'board-visibility-confirm-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'board-visibility-confirm-title');
+      modal.setAttribute('aria-describedby', 'board-visibility-confirm-description');
+
+      const modalContent = document.createElement('div');
+      modalContent.className = 'modal-content board-owner-modal-content';
+
+      const modalHeader = document.createElement('div');
+      modalHeader.className = 'modal-header';
+
+      const title = document.createElement('h2');
+      title.id = 'board-visibility-confirm-title';
+      title.textContent = 'Make Board Private?';
+
+      modalHeader.appendChild(title);
+
+      const description = document.createElement('p');
+      description.id = 'board-visibility-confirm-description';
+      description.className = 'modal-description';
+      description.textContent = 'This will restrict board visibility to permitted authenticated users only.';
+
+      const details = document.createElement('p');
+      details.className = 'modal-description';
+      details.textContent = 'Anyone using the current public link will lose access immediately after this change.';
+
+      const actions = document.createElement('div');
+      actions.className = 'modal-header-actions';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn btn-secondary';
+      cancelBtn.textContent = 'Cancel';
+
+      const okBtn = document.createElement('button');
+      okBtn.type = 'button';
+      okBtn.className = 'btn btn-primary';
+      okBtn.textContent = 'Make Private';
+
+      actions.append(okBtn, cancelBtn);
+      modalContent.append(modalHeader, description, details, actions);
+      modal.appendChild(modalContent);
+      document.body.appendChild(modal);
+      document.body.style.overflow = 'hidden';
+
+      let mouseDownOnBackground = false;
+      let settled = false;
+
+      const settle = (accepted) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        modal.remove();
+        document.body.style.overflow = previousOverflow;
+        if (previousActiveElement) {
+          previousActiveElement.focus();
+        }
+        resolve(accepted);
+      };
+
+      modal.addEventListener('mousedown', (event) => {
+        mouseDownOnBackground = event.target === modal;
+      });
+
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal && mouseDownOnBackground) {
+          settle(false);
+        }
+        mouseDownOnBackground = false;
+      });
+
+      const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          settle(false);
+          return;
+        }
+
+        if (event.key !== 'Tab') {
+          return;
+        }
+
+        const focusable = Array.from(modal.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ));
+
+        if (focusable.length === 0) {
+          return;
+        }
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      };
+
+      modal.addEventListener('keydown', handleKeydown);
+      cancelBtn.addEventListener('click', () => settle(false));
+      okBtn.addEventListener('click', () => settle(true));
+      okBtn.focus();
+    });
+  }
+
+  async confirmRotatePublicLink() {
+    const existingModal = document.getElementById('board-visibility-confirm-modal');
+    if (existingModal) {
+      existingModal.remove();
+    }
+
+    return new Promise((resolve) => {
+      const previousActiveElement = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      const previousOverflow = document.body.style.overflow;
+
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.id = 'board-visibility-confirm-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'board-visibility-confirm-title');
+      modal.setAttribute('aria-describedby', 'board-visibility-confirm-description');
+
+      const modalContent = document.createElement('div');
+      modalContent.className = 'modal-content board-owner-modal-content';
+
+      const modalHeader = document.createElement('div');
+      modalHeader.className = 'modal-header';
+
+      const title = document.createElement('h2');
+      title.id = 'board-visibility-confirm-title';
+      title.textContent = 'Rotate Public Link?';
+
+      modalHeader.appendChild(title);
+
+      const description = document.createElement('p');
+      description.id = 'board-visibility-confirm-description';
+      description.className = 'modal-description';
+      description.textContent = 'This will generate a new public link for this board and immediately invalidate the current link.';
+
+      const details = document.createElement('p');
+      details.className = 'modal-description';
+      details.textContent = 'Anyone with the old link will lose access until they are given the new link.';
+
+      const actions = document.createElement('div');
+      actions.className = 'modal-header-actions';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn btn-secondary';
+      cancelBtn.textContent = 'Cancel';
+
+      const okBtn = document.createElement('button');
+      okBtn.type = 'button';
+      okBtn.className = 'btn btn-primary';
+      okBtn.textContent = 'Rotate Link';
+
+      actions.append(okBtn, cancelBtn);
+      modalContent.append(modalHeader, description, details, actions);
+      modal.appendChild(modalContent);
+      document.body.appendChild(modal);
+      document.body.style.overflow = 'hidden';
+
+      let mouseDownOnBackground = false;
+      let settled = false;
+
+      const settle = (accepted) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        modal.remove();
+        document.body.style.overflow = previousOverflow;
+        if (previousActiveElement) {
+          previousActiveElement.focus();
+        }
+        resolve(accepted);
+      };
+
+      modal.addEventListener('mousedown', (event) => {
+        mouseDownOnBackground = event.target === modal;
+      });
+
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal && mouseDownOnBackground) {
+          settle(false);
+        }
+        mouseDownOnBackground = false;
+      });
+
+      const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          settle(false);
+          return;
+        }
+
+        if (event.key !== 'Tab') {
+          return;
+        }
+
+        const focusable = Array.from(modal.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ));
+
+        if (focusable.length === 0) {
+          return;
+        }
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      };
+
+      modal.addEventListener('keydown', handleKeydown);
+      cancelBtn.addEventListener('click', () => settle(false));
+      okBtn.addEventListener('click', () => settle(true));
+      okBtn.focus();
+    });
+  }
+
   updateBoardStyleMenuLabel() {
     const menuItems = [
       document.getElementById('toggle-board-style-menu-item'),
@@ -1229,6 +2064,7 @@ class Header {
     }
 
     this.hydrateBoardReassignmentOptions(detail);
+    this.hydrateBoardVisibilityState(detail);
 
     this.refreshBoardReassignMenuState();
   }
@@ -2326,6 +3162,11 @@ class Header {
     if (this.wsCheckInterval) {
       clearInterval(this.wsCheckInterval);
       this.wsCheckInterval = null;
+    }
+
+    if (this.boardOwnerDataListenerBound) {
+      window.removeEventListener('boardOwnerDataLoaded', this.boardOwnerDataLoadedHandler);
+      this.boardOwnerDataListenerBound = false;
     }
 
     window.removeEventListener('boardFiltersVisibilityChanged', this.boardFiltersVisibilityHandler);

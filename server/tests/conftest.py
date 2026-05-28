@@ -33,12 +33,11 @@ API_WAIT_INTERVAL_SECONDS = _env_float("PYTEST_API_WAIT_INTERVAL_SECONDS", 0.5)
 API_REQUEST_TIMEOUT_SECONDS = _env_float("PYTEST_API_REQUEST_TIMEOUT_SECONDS", 1.0)
 API_READY_ENDPOINT = os.getenv("PYTEST_API_READY_ENDPOINT", "/api/auth/setup/status")
 
-# Authentication candidates for test admin recovery across auth-flow tests.
-# Some auth tests intentionally change test-admin password and later tests
-# still need fixture-driven reauthentication to succeed.
+# Authentication candidates for test-admin recovery across auth-flow tests.
+# Some auth tests briefly rotate the canonical test-admin password.
 TEST_ADMIN_LOGIN_CANDIDATES = [
     ("test-admin@localhost", "TestAdmin123!"),
-    ("admin@localhost", "AdminPass123!"),
+    ("test-admin@localhost", "NewAdminPass456!"),
 ]
 
 # Cleanup timing constants (in seconds)
@@ -119,7 +118,7 @@ def _is_setup_already_complete_response(response):
 
 
 def _login_test_admin(session):
-    """Attempt login using the canonical test-admin credentials."""
+    """Attempt login as the canonical test-admin identity only."""
     for email, password in TEST_ADMIN_LOGIN_CANDIDATES:
         login_response = session.post(f"{API_BASE_URL}/api/auth/login", json={
             "email": email,
@@ -127,6 +126,17 @@ def _login_test_admin(session):
         })
 
         if login_response.status_code == 200:
+            try:
+                me_response = session.get(f"{API_BASE_URL}/api/auth/me")
+                if me_response.status_code == 200:
+                    me_email = me_response.json().get("user", {}).get("email", "")
+                    if me_email != "test-admin@localhost":
+                        session.cookies.clear()
+                        continue
+            except requests.exceptions.RequestException:
+                session.cookies.clear()
+                continue
+
             _mirror_secure_session_cookies_for_http(session)
             return True
 
@@ -746,5 +756,18 @@ def second_user_session(api_client, test_admin_session):
 
     yield session
 
+    # Clean up boards visible to user B first. This prevents cross-test residue
+    # if admin-scoped cleanup cannot delete user-owned boards under stricter permissions.
+    try:
+        boards_response = session.get(f"{api_client}/api/boards")
+        if boards_response.status_code == 200:
+            for board in boards_response.json().get('boards', []):
+                session.delete(f"{api_client}/api/boards/{board['id']}")
+    except requests.exceptions.RequestException:
+        pass
+
     # Clean up user B's notifications after the test.
-    session.delete(f"{api_client}/api/notifications/delete-all")
+    try:
+        session.delete(f"{api_client}/api/notifications/delete-all")
+    except requests.exceptions.RequestException:
+        pass

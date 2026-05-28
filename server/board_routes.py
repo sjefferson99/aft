@@ -7,7 +7,12 @@ from flask import Blueprint, jsonify, request, send_file, g
 import io
 import json
 import logging
+import os
 import re
+import secrets
+import string
+import threading
+import time
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -57,12 +62,130 @@ _APP_VERSION = "unknown"
 # Board import/export constants
 MAX_BOARD_IMPORT_FILE_SIZE_MB = 25
 BOARD_EXPORT_FORMAT = "aft-board"
+PUBLIC_SLUG_LENGTH = 12
+PUBLIC_SLUG_ALPHABET = string.ascii_lowercase + string.digits
+PUBLIC_SLUG_PATTERN = re.compile(rf"^[a-z0-9]{{{PUBLIC_SLUG_LENGTH}}}$")
+PUBLIC_BOARD_RATE_LIMIT_PER_MINUTE = max(
+    1,
+    int(os.getenv("PUBLIC_BOARD_RATE_LIMIT_PER_MINUTE", "120")),
+)
+PUBLIC_BOARD_RATE_LIMIT_WINDOW_SECONDS = 60
+
+_public_rate_limit_store = {
+    "buckets": {},
+    "lock": threading.Lock(),
+}
+_public_rate_limit_redis = None
+_public_rate_limit_redis_init = False
 
 
 def configure_board_routes(app_version):
     """Inject runtime configuration into this module."""
     global _APP_VERSION
     _APP_VERSION = app_version
+
+
+def _generate_public_slug(db, length=PUBLIC_SLUG_LENGTH, max_attempts=32):
+    """Generate a unique public slug for board sharing URLs."""
+    for _ in range(max_attempts):
+        slug = "".join(secrets.choice(PUBLIC_SLUG_ALPHABET) for _ in range(length))
+        existing = db.query(Board.id).filter(Board.public_slug == slug).first()
+        if not existing:
+            return slug
+
+    raise RuntimeError("Failed to generate unique public slug")
+
+
+def _extract_client_ip():
+    # Avoid trusting spoofable forwarding headers unless trusted proxies are configured.
+    return request.remote_addr or "unknown"
+
+
+def _get_public_rate_limit_redis_client():
+    global _public_rate_limit_redis_init
+    global _public_rate_limit_redis
+
+    if _public_rate_limit_redis_init:
+        return _public_rate_limit_redis
+
+    _public_rate_limit_redis_init = True
+    try:
+        import redis
+
+        redis_url = os.getenv("REDIS_URL")
+        if not redis_url:
+            _public_rate_limit_redis = None
+            return None
+
+        candidate = redis.from_url(redis_url)
+        candidate.ping()
+        _public_rate_limit_redis = candidate
+        logger.info("Public board rate limiter: Redis backend enabled")
+    except Exception as error:
+        _public_rate_limit_redis = None
+        logger.warning("Public board rate limiter falling back to in-memory store: %s", error)
+
+    return _public_rate_limit_redis
+
+
+def _check_public_endpoint_rate_limit():
+    """Apply per-client fixed-window throttle for anonymous public board reads."""
+    client_ip = _extract_client_ip()
+    now_epoch = int(time.time())
+    window_id = now_epoch // PUBLIC_BOARD_RATE_LIMIT_WINDOW_SECONDS
+    redis_client = _get_public_rate_limit_redis_client()
+
+    if redis_client:
+        key = f"aft:rl:public_board:{client_ip}:{window_id}"
+        try:
+            current_count = redis_client.incr(key)
+            if current_count == 1:
+                redis_client.expire(key, PUBLIC_BOARD_RATE_LIMIT_WINDOW_SECONDS + 5)
+
+            if current_count > PUBLIC_BOARD_RATE_LIMIT_PER_MINUTE:
+                retry_after = PUBLIC_BOARD_RATE_LIMIT_WINDOW_SECONDS - (now_epoch % PUBLIC_BOARD_RATE_LIMIT_WINDOW_SECONDS)
+                return True, max(1, retry_after)
+
+            return False, 0
+        except Exception as error:
+            logger.warning("Public board Redis rate-limit check failed, using in-memory fallback: %s", error)
+
+    key = (client_ip, window_id)
+    with _public_rate_limit_store["lock"]:
+        buckets = _public_rate_limit_store["buckets"]
+        buckets[key] = buckets.get(key, 0) + 1
+
+        # Drop stale windows so fallback memory stays bounded.
+        stale_cutoff = window_id - 2
+        stale_keys = [bucket_key for bucket_key in buckets if bucket_key[1] < stale_cutoff]
+        for stale_key in stale_keys:
+            buckets.pop(stale_key, None)
+
+        current_count = buckets[key]
+
+    if current_count > PUBLIC_BOARD_RATE_LIMIT_PER_MINUTE:
+        retry_after = PUBLIC_BOARD_RATE_LIMIT_WINDOW_SECONDS - (now_epoch % PUBLIC_BOARD_RATE_LIMIT_WINDOW_SECONDS)
+        return True, max(1, retry_after)
+
+    return False, 0
+
+
+def _parse_board_working_style(setting_value):
+    """Parse working style setting value with a safe default."""
+    if not setting_value:
+        return "kanban"
+
+    try:
+        parsed = json.loads(setting_value)
+        if isinstance(parsed, str) and parsed.strip():
+            return parsed.strip().lower()
+    except (TypeError, json.JSONDecodeError):
+        pass
+
+    if isinstance(setting_value, str) and setting_value.strip():
+        return setting_value.strip().lower()
+
+    return "kanban"
 
 
 # ---------------------------------------------------------------------------
@@ -431,6 +554,8 @@ def get_boards():
                 "id": b.id, 
                 "name": b.name, 
                 "description": b.description,
+                "is_public": bool(b.is_public),
+                "public_slug": b.public_slug,
                 "created_at": serialize_datetime(b.created_at),
                 "updated_at": serialize_datetime(b.updated_at),
                 "can_delete": can_delete,
@@ -578,6 +703,8 @@ def create_board():
             "id": board.id, 
             "name": board.name, 
             "description": board.description,
+            "is_public": bool(board.is_public),
+            "public_slug": board.public_slug,
             "created_at": serialize_datetime(board.created_at),
             "updated_at": serialize_datetime(board.updated_at)
         }
@@ -1267,7 +1394,13 @@ def get_board_scheduled_cards(board_id):
         include_owner_candidates = request.args.get('include_owner_candidates', 'false').lower() == 'true'
 
         # Build nested structure with scheduled cards
-        result = {"id": board.id, "name": board.name, "columns": []}
+        result = {
+            "id": board.id,
+            "name": board.name,
+            "is_public": bool(board.is_public),
+            "public_slug": board.public_slug,
+            "columns": [],
+        }
         result.update(_build_board_owner_metadata(board, g.user.id, db, include_candidates=include_owner_candidates))
 
         eligible_users = _get_board_assignee_users(db, board_id)
@@ -1448,10 +1581,10 @@ def delete_board(board_id):
 @require_board_access()
 @require_permission('board.edit')
 def update_board(board_id):
-    """Update a board's name and/or description with validation.
+    """Update a board's name, description, and/or visibility with validation.
 
     This endpoint updates a board after validating:
-    - At least one field (name or description) is provided
+    - At least one field (name, description, or is_public) is provided
     - Name (if provided) is a string and within length limits
     - Description (if provided) is a string and within length limits
 
@@ -1478,6 +1611,10 @@ def update_board(board_id):
               type: string
               example: "Updated board description"
               description: The new description for the board
+            is_public:
+                type: boolean
+                example: true
+                description: Toggle public visibility for anonymous read-only access
     responses:
       200:
         description: Board updated successfully
@@ -1499,6 +1636,13 @@ def update_board(board_id):
                 description:
                   type: string
                   example: "Updated board description"
+                is_public:
+                    type: boolean
+                    example: true
+                public_slug:
+                    type: string
+                    nullable: true
+                    example: "a1b2c3d4e5f6"
             message:
               type: string
               example: "Board updated successfully"
@@ -1512,7 +1656,7 @@ def update_board(board_id):
               example: false
             message:
               type: string
-              example: "At least one field (name or description) is required"
+              example: "At least one field (name, description, or is_public) is required"
       404:
         description: Board not found
         schema:
@@ -1543,9 +1687,13 @@ def update_board(board_id):
         except Exception:
             data = None
             
-        if not data or ("name" not in data and "description" not in data):
+        if not data or (
+            "name" not in data
+            and "description" not in data
+            and "is_public" not in data
+        ):
             return create_error_response(
-                "At least one field (name or description) is required", 400
+                "At least one field (name, description, or is_public) is required", 400
             )
 
         # Access already validated by @require_board_access decorator
@@ -1585,6 +1733,17 @@ def update_board(board_id):
 
             board.description = description
 
+        if "is_public" in data:
+            is_public = data["is_public"]
+            if not isinstance(is_public, bool):
+                return create_error_response("is_public must be a boolean", 400)
+
+            board.is_public = is_public
+            # Keep public slug stable across visibility toggles.
+            # Slug rotation is an explicit action via the rotate endpoint.
+            if is_public and not board.public_slug:
+                board.public_slug = _generate_public_slug(db)
+
         # Set updated_at timestamp
         board.updated_at = utc_now()
 
@@ -1595,6 +1754,8 @@ def update_board(board_id):
             "id": board.id, 
             "name": board.name, 
             "description": board.description,
+            "is_public": bool(board.is_public),
+            "public_slug": board.public_slug,
             "created_at": serialize_datetime(board.created_at),
             "updated_at": serialize_datetime(board.updated_at)
         }
@@ -1606,6 +1767,247 @@ def update_board(board_id):
         db.rollback()
         logger.error(f"Error updating board {board_id}: {str(e)}")
         return create_error_response("Failed to update board", 500)
+    finally:
+        db.close()
+
+
+@board_bp.route("/api/boards/<int:board_id>/public-link/rotate", methods=["POST"])
+@require_board_access()
+@require_permission('board.edit')
+def rotate_public_board_link(board_id):
+    """Rotate a board's public link slug.
+    ---
+    tags:
+      - Boards
+    parameters:
+      - name: board_id
+        in: path
+        type: integer
+        required: true
+        description: The ID of the board to rotate public link for
+    responses:
+      200:
+        description: Public link rotated successfully
+      400:
+        description: Board is not public
+      404:
+        description: Board not found
+      500:
+        description: Server error
+    """
+    db = SessionLocal()
+    try:
+        board = db.query(Board).filter(Board.id == board_id).first()
+        if not board:
+            return create_error_response("Board not found", 404)
+
+        if not board.is_public:
+            return create_error_response("Board must be public before rotating its link", 400)
+
+        previous_slug = board.public_slug
+        new_slug = _generate_public_slug(db)
+        # Extremely unlikely collision with existing board and avoid no-op reuse.
+        while previous_slug and new_slug == previous_slug:
+            new_slug = _generate_public_slug(db)
+
+        board.public_slug = new_slug
+        board.updated_at = utc_now()
+
+        db.commit()
+        db.refresh(board)
+
+        result = {
+            "id": board.id,
+            "name": board.name,
+            "description": board.description,
+            "is_public": bool(board.is_public),
+            "public_slug": board.public_slug,
+            "created_at": serialize_datetime(board.created_at),
+            "updated_at": serialize_datetime(board.updated_at),
+        }
+        return create_success_response(
+            {
+                "board": result,
+                "previous_public_slug": previous_slug,
+                "message": "Public link rotated successfully",
+            }
+        )
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error rotating public link for board {board_id}: {str(e)}")
+        return create_error_response("Failed to rotate public link", 500)
+    finally:
+        db.close()
+
+
+@board_bp.route("/api/public/boards/<string:slug>", methods=["GET"])
+def get_public_board(slug):
+    """Get a public read-only board payload by public slug.
+    ---
+    tags:
+      - Boards
+    parameters:
+      - name: slug
+        in: path
+        type: string
+        required: true
+        description: Public board slug
+      - name: archived
+        in: query
+        type: string
+        required: false
+        enum: ['true', 'false', 'both']
+        default: 'false'
+        description: Filter by archived status
+      - name: done
+        in: query
+        type: string
+        required: false
+        enum: ['true', 'false', 'both']
+        default: 'both'
+        description: Filter by done status
+    responses:
+      200:
+        description: Public board payload
+      400:
+        description: Invalid query parameter
+      404:
+        description: Public board not found
+      500:
+        description: Server error
+    """
+    db = SessionLocal()
+    try:
+        is_limited, retry_after = _check_public_endpoint_rate_limit()
+        if is_limited:
+            response, status_code = create_error_response("Too many requests", 429)
+            response.headers["Retry-After"] = str(retry_after)
+            response.headers["Cache-Control"] = "private, no-store, max-age=0"
+            return response, status_code
+
+        safe_slug = (slug or "").strip().lower()
+        if not safe_slug or not PUBLIC_SLUG_PATTERN.fullmatch(safe_slug):
+            return create_error_response("Board not found", 404)
+
+        board = (
+            db.query(Board)
+            .filter(Board.public_slug == safe_slug, Board.is_public.is_(True))
+            .first()
+        )
+        if not board:
+            return create_error_response("Board not found", 404)
+
+        archived_param = request.args.get("archived", "false").lower()
+        if archived_param not in {"true", "false", "both"}:
+            return create_error_response("archived must be one of true, false, both", 400)
+
+        done_param = request.args.get("done", "both").lower()
+        if done_param not in {"true", "false", "both"}:
+            return create_error_response("done must be one of true, false, both", 400)
+
+        columns = (
+            db.query(BoardColumn)
+            .filter(BoardColumn.board_id == board.id)
+            .order_by(BoardColumn.order)
+            .all()
+        )
+        working_style_setting = (
+            db.query(BoardSetting)
+            .filter(BoardSetting.board_id == board.id, BoardSetting.key == "working_style")
+            .first()
+        )
+
+        result = {
+            "id": board.id,
+            "name": board.name,
+            "description": board.description,
+            "is_public": bool(board.is_public),
+            "public_slug": board.public_slug,
+            "working_style": _parse_board_working_style(
+                working_style_setting.value if working_style_setting else None
+            ),
+            "created_at": serialize_datetime(board.created_at),
+            "updated_at": serialize_datetime(board.updated_at),
+            "columns": [],
+        }
+
+        for column in columns:
+            cards_query = db.query(Card).filter(
+                Card.column_id == column.id,
+                Card.scheduled.is_(False),
+            )
+
+            if archived_param == "true":
+                cards_query = cards_query.filter(Card.archived.is_(True))
+            elif archived_param == "false":
+                cards_query = cards_query.filter(Card.archived.is_(False))
+
+            if done_param == "true":
+                cards_query = cards_query.filter(Card.done.is_(True))
+            elif done_param == "false":
+                cards_query = cards_query.filter(Card.done.is_(False))
+
+            cards_query = cards_query.options(
+                selectinload(Card.checklist_items),
+                selectinload(Card.comments),
+            )
+            cards = cards_query.order_by(Card.order).all()
+
+            cards_data = [
+                {
+                    "id": card.id,
+                    "title": card.title,
+                    "description": card.description,
+                    "order": card.order,
+                    "archived": card.archived,
+                    "done": card.done,
+                    "created_at": serialize_datetime(card.created_at),
+                    "updated_at": serialize_datetime(card.updated_at),
+                    "checklist_items": [
+                        {
+                            "id": item.id,
+                            "card_id": item.card_id,
+                            "name": item.name,
+                            "checked": item.checked,
+                            "order": item.order,
+                            "created_at": serialize_datetime(item.created_at),
+                            "updated_at": serialize_datetime(item.updated_at),
+                        }
+                        for item in card.checklist_items
+                    ],
+                    "comments": [
+                        {
+                            "id": comment.id,
+                            "card_id": comment.card_id,
+                            "comment": comment.comment,
+                            "order": comment.order,
+                            "created_at": serialize_datetime(comment.created_at),
+                        }
+                        for comment in card.comments
+                    ],
+                }
+                for card in cards
+            ]
+
+            result["columns"].append(
+                {
+                    "id": column.id,
+                    "name": column.name,
+                    "order": column.order,
+                    "created_at": serialize_datetime(column.created_at),
+                    "updated_at": serialize_datetime(column.updated_at),
+                    "cards": cards_data,
+                }
+            )
+
+        response, status_code = create_success_response({"board": result})
+        response.headers["X-Robots-Tag"] = "noindex, nofollow, noarchive"
+        response.headers["Cache-Control"] = "private, no-store, max-age=0"
+        return response, status_code
+    except Exception as e:
+        logger.error(f"Error getting public board '{slug}': {str(e)}")
+        return create_error_response("Failed to load public board", 500)
     finally:
         db.close()
 
@@ -1774,3 +2176,4 @@ def get_board_owner(board_id):
         return create_error_response("Failed to load board owner metadata", 500)
     finally:
         db.close()
+

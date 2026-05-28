@@ -6,7 +6,7 @@
   const colorValidationElement = document.createElement('span');
   // Expose as a shared constant so other scripts (e.g. header.js) can reuse
   // the same list rather than maintaining a separate copy.
-  const PUBLIC_PAGE_PATHS = window.__aftPublicPagePaths = ['/login.html', '/register.html', '/logout.html', '/setup.html', '/about.html', '/docs.html'];
+  const PUBLIC_PAGE_PATHS = window.__aftPublicPagePaths = ['/login.html', '/register.html', '/logout.html', '/setup.html', '/about.html', '/docs.html', '/public-board.html'];
 
   function isPublicPagePath(pathname) {
     return PUBLIC_PAGE_PATHS.some((pagePath) => pathname.includes(pagePath));

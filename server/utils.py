@@ -756,6 +756,16 @@ def get_user_permissions(user_id, board_id=None):
     
     db = SessionLocal()
     try:
+        global_query = db.query(Role.permissions).join(UserRole).filter(
+            UserRole.user_id == user_id,
+            UserRole.board_id.is_(None)
+        )
+
+        global_perms = set()
+        for (perms_json,) in global_query.all():
+            perms = json.loads(perms_json)
+            global_perms.update(perms)
+
         if board_id:
             # Check if user is the board owner - owners have ALL permissions on their boards
             board = db.query(Board).filter(Board.id == board_id).first()
@@ -769,14 +779,8 @@ def get_user_permissions(user_id, board_id=None):
                     'schedule.create', 'schedule.view', 'schedule.edit', 'schedule.delete',
                     'setting.view', 'setting.edit',
                 }
-                # Also include any global permissions they have (for user.role, theme permissions, etc)
-                global_query = db.query(Role.permissions).join(UserRole).filter(
-                    UserRole.user_id == user_id,
-                    UserRole.board_id.is_(None)
-                )
-                for (perms_json,) in global_query.all():
-                    perms = json.loads(perms_json)
-                    owner_perms.update(perms)
+                # Also include global permissions (for user.role, theme permissions, etc)
+                owner_perms.update(global_perms)
                 return owner_perms
             
             # Not the owner - check for board-specific roles
@@ -793,24 +797,16 @@ def get_user_permissions(user_id, board_id=None):
                 perms = json.loads(perms_json)
                 board_specific_perms.update(perms)
             
-            # If board-specific roles exist, use ONLY those (they override global)
+            # If board-specific roles exist, use those plus any global system-level
+            # permissions that must remain universal, especially system.admin.
             if has_board_specific_roles:
+                if 'system.admin' in global_perms:
+                    board_specific_perms.add('system.admin')
                 return board_specific_perms
             
             # No board-specific roles, fall through to get global roles
-        
-        # Get global roles only
-        query = db.query(Role.permissions).join(UserRole).filter(
-            UserRole.user_id == user_id,
-            UserRole.board_id.is_(None)
-        )
-        
-        all_perms = set()
-        for (perms_json,) in query.all():
-            perms = json.loads(perms_json)
-            all_perms.update(perms)
-        
-        return all_perms
+
+        return global_perms
     finally:
         db.close()
 

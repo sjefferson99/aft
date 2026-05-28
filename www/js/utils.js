@@ -7,6 +7,21 @@
  */
 (function() {
   const originalFetch = window.fetch;
+
+  function isPublicPagePath(pathname) {
+    const publicPages = window.__aftPublicPagePaths || [
+      '/login.html',
+      '/register.html',
+      '/logout.html',
+      '/setup.html',
+      '/about.html',
+      '/docs.html',
+      '/public-board.html'
+    ];
+
+    return publicPages.some((pagePath) => (pathname || '').includes(pagePath));
+  }
+
   window.fetch = async function(...args) {
     const response = await originalFetch.apply(this, args);
     
@@ -21,13 +36,8 @@
       window.currentUser = null;
       window.userDataReady = false;
       
-      // Don't redirect if already on login, register, logout, setup, about, or docs pages
-      if (!window.location.pathname.includes('login.html') && 
-          !window.location.pathname.includes('register.html') &&
-          !window.location.pathname.includes('logout.html') &&
-          !window.location.pathname.includes('setup.html') &&
-          !window.location.pathname.includes('about.html') &&
-          !window.location.pathname.includes('docs.html')) {
+      // Don't redirect on public pages.
+      if (!isPublicPagePath(window.location.pathname)) {
         console.error('Authentication required, redirecting to login page');
         // Store the current page to redirect back after login
         sessionStorage.setItem('redirectAfterLogin', window.location.pathname + window.location.search);

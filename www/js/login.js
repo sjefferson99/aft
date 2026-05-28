@@ -13,6 +13,24 @@ const createTimeoutController = window.NetworkTimeoutUtils?.createTimeoutControl
         return { controller, timeoutId, timeoutMs: baseTimeoutMs };
     });
 
+function isSafeRelativePath(path) {
+    return typeof path === 'string' && path.startsWith('/') && !path.startsWith('//');
+}
+
+// Support login links that pass ?redirect=... while preserving existing
+// sessionStorage redirect flow used elsewhere in the app.
+(function hydrateRedirectFromQuery() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const redirectParam = params.get('redirect');
+        if (isSafeRelativePath(redirectParam)) {
+            sessionStorage.setItem('redirectAfterLogin', redirectParam);
+        }
+    } catch (error) {
+        console.warn('Unable to parse login redirect query parameter:', error);
+    }
+})();
+
 form.addEventListener('submit', async (e) => {
     e.preventDefault();
     loginFlowInProgress = true;
@@ -60,7 +78,7 @@ form.addEventListener('submit', async (e) => {
             // Validate redirect URL to prevent open redirect attacks
             // Only allow relative paths (no external URLs)
             let targetUrl = '/';
-            if (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//')) {
+            if (isSafeRelativePath(redirectUrl)) {
                 targetUrl = redirectUrl;
             }
             
@@ -155,7 +173,7 @@ async function checkAuth() {
                 // Validate redirect URL to prevent open redirect attacks
                 // Only allow relative paths (no external URLs)
                 let targetUrl = '/';
-                if (redirectUrl && redirectUrl.startsWith('/') && !redirectUrl.startsWith('//')) {
+                if (isSafeRelativePath(redirectUrl)) {
                     targetUrl = redirectUrl;
                 }
                 

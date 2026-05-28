@@ -88,6 +88,15 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Default Board Setting** - Set a default board to load on startup
 - **Board Statistics** - View counts of boards, columns, and cards
 
+### 🌐 Public Board Sharing (Read-Only)
+- **Public Visibility Toggle** - Board owners/editors can switch a board between private and public from the board settings menu.
+- **Stable Share Link** - Making a board private and public again keeps the same public slug unless you explicitly rotate it.
+- **Rotate Public Link** - Use "Rotate Public Link" in board settings to immediately invalidate the old URL and issue a new one.
+- **Dedicated Public Page** - Public links open at `/public-board.html?slug=<slug>` for anonymous viewing.
+- **Read-Only by Design** - Public boards do not expose edit controls, websocket mutation paths, assignee metadata, or commenter identity fields.
+- **Anonymous Write Denial** - Anonymous POST/PATCH/DELETE requests to protected board/card endpoints remain denied.
+- **Traffic Hardening** - Public board reads are throttled at both application and reverse-proxy layers.
+
 ![Board List](images/boards.png)
 
 ### 📊 Column Management
@@ -272,6 +281,10 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **RESTful API** - Full API access for integrations and automation
 - **Health Checks** - Database connectivity and version endpoints
 
+Public board API endpoints include:
+- `GET /api/public/boards/<slug>` - Anonymous read-only board payload
+- `POST /api/boards/<id>/public-link/rotate` - Authenticated link rotation for public boards
+
 ![API Documentation](images/api_docs.png)
 
 ## 📡 System Status Widget
@@ -380,6 +393,8 @@ The application includes a multi-user security model with authentication, role-b
 - **Ownership and IDOR Protection** - Server-side scoping checks prevent users from accessing resources they do not own or are not assigned to.
 - **Secure Session Defaults** - HTTPS-first behaviour, secure session cookies by default, and optional Redis-backed server-side sessions.
 - **Operational Hardening** - Token-protected health checks and browser hardening headers in the reverse proxy layer.
+- **Public Board Guardrails** - Anonymous access is limited to redacted read-only board payloads via slug URLs; private boards and all write/admin endpoints remain auth-gated.
+- **Public Route Controls** - Public board endpoints include crawler-dissuasion/cache headers and request throttling to reduce abuse risk.
 
 ### Permissions Access Model and User Lifecycle
 
