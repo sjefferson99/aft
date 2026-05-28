@@ -1894,6 +1894,7 @@ button.readonly-disabled,
     min-height: 0;
     justify-content: flex-start;
     align-items: flex-start;
+    scroll-snap-type: none;
     scroll-padding-inline: 0;
     touch-action: pan-x;
     scrollbar-width: thin;
@@ -1903,6 +1904,7 @@ button.readonly-disabled,
   .column,
   .add-column-placeholder {
     flex: 0 0 var(--mobile-column-width);
+    scroll-snap-align: none;
   }
 
   .column {
