@@ -4,10 +4,12 @@
 SSL_DIR="/etc/nginx/ssl"
 CERT_FILE="$SSL_DIR/cert.pem"
 KEY_FILE="$SSL_DIR/key.pem"
-EMBED_CSP_FILE="/etc/nginx/conf.d/embed_frame_ancestors.conf"
+EMBED_CSP_DIR="/etc/nginx/snippets"
+EMBED_CSP_FILE="$EMBED_CSP_DIR/embed_frame_ancestors.inc"
 
 # Create SSL directory if it doesn't exist
 mkdir -p $SSL_DIR
+mkdir -p $EMBED_CSP_DIR
 
 # Generate self-signed certificate if it doesn't exist
 if [ ! -f "$CERT_FILE" ] || [ ! -f "$KEY_FILE" ]; then

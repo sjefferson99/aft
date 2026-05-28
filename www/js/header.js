@@ -1535,18 +1535,24 @@ class Header {
         await navigator.clipboard.writeText(embedCode);
       } else {
         const textarea = document.createElement('textarea');
-        textarea.value = embedCode;
-        textarea.setAttribute('readonly', '');
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand('copy');
-        textarea.remove();
+        try {
+          textarea.value = embedCode;
+          textarea.setAttribute('readonly', '');
+          textarea.style.position = 'fixed';
+          textarea.style.opacity = '0';
+          document.body.appendChild(textarea);
+          textarea.select();
+
+          const copied = document.execCommand('copy');
+          if (!copied) {
+            throw new Error('document.execCommand(\'copy\') returned false');
+          }
+        } finally {
+          textarea.remove();
+        }
       }
 
-      this.showHeaderToast('Embed code copied to clipboard');
-      this.showHeaderToast('If embedding fails, add the host origin to EMBED_ALLOWED_ORIGINS and restart nginx.');
+      this.showHeaderToast('Embed code copied. If embedding fails, add the host origin to EMBED_ALLOWED_ORIGINS and restart nginx.');
     } catch (error) {
       console.error('Error copying embed code:', error);
       this.showBoardPageToast('Unable to copy embed code automatically.');
