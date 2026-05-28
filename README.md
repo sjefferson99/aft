@@ -344,6 +344,39 @@ CORS_ALLOWED_ORIGINS=http://your-docker-host-ip,https://your-docker-host-ip,http
 
 Provide a comma-separated list of all origins that should be allowed to connect, including the exact scheme and host you use in the browser (for example https://staustell). This prevents Cross-Site Request Forgery and Cross-Site WebSocket Hijacking attacks by only accepting connections from trusted sources.
 
+### Public Board iframe Embedding (Trusted Sites)
+If you plan to embed public boards on external websites, keep framing restricted to trusted partner origins only.
+
+Set `EMBED_ALLOWED_ORIGINS` in `.env` as a comma-separated list of exact origins:
+
+```
+EMBED_ALLOWED_ORIGINS=https://partner-a.example,https://portal.partner-b.example
+```
+
+Notes:
+
+- This setting is for frame-embedding allowlists (clickjacking protection), not API CORS.
+- Keep the list minimal and avoid wildcards.
+- The nginx service must load `.env` (compose files in this repo are configured for this) and be restarted after changes.
+- Public board iframe use and parent-site direct API calls are different:
+  - iframe usage: board interactions run inside the AFT origin and should not require parent-origin CORS.
+  - parent-site direct API calls: still require that parent origin in `CORS_ALLOWED_ORIGINS`.
+
+#### iframe Embed Troubleshooting
+- "Refused to frame" in browser console:
+  - Ensure the host origin is listed in `EMBED_ALLOWED_ORIGINS`.
+  - Recreate/restart nginx so the runtime header include is regenerated.
+- Board opens directly but not in partner site:
+  - Confirm partner page uses the same exact scheme/host/port you allowlisted.
+  - Confirm partner page is not forcing an overly restrictive iframe `sandbox`.
+- Partner site direct API calls fail with CORS:
+  - Add partner origin to `CORS_ALLOWED_ORIGINS` (separate from iframe settings).
+
+Use the lightweight validation assets to confirm header behavior:
+
+- Checklist: [docs/EMBED_VALIDATION.md](docs/EMBED_VALIDATION.md)
+- Script: `powershell -ExecutionPolicy Bypass -File scripts/check-embed-policy.ps1 -BaseUrl https://localhost -ExpectedAllowedOrigins https://partner-a.example`
+
 ### HTTPS and Session Cookie Security
 By default, the stack now enforces secure session cookies and redirects direct HTTP requests to HTTPS.
 
