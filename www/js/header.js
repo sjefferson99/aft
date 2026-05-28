@@ -1546,6 +1546,7 @@ class Header {
       }
 
       this.showHeaderToast('Embed code copied to clipboard');
+      this.showHeaderToast('If embedding fails, add the host origin to EMBED_ALLOWED_ORIGINS and restart nginx.');
     } catch (error) {
       console.error('Error copying embed code:', error);
       this.showBoardPageToast('Unable to copy embed code automatically.');
