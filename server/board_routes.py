@@ -2063,7 +2063,12 @@ def get_public_card(slug, card_id):
         card = (
             db.query(Card)
             .join(BoardColumn, Card.column_id == BoardColumn.id)
-            .filter(BoardColumn.board_id == board.id, Card.id == card_id)
+            .filter(
+                BoardColumn.board_id == board.id,
+                Card.id == card_id,
+                Card.scheduled.is_(False),
+                Card.archived.is_(False),
+            )
             .options(
                 selectinload(Card.checklist_items),
                 selectinload(Card.comments),
