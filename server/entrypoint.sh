@@ -27,6 +27,10 @@ fi
 
 # Build embed frame-ancestor allowlist for public-board.html.
 # Default is self-only embedding unless explicit trusted origins are provided.
+#
+# Accepted entries:
+# - Exact origins: https://partner.example
+# - Controlled subdomain wildcard: https://*.partner.example
 embed_ancestors="'self'"
 
 if [ -n "$EMBED_ALLOWED_ORIGINS" ]; then
@@ -43,7 +47,7 @@ if [ -n "$EMBED_ALLOWED_ORIGINS" ]; then
             continue
         fi
 
-        if printf '%s' "$origin" | grep -Eq '^https?://[A-Za-z0-9.-]+(:[0-9]+)?$'; then
+        if printf '%s' "$origin" | grep -Eq '^https?://(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:[0-9]+)?$'; then
             embed_ancestors="$embed_ancestors $origin"
         else
             echo "Ignoring invalid EMBED_ALLOWED_ORIGINS entry: $origin"

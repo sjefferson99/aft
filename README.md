@@ -361,16 +361,24 @@ Provide a comma-separated list of all origins that should be allowed to connect,
 ### Public Board iframe Embedding (Trusted Sites)
 If you plan to embed public boards on external websites, keep framing restricted to trusted partner origins only.
 
-Set `EMBED_ALLOWED_ORIGINS` in `.env` as a comma-separated list of exact origins:
+Set `EMBED_ALLOWED_ORIGINS` in `.env` as a comma-separated list of origins.
+Both exact origins and controlled subdomain wildcard patterns are supported:
 
 ```
 EMBED_ALLOWED_ORIGINS=https://partner-a.example,https://portal.partner-b.example
 ```
 
+Example for an owned domain and all its subdomains:
+
+```
+EMBED_ALLOWED_ORIGINS=https://partner.example,https://*.partner.example
+```
+
 Notes:
 
 - This setting is for frame-embedding allowlists (clickjacking protection), not API CORS.
-- Keep the list minimal and avoid wildcards.
+- Keep the list minimal. If you use wildcard patterns, scope them to domains you control.
+- Wildcard patterns (for example `https://*.partner.example`) do not include the apex domain; include both when required.
 - The nginx service must load `.env` and pass `EMBED_ALLOWED_ORIGINS` into the container runtime. Both `compose.example.yml` and `compose.yml` include this by default; preserve it if you customize compose.
 - After changing `.env`, recreate nginx so startup scripts regenerate CSP headers: `docker compose up -d --force-recreate nginx`.
 - Public board iframe use and parent-site direct API calls are different:
@@ -384,6 +392,9 @@ Notes:
 - Board opens directly but not in partner site:
   - Confirm partner page uses the same exact scheme/host/port you allowlisted.
   - Confirm partner page is not forcing an overly restrictive iframe `sandbox`.
+- Works on published page but fails in WordPress editor/preview:
+  - The wp-admin/editor chain may introduce sandboxed or intermediate frame ancestors that do not match your allowlist.
+  - Validate on the real published page URL (not `wp-admin` preview) before concluding embed policy is wrong.
 - Partner site direct API calls fail with CORS:
   - Add partner origin to `CORS_ALLOWED_ORIGINS` (separate from iframe settings).
 
