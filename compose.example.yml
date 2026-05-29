@@ -13,6 +13,12 @@
 #   MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD
 #   HEALTHCHECK_TOKEN, SECRET_KEY, and any other app env vars
 #
+# Important:
+# - Keep env_file: .env on BOTH server and nginx services.
+# - nginx reads EMBED_ALLOWED_ORIGINS at startup to build iframe frame-ancestors CSP.
+# - If your existing compose.yml was customized earlier, merge updates from this file
+#   so nginx still receives EMBED_ALLOWED_ORIGINS.
+#
 # To deploy server + UI:  use the nginx service (enabled by default)
 # To deploy server only:  comment out or remove the nginx service
 
@@ -78,6 +84,10 @@ services:
     security_opt:
       - no-new-privileges:true
     env_file: .env
+    environment:
+      # Keep explicit passthrough so custom compose overrides do not accidentally
+      # drop EMBED_ALLOWED_ORIGINS from the nginx runtime environment.
+      - EMBED_ALLOWED_ORIGINS=${EMBED_ALLOWED_ORIGINS}
     depends_on:
       server:
         condition: service_healthy

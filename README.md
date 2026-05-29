@@ -39,12 +39,26 @@ mv compose.example.yml compose.yml
 > **Note:** The GHCR images are public, so `docker compose pull` requires no authentication. If you are pulling a private fork, log in first with `docker login ghcr.io`.
 
 - Edit `.env` with your passwords, CORS config, and any other options (see comments in the file and the configuration details below)
+- Keep your deployed `compose.yml` aligned with the latest `compose.example.yml` when upgrading. Older/custom compose files can miss required env wiring (for example nginx `env_file`) and silently break embed policy config.
 - `docker compose pull`
 - `docker compose up -d`
 - Adjust backup folder permissions as below
 - Navigate to `http(s)://<docker-host>`
 
 To pull the latest release in future: `docker compose pull && docker compose up -d`
+
+When updating an existing deployment, refresh your compose template first and merge any new service/env settings:
+
+```sh
+curl -o compose.example.yml https://raw.githubusercontent.com/sjefferson99/aft/main/compose.example.yml
+diff -u compose.yml compose.example.yml
+```
+
+After merge/apply, recreate services so env changes take effect:
+
+```sh
+docker compose up -d --force-recreate
+```
 
 Available images:
 - `ghcr.io/sjefferson99/aft:latest` — API server only
@@ -357,7 +371,8 @@ Notes:
 
 - This setting is for frame-embedding allowlists (clickjacking protection), not API CORS.
 - Keep the list minimal and avoid wildcards.
-- The nginx service must load `.env` (compose files in this repo are configured for this) and be restarted after changes.
+- The nginx service must load `.env` and pass `EMBED_ALLOWED_ORIGINS` into the container runtime. Both `compose.example.yml` and `compose.yml` include this by default; preserve it if you customize compose.
+- After changing `.env`, recreate nginx so startup scripts regenerate CSP headers: `docker compose up -d --force-recreate nginx`.
 - Public board iframe use and parent-site direct API calls are different:
   - iframe usage: board interactions run inside the AFT origin and should not require parent-origin CORS.
   - parent-site direct API calls: still require that parent origin in `CORS_ALLOWED_ORIGINS`.
@@ -376,6 +391,22 @@ Use the lightweight validation assets to confirm header behavior:
 
 - Checklist: [docs/EMBED_VALIDATION.md](docs/EMBED_VALIDATION.md)
 - Script: `powershell -ExecutionPolicy Bypass -File scripts/check-embed-policy.ps1 -BaseUrl https://localhost -ExpectedAllowedOrigins https://partner-a.example`
+
+#### Post-upgrade verification
+After updating compose templates or changing `.env`, run these checks to confirm nginx is receiving embed origins and serving the expected CSP:
+
+```sh
+docker compose up -d --force-recreate nginx
+docker exec aft-web sh -lc 'echo "EMBED_ALLOWED_ORIGINS=$EMBED_ALLOWED_ORIGINS"'
+docker exec aft-web cat /etc/nginx/snippets/embed_frame_ancestors.inc
+curl -I "https://<your-aft-host>/public-board.html?slug=<your-public-slug>"
+```
+
+Expected results:
+
+- `EMBED_ALLOWED_ORIGINS` inside `aft-web` is non-empty.
+- `embed_frame_ancestors.inc` includes your allowlisted origins after `'self'`.
+- `Content-Security-Policy` on `/public-board.html` includes `frame-ancestors` with the same origins.
 
 ### HTTPS and Session Cookie Security
 By default, the stack now enforces secure session cookies and redirects direct HTTP requests to HTTPS.
