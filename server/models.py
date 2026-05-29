@@ -204,6 +204,19 @@ class Setting(Base):
         return f"<Setting(id={self.id}, key='{self.key}')>"
 
 
+class InstanceConfig(Base):
+    """InstanceConfig model for storing global instance configuration."""
+
+    __tablename__ = "instance_config"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    key = Column(String(255), nullable=False, unique=True, index=True)
+    value = Column(String(1024), nullable=True)
+
+    def __repr__(self):
+        return f"<InstanceConfig(id={self.id}, key='{self.key}')>"
+
+
 class BoardSetting(Base):
     """BoardSetting model for storing board-specific configuration."""
 

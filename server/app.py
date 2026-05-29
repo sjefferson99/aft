@@ -28,6 +28,7 @@ from backup_routes import backup_bp, configure_backup_routes
 from column_routes import column_bp, configure_column_routes
 from card_routes import card_bp, configure_card_routes
 from schedule_routes import schedule_bp, configure_schedule_routes
+from branding_routes import branding_bp
 from broadcasting import (
     broadcast_failures,
     broadcast_failures_lock,
@@ -284,6 +285,7 @@ app.register_blueprint(board_bp)
 app.register_blueprint(column_bp)
 app.register_blueprint(card_bp)
 app.register_blueprint(schedule_bp)
+app.register_blueprint(branding_bp)
 
 # Load user from session before each request
 @app.before_request

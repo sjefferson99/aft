@@ -35,20 +35,30 @@ Implementation approach is intentionally two-stage:
 ## Tasks
 
 ### Phase 1: Permission + Model
-- [ ] **1.1** Add `branding.edit` to `PERMISSION_DEFINITIONS` in `server/permissions.py`
-- [ ] **1.2** Add `branding.edit` to `administrator` role's `INITIAL_ROLES` permissions list in `server/permissions.py`
-- [ ] **1.3** Add `InstanceConfig` model to `server/models.py` — columns: `id` (PK), `key` (String(255), unique, not null), `value` (String(1024), nullable)
-- [ ] **1.4** Create migration `028_add_instance_config_table.py` in `server/alembic/versions/` using method 2 (manual) from `MIGRATION_GUIDE.md`
-- [ ] **1.5** Add `instance_config` to `expected_tables` list in `app.py`'s `validate_schema_integrity()` function
-- [ ] **1.6** Add `InstanceConfig` import to `server/alembic/env.py`
+- [x] **1.1** Add `branding.edit` to `PERMISSION_DEFINITIONS` in `server/permissions.py`
+- [x] **1.2** Add `branding.edit` to `administrator` role's `INITIAL_ROLES` permissions list in `server/permissions.py`
+- [x] **1.3** Add `InstanceConfig` model to `server/models.py` — columns: `id` (PK), `key` (String(255), unique, not null), `value` (String(1024), nullable)
+- [x] **1.4** Create migration `028_add_instance_config_table.py` in `server/alembic/versions/` using method 2 (manual) from `MIGRATION_GUIDE.md`
+- [x] **1.5** Add `instance_config` to `expected_tables` list in `server/security_validators.py`'s `validate_schema_integrity()` function
+- [x] **1.6** Add `InstanceConfig` import to `server/alembic/env.py`
 
-### Phase 2: Backend API (`server/branding_routes.py`)
+### Phase 2: Backend API (`server/branding_routes.py`) + API tests
 New blueprint `branding_bp`, registered in `server/app.py`. Use `theme_routes.py` as implementation template for file handling, path traversal guards, `require_permission`, `create_error_response`, and `create_success_response` patterns.
 
-- [ ] **2.1** `GET /api/branding/logo` — **no auth required**; queries `InstanceConfig` for key `custom_logo_filename`; returns `{"filename": "<name>"}` or `{"filename": null}`. Swagger tag: `Branding`.
-- [ ] **2.2** `POST /api/branding/logo` — requires `branding.edit`; validates extension (`.webp`, `.png`, `.jpg`, `.jpeg`, `.gif`); enforces **100 KB** max file size (checked in Python via `file.seek(0, 2)` / `file.tell()`); saves to `/var/www/images/backgrounds/logos/logo_<timestamp>_<uuid>.ext`; upserts `InstanceConfig(key='custom_logo_filename', value=filename)`; returns `{"filename": "<name>"}`. Swagger tag: `Branding`.
-- [ ] **2.3** `DELETE /api/branding/logo` — requires `branding.edit`; deletes the `InstanceConfig` row (does NOT delete file from disk); returns success response. Swagger tag: `Branding`.
-- [ ] **2.4** Register `branding_bp` in `server/app.py`
+- [x] **2.1** `GET /api/branding/logo` — **no auth required**; queries `InstanceConfig` for key `custom_logo_filename`; returns `{"filename": "<name>"}` or `{"filename": null}`. Swagger tag: `Branding`.
+- [x] **2.2** `POST /api/branding/logo` — requires `branding.edit`; validates extension (`.webp`, `.png`, `.jpg`, `.jpeg`, `.gif`); enforces **100 KB** max file size (checked in Python via `file.seek(0, 2)` / `file.tell()`); saves to `/var/www/images/backgrounds/logos/logo_<timestamp>_<uuid>.ext`; upserts `InstanceConfig(key='custom_logo_filename', value=filename)`; returns `{"filename": "<name>"}`. Swagger tag: `Branding`.
+- [x] **2.3** `DELETE /api/branding/logo` — requires `branding.edit`; deletes the `InstanceConfig` row (does NOT delete file from disk); returns success response. Swagger tag: `Branding`.
+- [x] **2.4** Register `branding_bp` in `server/app.py`
+- [x] **2.5** Add API-only endpoint coverage in `server/tests/test_api_branding.py`
+  - Public `GET /api/branding/logo` returns `filename: null` by default
+  - Authenticated `GET /api/branding/logo` returns `filename: null` by default
+  - Successful upload returns filename and persists through subsequent GET
+  - Oversize upload is rejected at 100 KB
+  - Invalid extension is rejected
+  - Non-admin upload is denied
+  - Successful reset returns to `filename: null`
+  - Non-admin reset is denied
+  - Public GET still works after upload
 
 ### Phase 3: Frontend — Dynamic Logo in `header.js` (MVP)
 After the header HTML is injected into the DOM (the existing block around line 266 that sets `logoImg.src = LOGO_PATH`), fetch `GET /api/branding/logo` with AbortController/5-second timeout (per `FRONTEND_ERROR_HANDLING.md`). If a custom filename is returned, override both `.header-logo` `src` and all `link[rel="icon"]` `href` values to `/images/backgrounds/logos/<filename>`. Fall back silently to `LOGO_PATH`/`FAVICON_PATH` constants on null response, network error, or timeout.
@@ -73,34 +83,21 @@ New "Branding" section in `settings.html`, hidden by default. Loaded and control
   - Reset handler: DELETE `/api/branding/logo`, revert preview to default AFT logo path, show toast on success/error
   - All fetch calls use AbortController with 5-second timeout per project standard
 
-### Phase 5: Tests (`server/tests/test_api_branding.py`)
-API-only tests (no direct DB/filesystem access per `SERVER_TESTING.md`).
-
-- [ ] **5.1** `test_get_logo_unauthenticated` — GET without session cookie → 200, `filename` is null
-- [ ] **5.2** `test_get_logo_authenticated_no_custom` — GET with session → 200, `filename` is null
-- [ ] **5.3** `test_upload_logo_success` — POST valid WebP (<100 KB) → 200, `filename` returned; subsequent GET returns that filename
-- [ ] **5.4** `test_upload_logo_too_large` — POST file >100 KB → 400
-- [ ] **5.5** `test_upload_logo_invalid_extension` — POST `.txt` file → 400
-- [ ] **5.6** `test_upload_logo_no_permission` — POST as non-admin user → 403
-- [ ] **5.7** `test_reset_logo` — DELETE after upload → 200; subsequent GET returns `filename: null`
-- [ ] **5.8** `test_reset_logo_no_permission` — DELETE as non-admin user → 403
-- [ ] **5.9** `test_get_logo_unauthenticated_after_upload` — upload a logo, then GET without a session cookie → 200, `filename` is the uploaded name (proves public endpoint)
-
-### Phase 6: Final Optimization — Auto-generated format variants
+### Phase 5: Final Optimization — Auto-generated format variants
 Add this phase after MVP is merged and stable.
 
-- [ ] **6.1** Add Pillow dependency in backend requirements and Docker image
-- [ ] **6.2** On upload, generate normalized logo variants from source file:
+- [ ] **5.1** Add Pillow dependency in backend requirements and Docker image
+- [ ] **5.2** On upload, generate normalized logo variants from source file:
   - `logo_<id>.webp` (primary for modern browsers)
   - `logo_<id>.png` (fallback for broad compatibility, including favicon)
-- [ ] **6.3** Persist a small metadata JSON in `InstanceConfig` instead of a single filename, for example:
+- [ ] **5.3** Persist a small metadata JSON in `InstanceConfig` instead of a single filename, for example:
   - `{\"source\": \"logo_...ext\", \"webp\": \"logo_...webp\", \"png\": \"logo_...png\"}`
-- [ ] **6.4** Extend `GET /api/branding/logo` response to include variant URLs while staying backward-compatible with MVP payload
-- [ ] **6.5** Update `header.js` rendering logic:
+- [ ] **5.4** Extend `GET /api/branding/logo` response to include variant URLs while staying backward-compatible with MVP payload
+- [ ] **5.5** Update `header.js` rendering logic:
   - Header logo uses WebP variant when available
   - Favicon links include PNG fallback and WebP where appropriate
   - Keep graceful fallback to single-file MVP response
-- [ ] **6.6** Add tests for conversion success/failure paths and response compatibility
+- [ ] **5.6** Add API tests for conversion success/failure paths and response compatibility
 
 ---
 
