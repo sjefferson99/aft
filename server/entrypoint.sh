@@ -47,7 +47,7 @@ if [ -n "$EMBED_ALLOWED_ORIGINS" ]; then
             continue
         fi
 
-        if printf '%s' "$origin" | grep -Eq '^https?://(\*\.)?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*(:[0-9]+)?$'; then
+        if printf '%s' "$origin" | grep -Eq '^https?://((\*\.[A-Za-z0-9-]+\.[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*)|([A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*))(:[0-9]+)?$'; then
             embed_ancestors="$embed_ancestors $origin"
         else
             echo "Ignoring invalid EMBED_ALLOWED_ORIGINS entry: $origin"
