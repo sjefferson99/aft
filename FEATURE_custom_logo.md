@@ -63,8 +63,8 @@ New blueprint `branding_bp`, registered in `server/app.py`. Use `theme_routes.py
 ### Phase 3: Frontend — Dynamic Logo in `header.js` (MVP)
 After the header HTML is injected into the DOM (the existing block around line 266 that sets `logoImg.src = LOGO_PATH`), fetch `GET /api/branding/logo` with AbortController/5-second timeout (per `FRONTEND_ERROR_HANDLING.md`). If a custom filename is returned, override both `.header-logo` `src` and all `link[rel="icon"]` `href` values to `/images/backgrounds/logos/<filename>`. Fall back silently to `LOGO_PATH`/`FAVICON_PATH` constants on null response, network error, or timeout.
 
-- [ ] **3.1** Add `applyCustomLogoIfSet()` async method to the header class in `www/js/header.js`
-- [ ] **3.2** Call `applyCustomLogoIfSet()` from within the header load flow, after the default logo constants have been applied
+- [x] **3.1** Add `applyCustomLogoIfSet()` async method to the header class in `www/js/header.js`
+- [x] **3.2** Call `applyCustomLogoIfSet()` from within the header load flow, after the default logo constants have been applied
 
 ### Phase 4: Frontend — Settings UI
 New "Branding" section in `settings.html`, hidden by default. Loaded and controlled by logic in `settings.js`.
