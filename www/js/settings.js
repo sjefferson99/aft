@@ -1,16 +1,32 @@
 // Settings page functionality
 class Settings {
   constructor() {
+    this.globalSettingsPanel = document.getElementById('global-settings-panel');
     this.defaultBoardSelect = document.getElementById('default-board');
     this.timeFormatRadios = document.querySelectorAll('input[name="time-format"]');
     this.timezoneSelect = document.getElementById('timezone-select');
     this.themeSelect = document.getElementById('theme-select');
     this.workingStyleSelect = document.getElementById('working-style');
     this.statusElement = document.getElementById('settings-status');
+    this.currentLogoPreview = document.getElementById('current-logo-preview');
+    this.brandingFileInput = document.getElementById('branding-logo-file');
+    this.brandingUploadBtn = document.getElementById('branding-upload-btn');
+    this.brandingResetBtn = document.getElementById('branding-reset-btn');
+    this.brandingStatus = document.getElementById('branding-status');
+    this.defaultLogoPath = '/images/AFT_logo.webp';
     this.saveTimeout = null;
+    this.canManageBranding = false;
   }
 
   async init() {
+    // Match other permission-gated pages: wait until header.js has loaded user context.
+    if (!window.userDataReady) {
+      setTimeout(() => this.init(), 100);
+      return;
+    }
+
+    this.initializeGlobalSettingsVisibility();
+
     await this.loadBoards();
     await this.loadSettings();
     await this.loadTimezoneOptions();
@@ -18,7 +34,178 @@ class Settings {
     await this.loadThemes();
     await this.loadWorkingStyle();
     await this.applyThemeColors(); // Ensure theme is loaded on page load
+    if (this.canManageBranding) {
+      await this.loadBrandingSettings();
+    }
     this.attachEventListeners();
+  }
+
+  initializeGlobalSettingsVisibility() {
+    this.canManageBranding = typeof hasPermission === 'function' && hasPermission('branding.edit');
+
+    if (!this.globalSettingsPanel) {
+      return;
+    }
+
+    this.globalSettingsPanel.hidden = !this.canManageBranding;
+  }
+
+  async fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      return await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  getBrandingPath(filename) {
+    if (!filename || typeof filename !== 'string') {
+      return this.defaultLogoPath;
+    }
+
+    return `/images/backgrounds/logos/${encodeURIComponent(filename)}`;
+  }
+
+  applyBrandingPreview(path) {
+    if (this.currentLogoPreview) {
+      this.currentLogoPreview.src = path;
+    }
+
+    if (window.header && typeof window.header.applyBrandingAssets === 'function') {
+      if (path === this.defaultLogoPath) {
+        window.header.applyBrandingAssets();
+      } else {
+        window.header.applyBrandingAssets(path, path);
+      }
+    }
+  }
+
+  showBrandingStatus(message, type = 'info') {
+    if (!this.brandingStatus) {
+      return;
+    }
+
+    this.brandingStatus.textContent = message;
+    this.brandingStatus.className = `settings-status ${type}`;
+
+    if (type === 'success') {
+      setTimeout(() => {
+        if (this.brandingStatus) {
+          this.brandingStatus.textContent = '';
+          this.brandingStatus.className = 'settings-status';
+        }
+      }, 2000);
+    }
+  }
+
+  async loadBrandingSettings() {
+    if (!this.canManageBranding) {
+      return;
+    }
+
+    try {
+      const response = await this.fetchWithTimeout('/api/branding/logo', {
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        this.applyBrandingPreview(this.defaultLogoPath);
+        return;
+      }
+
+      const data = await response.json();
+      const brandingPath = this.getBrandingPath(data.filename);
+      this.applyBrandingPreview(brandingPath);
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Error loading branding settings:', error);
+      }
+      this.applyBrandingPreview(this.defaultLogoPath);
+    }
+  }
+
+  async uploadBrandingLogo() {
+    if (!this.canManageBranding || !this.brandingFileInput) {
+      return;
+    }
+
+    const file = this.brandingFileInput.files && this.brandingFileInput.files[0];
+    if (!file) {
+      this.showBrandingStatus('Please choose a logo file first.', 'error');
+      return;
+    }
+
+    if (file.size > 100 * 1024) {
+      this.showBrandingStatus('File too large. Maximum allowed size is 100 KB.', 'error');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    try {
+      this.showBrandingStatus('Uploading...', 'info');
+
+      const response = await this.fetchWithTimeout('/api/branding/logo', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to upload logo');
+      }
+
+      this.applyBrandingPreview(this.getBrandingPath(data.filename));
+      this.brandingFileInput.value = '';
+      this.showBrandingStatus('Logo uploaded successfully.', 'success');
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        this.showBrandingStatus('Upload timed out. Please try again.', 'error');
+      } else {
+        this.showBrandingStatus(`Error uploading logo: ${error.message}`, 'error');
+      }
+    }
+  }
+
+  async resetBrandingLogo() {
+    if (!this.canManageBranding) {
+      return;
+    }
+
+    try {
+      this.showBrandingStatus('Resetting...', 'info');
+
+      const response = await this.fetchWithTimeout('/api/branding/logo', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to reset logo');
+      }
+
+      this.applyBrandingPreview(this.defaultLogoPath);
+      if (this.brandingFileInput) {
+        this.brandingFileInput.value = '';
+      }
+      this.showBrandingStatus('Logo reset to default.', 'success');
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        this.showBrandingStatus('Reset timed out. Please try again.', 'error');
+      } else {
+        this.showBrandingStatus(`Error resetting logo: ${error.message}`, 'error');
+      }
+    }
   }
 
   getSupportedTimezones() {
@@ -559,6 +746,18 @@ class Settings {
     if (editThemeBtn) {
       editThemeBtn.addEventListener('click', () => {
         this.editTheme();
+      });
+    }
+
+    if (this.canManageBranding && this.brandingUploadBtn) {
+      this.brandingUploadBtn.addEventListener('click', () => {
+        this.uploadBrandingLogo();
+      });
+    }
+
+    if (this.canManageBranding && this.brandingResetBtn) {
+      this.brandingResetBtn.addEventListener('click', () => {
+        this.resetBrandingLogo();
       });
     }
   }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>User Settings - AFT</title>
+  <title>Settings - AFT</title>
   <link rel="icon" type="image/png" href="/images/AFT_logo.png">
   <link rel="icon" type="image/webp" href="/images/AFT_logo.webp">
   <script src="/js/theme-loader.js"></script>
@@ -15,10 +15,12 @@
   <!-- Header component will be loaded here -->
   
   <main class="canvas">
-    <h1 class="page-title">User Settings</h1>
+    <h1 class="page-title">Settings</h1>
     <div class="settings-container">
-      
-      <div class="settings-section">
+
+      <div class="settings-panels">
+        <section class="settings-section" id="user-settings-panel" aria-labelledby="user-settings-title">
+        <h3 id="user-settings-title">User Settings</h3>
         <div class="setting-item">
           <label for="default-board">Default Board</label>
           <p class="setting-help">Board to open on application startup. "None" will land on the boards page.</p>
@@ -77,6 +79,28 @@
             <option value="">Loading...</option>
           </select>
         </div>
+        </section>
+
+        <section class="settings-section" id="global-settings-panel" hidden aria-labelledby="global-settings-title">
+          <h3 id="global-settings-title">Instance Global Settings</h3>
+
+          <div class="setting-item" id="branding-section">
+            <label for="branding-logo-file">Instance Branding</label>
+            <p class="setting-help">Upload a logo used globally in the header and favicon. Recommended WebP or PNG, maximum 100 KB.</p>
+
+            <div class="branding-preview-wrap">
+              <img id="current-logo-preview" class="branding-logo-preview" src="/images/AFT_logo.webp" alt="Current instance logo preview">
+            </div>
+
+            <div class="branding-actions">
+              <input id="branding-logo-file" class="setting-select branding-file-input" type="file" accept=".webp,.png,.jpg,.jpeg,.gif" aria-label="Select logo image file">
+              <button id="branding-upload-btn" class="btn btn-secondary" type="button">Upload Logo</button>
+              <button id="branding-reset-btn" class="btn btn-secondary" type="button">Reset to Default</button>
+            </div>
+
+            <div id="branding-status" class="settings-status" role="status" aria-live="polite"></div>
+          </div>
+        </section>
       </div>
 
       <div class="settings-actions">

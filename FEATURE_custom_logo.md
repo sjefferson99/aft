@@ -67,21 +67,26 @@ After the header HTML is injected into the DOM (the existing block around line 2
 - [x] **3.2** Call `applyCustomLogoIfSet()` from within the header load flow, after the default logo constants have been applied
 
 ### Phase 4: Frontend — Settings UI
-New "Branding" section in `settings.html`, hidden by default. Loaded and controlled by logic in `settings.js`.
+Split `settings.html` into two panels: user-specific settings and instance-global settings.
 
-- [ ] **4.1** Add `<section id="branding-section" class="settings-section" hidden>` block to `www/settings.html` containing:
-  - Section heading "Branding"
+- [x] **4.1** Keep existing controls in a **User Settings** panel (`www/settings.html`) for user-scoped settings only
+- [x] **4.2** Add a new **Instance Global Settings** panel (`www/settings.html`) containing branding controls:
   - Current logo preview `<img id="current-logo-preview">` with alt text
   - File input (`accept=".webp,.png,.jpg,.jpeg,.gif"`) + "Upload Logo" button
   - Help text: recommended WebP or PNG, max 100 KB
   - "Reset to Default" button
   - Status message element
   - Full ARIA attributes per `ACCESSIBILITY.md`
-- [ ] **4.2** Add branding section logic to `www/js/settings.js`:
-  - On page load: call `GET /api/branding/logo`, populate preview; check permissions for `branding.edit`, show section if granted
-  - Upload handler: validate file size client-side (100 KB) before POST to `/api/branding/logo`, show toast on success/error, refresh preview
-  - Reset handler: DELETE `/api/branding/logo`, revert preview to default AFT logo path, show toast on success/error
+- [x] **4.3** Use the same permission visibility approach as other pages in `www/js/settings.js`:
+  - Wait for `window.userDataReady`
+  - Use `hasPermission('branding.edit')` to determine visibility of the global panel
+  - Hide the global panel entirely for users without relevant permissions
+- [x] **4.4** Add branding section behavior in `www/js/settings.js`:
+  - On page load: call `GET /api/branding/logo` and populate preview when panel is visible
+  - Upload handler: validate file size client-side (100 KB) before POST to `/api/branding/logo`, show status/toast on success/error, refresh preview
+  - Reset handler: DELETE `/api/branding/logo`, revert preview to default AFT logo path
   - All fetch calls use AbortController with 5-second timeout per project standard
+- [x] **4.5** Rename the menu entry text from **User Settings** to **Settings** in both desktop and mobile header menus (`www/components/header.html`)
 
 ### Phase 5: Final Optimization — Auto-generated format variants
 Add this phase after MVP is merged and stable.
@@ -116,8 +121,10 @@ Add this phase after MVP is merged and stable.
 | `server/alembic/env.py` | Import `InstanceConfig` |
 | `server/app.py` | Register `branding_bp`; add `instance_config` to `expected_tables` |
 | `www/js/header.js` | Add `applyCustomLogoIfSet()`, call after header load |
-| `www/settings.html` | Add `#branding-section` HTML block |
-| `www/js/settings.js` | Add branding load/upload/reset logic |
+| `www/components/header.html` | Rename "User Settings" menu labels to "Settings" (desktop + mobile) |
+| `www/settings.html` | Split page into User Settings and Instance Global Settings panels; add branding controls |
+| `www/js/settings.js` | Add permission-gated global panel visibility and branding load/upload/reset logic |
+| `www/css/settings.css` | Add panel and branding layout styles for the updated settings page |
 
 ## No Changes Required
 - `compose.yml` — logos stored in existing `backgrounds_volume` subdirectory
