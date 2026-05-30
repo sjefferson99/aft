@@ -1973,9 +1973,9 @@ button.readonly-disabled,
   }
 
   .column-header h4 .card-count {
-    display: block;
-    margin-left: 0;
-    margin-top: 2px;
+    display: inline;
+    margin-left: 4px;
+    margin-top: 0;
     font-size: 12px;
   }
 
