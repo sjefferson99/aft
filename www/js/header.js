@@ -1271,6 +1271,14 @@ class Header {
     const boardId = this.getCurrentBoardId();
     this.currentBoardId = boardId;
 
+    // Public board pages derive working style from the board payload in board.js.
+    // Avoid overriding it here with user/default settings.
+    if (this.isPublicBoardPage) {
+      this.boardStyleEditable = false;
+      this.updateViewsDropdown();
+      return;
+    }
+
     try {
       if (boardId) {
         const response = await fetch(`/api/boards/${boardId}/settings/working-style`);
