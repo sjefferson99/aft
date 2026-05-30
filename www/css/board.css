@@ -1951,11 +1951,17 @@ button.readonly-disabled,
   }
 
   .column-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title menu"
+      "count menu";
     gap: 10px;
     align-items: flex-start;
   }
 
   .column-title-group {
+    grid-area: title;
     min-width: 0;
     flex: 1;
     flex-wrap: wrap;
@@ -1966,10 +1972,26 @@ button.readonly-disabled,
     overflow-wrap: anywhere;
   }
 
+  .column-header h4 .card-count {
+    display: block;
+    margin-left: 0;
+    margin-top: 2px;
+    font-size: 12px;
+  }
+
   .column-actions {
+    grid-area: menu;
+    justify-self: end;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 6px;
+  }
+
+  .column-edit-btn,
+  .column-add-card-btn,
+  .column-move-left-btn,
+  .column-move-right-btn {
+    display: none;
   }
 
   .column-cards {
