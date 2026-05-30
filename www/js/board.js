@@ -5686,7 +5686,7 @@ class BoardManager {
           <div class="modal-header">
             ${isReadOnly ? '<div class="board-readonly-indicator" style="position: static; margin-bottom: 10px;">Read Only</div>' : ''}
             <div class="modal-header-actions">
-              ${!isReadOnly && isTemplate && canOpenScheduleEditor ?
+              ${isTemplate && canOpenScheduleEditor ?
                 `<button type="button" class="btn btn-secondary" id="edit-schedule-from-template-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
                     <circle cx="12" cy="12" r="10"></circle>
@@ -5724,7 +5724,7 @@ class BoardManager {
               <textarea id="edit-card-description" name="edit-card-description" rows="4" ${readonlyAttr}>${this.escapeHtml(cardData.description || '')}</textarea>
             </div>
             
-            ${!isReadOnly && !isTemplate && canOpenScheduleEditor ? `
+            ${!isTemplate && canOpenScheduleEditor ? `
             <div class="schedule-section">
               <button type="button" class="btn btn-secondary" id="schedule-card-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
