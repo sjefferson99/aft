@@ -857,6 +857,7 @@ class BoardManager {
     this.persistScrollTimeoutId = null;
     this.boardHorizontalScrollLeft = 0;
     this.persistBoardHorizontalScrollTimeoutId = null;
+    this.expandedCardIds = new Set();
     this.autoScrollHoverTimeoutId = null;
     this.autoScrollRafId = null;
     this.autoScrollContainer = null;
@@ -897,6 +898,10 @@ class BoardManager {
 
   getBoardHorizontalScrollStorageKey() {
     return this.boardId ? `aft:board:${this.boardId}:horizontal-scroll` : null;
+  }
+
+  getExpandedCardsStorageKey() {
+    return this.boardId ? `aft:board:${this.boardId}:expanded-cards` : null;
   }
 
   getAssigneeFilterVisibilityStorageKey() {
@@ -1094,6 +1099,18 @@ class BoardManager {
     return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
   }
 
+  sanitizeExpandedCardIds(value) {
+    if (!Array.isArray(value)) {
+      return new Set();
+    }
+
+    return new Set(
+      value
+        .map((id) => (typeof id === 'number' ? id : Number(id)))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    );
+  }
+
   updateColumnScrollPosition(columnId, scrollTop, targetMap = this.columnScrollPositions) {
     if (!columnId || !targetMap || typeof targetMap !== 'object') return;
 
@@ -1130,6 +1147,21 @@ class BoardManager {
     }
   }
 
+  loadPersistedExpandedCardState() {
+    const storageKey = this.getExpandedCardsStorageKey();
+    if (!storageKey) return;
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      this.expandedCardIds = this.sanitizeExpandedCardIds(parsed);
+    } catch (error) {
+      console.warn('Failed to load expanded card state:', error);
+      this.expandedCardIds = new Set();
+    }
+  }
+
   persistColumnScrollPositions() {
     const storageKey = this.getColumnScrollStorageKey();
     if (!storageKey) return;
@@ -1149,6 +1181,17 @@ class BoardManager {
       localStorage.setItem(storageKey, String(this.boardHorizontalScrollLeft));
     } catch (error) {
       console.warn('Failed to persist board horizontal scroll position:', error);
+    }
+  }
+
+  persistExpandedCardState() {
+    const storageKey = this.getExpandedCardsStorageKey();
+    if (!storageKey) return;
+
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(Array.from(this.expandedCardIds)));
+    } catch (error) {
+      console.warn('Failed to persist expanded card state:', error);
     }
   }
 
@@ -1201,6 +1244,24 @@ class BoardManager {
     this.schedulePersistBoardHorizontalScrollPosition();
   }
 
+  captureExpandedCardState() {
+    const expanded = new Set();
+
+    this.container?.querySelectorAll('.card.has-overflow[data-card-id]').forEach((cardElement) => {
+      if (cardElement.classList.contains('collapsed')) {
+        return;
+      }
+
+      const cardId = Number(cardElement.getAttribute('data-card-id'));
+      if (Number.isInteger(cardId) && cardId > 0) {
+        expanded.add(cardId);
+      }
+    });
+
+    this.expandedCardIds = expanded;
+    this.persistExpandedCardState();
+  }
+
   restoreColumnScrollPositions() {
     requestAnimationFrame(() => {
       document.querySelectorAll('.column-cards[data-column-id]').forEach(columnCards => {
@@ -1226,11 +1287,39 @@ class BoardManager {
     });
   }
 
+  restoreExpandedCardState() {
+    if (!this.expandedCardIds || this.expandedCardIds.size === 0) {
+      return;
+    }
+
+    this.container?.querySelectorAll('.card.has-overflow[data-card-id]').forEach((cardElement) => {
+      const cardId = Number(cardElement.getAttribute('data-card-id'));
+      if (!Number.isInteger(cardId) || cardId <= 0) {
+        return;
+      }
+
+      if (!this.expandedCardIds.has(cardId)) {
+        return;
+      }
+
+      const expandBtn = cardElement.querySelector('.card-expand-btn');
+      if (!expandBtn) {
+        return;
+      }
+
+      cardElement.classList.remove('collapsed');
+      expandBtn.textContent = 'Show less...';
+      expandBtn.setAttribute('aria-expanded', 'true');
+    });
+  }
+
   handleBeforeUnload() {
     this.captureColumnScrollPositions();
     this.persistColumnScrollPositions();
     this.captureBoardHorizontalScrollPosition();
     this.persistBoardHorizontalScrollPosition();
+    this.captureExpandedCardState();
+    this.persistExpandedCardState();
   }
 
   setupMobileViewportSync() {
@@ -1637,6 +1726,7 @@ class BoardManager {
       this.showBoardLoading();
       this.loadPersistedColumnScrollPositions();
       this.loadPersistedBoardHorizontalScrollPosition();
+      this.loadPersistedExpandedCardState();
       window.addEventListener('beforeunload', this.beforeUnloadHandler);
 
       if (!this.isPublicMode) {
@@ -1913,6 +2003,7 @@ class BoardManager {
     this.stopColumnAutoScroll();
     this.captureColumnScrollPositions();
     this.captureBoardHorizontalScrollPosition();
+    this.captureExpandedCardState();
     this.showBoardLoading();
 
     // Cancel any in-flight board load request
@@ -2298,6 +2389,7 @@ class BoardManager {
 
     this.persistColumnScrollPositions();
     this.persistBoardHorizontalScrollPosition();
+    this.persistExpandedCardState();
   }
 
   handleCloseDropdown(e) {
@@ -2861,6 +2953,8 @@ class BoardManager {
             }
           }
         });
+
+        this.restoreExpandedCardState();
       });
 
       // Add event listeners for card expand buttons
@@ -2868,16 +2962,25 @@ class BoardManager {
         btn.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent card click event
           const card = e.currentTarget.closest('.card');
+          const cardId = Number(card?.getAttribute('data-card-id'));
           
           if (card.classList.contains('collapsed')) {
             card.classList.remove('collapsed');
             e.currentTarget.textContent = 'Show less...';
             e.currentTarget.setAttribute('aria-expanded', 'true');
+            if (Number.isInteger(cardId) && cardId > 0) {
+              this.expandedCardIds.add(cardId);
+            }
           } else {
             card.classList.add('collapsed');
             e.currentTarget.textContent = 'Show more...';
             e.currentTarget.setAttribute('aria-expanded', 'false');
+            if (Number.isInteger(cardId) && cardId > 0) {
+              this.expandedCardIds.delete(cardId);
+            }
           }
+
+          this.persistExpandedCardState();
         });
       });
       
