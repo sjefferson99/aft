@@ -512,7 +512,7 @@ class ThemeBuilder {
     if (isReadOnlyTheme || !canEditTheme) {
       this.saveBtn.disabled = true;
       this.saveBtn.title = isReadOnlyTheme
-        ? 'System and global themes cannot be modified directly. Copy or demote a theme to edit it.'
+        ? 'System and global themes cannot be modified directly. Create a copy to edit it.'
         : 'You do not have permission to edit themes.';
     } else {
       this.saveBtn.disabled = false;

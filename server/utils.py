@@ -283,8 +283,9 @@ def get_user_scoped_query(db, model, user_id):
     
     # Models with direct user_id column
     if hasattr(model, 'user_id'):
-        # For settings and themes, user_id can be NULL for system/global items
-        # Include both user's items AND global items (where user_id IS NULL)
+        # For settings/themes, include user items plus globally visible items.
+        # Theme global visibility includes system themes (user_id IS NULL)
+        # and user-owned themes marked global_theme=True.
         if model.__name__ in ['Setting', 'Theme']:
             if model.__name__ == 'Theme':
                 return query.filter(

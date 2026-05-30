@@ -17,6 +17,7 @@ from theme_defaults import (
     get_instance_default_theme,
     upsert_instance_default_theme,
 )
+from permissions import has_permission
 from utils import (
     create_error_response,
     create_success_response,
@@ -49,55 +50,47 @@ def _get_user_accessible_theme(session, user_id, theme_id):
     return get_user_scoped_query(session, Theme, user_id).filter(Theme.id == theme_id).first()
 
 
-def _get_globally_visible_theme(session, theme_id):
-  """Return a theme only if it is globally visible to all users."""
-  return session.query(Theme).filter(
-    Theme.id == theme_id,
-    (Theme.system_theme.is_(True) | Theme.global_theme.is_(True)),
-  ).first()
-
-
 def _get_default_theme_candidates(session):
-  """Return themes eligible to be the instance default theme."""
-  return session.query(Theme).filter(
-    (Theme.system_theme.is_(True) | Theme.global_theme.is_(True)),
-  ).order_by(Theme.name.asc()).all()
+    """Return themes eligible to be the instance default theme."""
+    return session.query(Theme).filter(
+        (Theme.system_theme.is_(True) | Theme.global_theme.is_(True)),
+    ).order_by(Theme.name.asc()).all()
 
 
 def _get_promotable_themes(session):
-  """Return user themes that can be promoted to global visibility."""
-  return session.query(Theme).filter(
-    Theme.system_theme.is_(False),
-    Theme.global_theme.is_(False),
-    Theme.user_id.is_not(None),
-  ).order_by(Theme.name.asc()).all()
+    """Return user themes that can be promoted to global visibility."""
+    return session.query(Theme).filter(
+        Theme.system_theme.is_(False),
+        Theme.global_theme.is_(False),
+        Theme.user_id.is_not(None),
+    ).order_by(Theme.name.asc()).all()
 
 
 def _get_demotable_themes(session):
-  """Return global themes that can be demoted back to user scope."""
-  return session.query(Theme).filter(
-    Theme.system_theme.is_(False),
-    Theme.global_theme.is_(True),
-    Theme.user_id.is_not(None),
-  ).order_by(Theme.name.asc()).all()
+    """Return global themes that can be demoted back to user scope."""
+    return session.query(Theme).filter(
+        Theme.system_theme.is_(False),
+        Theme.global_theme.is_(True),
+        Theme.user_id.is_not(None),
+    ).order_by(Theme.name.asc()).all()
 
 
 def _reset_demoted_theme_users(session, theme):
-  """Move non-owner users off a theme that is losing global visibility."""
-  replacement_theme = get_instance_default_theme(session)
-  replacement_theme_id = str(replacement_theme.id) if replacement_theme else None
-  if not replacement_theme_id:
-    return
+    """Move non-owner users off a theme that is losing global visibility."""
+    replacement_theme = get_instance_default_theme(session)
+    replacement_theme_id = str(replacement_theme.id) if replacement_theme else None
+    if not replacement_theme_id:
+        return
 
-  affected_settings = session.query(Setting).filter(
-    Setting.key == 'selected_theme',
-    Setting.value == str(theme.id),
-    Setting.user_id.is_not(None),
-    Setting.user_id != theme.user_id,
-  ).all()
+    affected_settings = session.query(Setting).filter(
+        Setting.key == 'selected_theme',
+        Setting.value == str(theme.id),
+        Setting.user_id.is_not(None),
+        Setting.user_id != theme.user_id,
+    ).all()
 
-  for setting in affected_settings:
-    setting.value = replacement_theme_id
+    for setting in affected_settings:
+        setting.value = replacement_theme_id
 
 
 @theme_bp.route("/api/themes", methods=["GET"])
@@ -797,16 +790,16 @@ def get_default_theme():
         }
 
         user_permissions = get_user_permissions(user_id)
-        if 'branding.edit' in user_permissions:
-          response_payload["available_themes"] = [
-            t.to_dict() for t in _get_default_theme_candidates(session)
-          ]
-          response_payload["promotable_themes"] = [
-            t.to_dict() for t in _get_promotable_themes(session)
-          ]
-          response_payload["demotable_themes"] = [
-            t.to_dict() for t in _get_demotable_themes(session)
-          ]
+        if has_permission(user_permissions, 'branding.edit'):
+            response_payload["available_themes"] = [
+                t.to_dict() for t in _get_default_theme_candidates(session)
+            ]
+            response_payload["promotable_themes"] = [
+                t.to_dict() for t in _get_promotable_themes(session)
+            ]
+            response_payload["demotable_themes"] = [
+                t.to_dict() for t in _get_demotable_themes(session)
+            ]
 
         return jsonify(response_payload), 200
     except Exception as e:
