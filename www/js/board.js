@@ -1477,6 +1477,37 @@ class BoardManager {
     return columnContainer?.isConnected ? columnContainer : null;
   }
 
+  captureCardOriginalPosition(cardElement) {
+    if (!cardElement?.isConnected) {
+      return null;
+    }
+
+    const columnId = Number(cardElement.getAttribute('data-column-id'));
+    const order = Number(cardElement.getAttribute('data-order'));
+    const container = cardElement.closest('.column-cards');
+
+    if (!container?.isConnected) {
+      return {
+        columnId,
+        order,
+        index: null,
+        container: null,
+        nextSibling: null
+      };
+    }
+
+    const cardsInContainer = Array.from(container.querySelectorAll('.card'));
+    const rawIndex = cardsInContainer.indexOf(cardElement);
+
+    return {
+      columnId,
+      order,
+      index: rawIndex >= 0 ? rawIndex : null,
+      container,
+      nextSibling: cardElement.nextElementSibling
+    };
+  }
+
   startMobileTouchCardDrag(state) {
     if (!state?.cardElement?.isConnected) {
       return;
@@ -1484,10 +1515,14 @@ class BoardManager {
 
     const cardElement = state.cardElement;
     const cardRect = cardElement.getBoundingClientRect();
-    const oldColumnId = Number(cardElement.getAttribute('data-column-id'));
-    const oldOrder = Number(cardElement.getAttribute('data-order'));
-    const originalColumnContainer = document.querySelector(`[data-column-id="${oldColumnId}"] .column-cards`);
-    const originalIndex = Array.from(originalColumnContainer?.querySelectorAll('.card') || []).indexOf(cardElement);
+    const originalPosition = this.captureCardOriginalPosition(cardElement);
+    if (!originalPosition) {
+      return;
+    }
+
+    const oldColumnId = Number(originalPosition.columnId);
+    const oldOrder = Number(originalPosition.order);
+    const originalIndex = originalPosition.index;
 
     const ghostElement = cardElement.cloneNode(true);
     ghostElement.removeAttribute('id');
@@ -1509,13 +1544,7 @@ class BoardManager {
       ghostElement,
       pointerOffsetX,
       pointerOffsetY,
-      originalPosition: {
-        columnId: oldColumnId,
-        order: oldOrder,
-        index: originalIndex,
-        container: originalColumnContainer,
-        nextSibling: cardElement.nextElementSibling
-      }
+      originalPosition
     };
 
     cardElement.classList.add('dragging');
@@ -1583,6 +1612,12 @@ class BoardManager {
     this.stopColumnAutoScroll();
 
     if (!targetContainer || !originalPosition) {
+      if (originalPosition) {
+        const restored = this.restoreCardPosition(draggedCard, originalPosition);
+        if (!restored) {
+          await this.loadBoard();
+        }
+      }
       return;
     }
 
@@ -3977,7 +4012,7 @@ class BoardManager {
 
     const isSameColumnMove = Number.isFinite(targetColumnId) && Number.isFinite(oldColumnId) && targetColumnId === oldColumnId;
 
-    if (isSameColumnMove && Number.isFinite(originalIndex)) {
+    if (isSameColumnMove && Number.isInteger(originalIndex) && originalIndex >= 0) {
       if (draggedIndex > originalIndex) {
         if (Number.isFinite(previousOrder)) {
           return previousOrder;
@@ -4119,7 +4154,14 @@ class BoardManager {
         if (originalPosition.nextSibling && originalPosition.container.contains(originalPosition.nextSibling)) {
           // Insert before the next sibling (exact original position)
           originalPosition.container.insertBefore(cardElement, originalPosition.nextSibling);
+          return true;
         } else {
+          const cardsInContainer = Array.from(originalPosition.container.querySelectorAll('.card'));
+          if (Number.isInteger(originalPosition.index) && originalPosition.index >= 0 && originalPosition.index < cardsInContainer.length) {
+            originalPosition.container.insertBefore(cardElement, cardsInContainer[originalPosition.index]);
+            return true;
+          }
+
           // If next sibling is gone, append at end
           const addCardBtn = originalPosition.container.querySelector('.add-card-btn');
           if (addCardBtn) {
@@ -4127,16 +4169,19 @@ class BoardManager {
           } else {
             originalPosition.container.appendChild(cardElement);
           }
+          return true;
         }
         
       } else {
         console.warn('Cannot restore card: original container is no longer in the document');
         // Container was removed (column deleted or board reloaded)
         // The calling function will reload the board to get fresh state
+        return false;
       }
     } catch (err) {
       console.error('Failed to restore card position:', err);
       // Will fall back to board reload in calling function
+      return false;
     }
   }
 
@@ -8059,18 +8104,7 @@ class BoardManager {
     const cardElement = this.container.querySelector(`.card[data-card-id="${cardId}"]`);
     if (!cardElement) return null;
 
-    const oldColumnId = parseInt(cardElement.getAttribute('data-column-id'));
-    const oldOrder = parseInt(cardElement.getAttribute('data-order'));
-    const originalColumnContainer = document.querySelector(`[data-column-id="${oldColumnId}"] .column-cards`);
-    const originalIndex = Array.from(originalColumnContainer?.querySelectorAll('.card') || []).indexOf(cardElement);
-
-    return {
-      columnId: oldColumnId,
-      order: oldOrder,
-      index: originalIndex,
-      container: originalColumnContainer,
-      nextSibling: cardElement.nextElementSibling
-    };
+    return this.captureCardOriginalPosition(cardElement);
   }
 
   async openMoveCardModal(cardId) {
