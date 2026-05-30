@@ -855,6 +855,9 @@ class BoardManager {
     this.boardLoadingDelayTimeoutId = null;
     this.columnScrollPositions = {};
     this.persistScrollTimeoutId = null;
+    this.boardHorizontalScrollLeft = 0;
+    this.persistBoardHorizontalScrollTimeoutId = null;
+    this.expandedCardIds = new Set();
     this.autoScrollHoverTimeoutId = null;
     this.autoScrollRafId = null;
     this.autoScrollContainer = null;
@@ -891,6 +894,14 @@ class BoardManager {
 
   getColumnScrollStorageKey() {
     return this.boardId ? `aft:board:${this.boardId}:column-scroll` : null;
+  }
+
+  getBoardHorizontalScrollStorageKey() {
+    return this.boardId ? `aft:board:${this.boardId}:horizontal-scroll` : null;
+  }
+
+  getExpandedCardsStorageKey() {
+    return this.boardId ? `aft:board:${this.boardId}:expanded-cards` : null;
   }
 
   getAssigneeFilterVisibilityStorageKey() {
@@ -1083,6 +1094,23 @@ class BoardManager {
     return sanitized;
   }
 
+  sanitizeBoardHorizontalScroll(value) {
+    const numberValue = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(numberValue) && numberValue >= 0 ? numberValue : 0;
+  }
+
+  sanitizeExpandedCardIds(value) {
+    if (!Array.isArray(value)) {
+      return new Set();
+    }
+
+    return new Set(
+      value
+        .map((id) => (typeof id === 'number' ? id : Number(id)))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    );
+  }
+
   updateColumnScrollPosition(columnId, scrollTop, targetMap = this.columnScrollPositions) {
     if (!columnId || !targetMap || typeof targetMap !== 'object') return;
 
@@ -1106,6 +1134,34 @@ class BoardManager {
     }
   }
 
+  loadPersistedBoardHorizontalScrollPosition() {
+    const storageKey = this.getBoardHorizontalScrollStorageKey();
+    if (!storageKey) return;
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw === null) return;
+      this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(raw);
+    } catch (error) {
+      console.warn('Failed to load board horizontal scroll position:', error);
+    }
+  }
+
+  loadPersistedExpandedCardState() {
+    const storageKey = this.getExpandedCardsStorageKey();
+    if (!storageKey) return;
+
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      this.expandedCardIds = this.sanitizeExpandedCardIds(parsed);
+    } catch (error) {
+      console.warn('Failed to load expanded card state:', error);
+      this.expandedCardIds = new Set();
+    }
+  }
+
   persistColumnScrollPositions() {
     const storageKey = this.getColumnScrollStorageKey();
     if (!storageKey) return;
@@ -1117,6 +1173,28 @@ class BoardManager {
     }
   }
 
+  persistBoardHorizontalScrollPosition() {
+    const storageKey = this.getBoardHorizontalScrollStorageKey();
+    if (!storageKey) return;
+
+    try {
+      localStorage.setItem(storageKey, String(this.boardHorizontalScrollLeft));
+    } catch (error) {
+      console.warn('Failed to persist board horizontal scroll position:', error);
+    }
+  }
+
+  persistExpandedCardState() {
+    const storageKey = this.getExpandedCardsStorageKey();
+    if (!storageKey) return;
+
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(Array.from(this.expandedCardIds)));
+    } catch (error) {
+      console.warn('Failed to persist expanded card state:', error);
+    }
+  }
+
   schedulePersistColumnScrollPositions() {
     if (this.persistScrollTimeoutId) {
       clearTimeout(this.persistScrollTimeoutId);
@@ -1125,6 +1203,17 @@ class BoardManager {
     this.persistScrollTimeoutId = setTimeout(() => {
       this.persistColumnScrollPositions();
       this.persistScrollTimeoutId = null;
+    }, 150);
+  }
+
+  schedulePersistBoardHorizontalScrollPosition() {
+    if (this.persistBoardHorizontalScrollTimeoutId) {
+      clearTimeout(this.persistBoardHorizontalScrollTimeoutId);
+    }
+
+    this.persistBoardHorizontalScrollTimeoutId = setTimeout(() => {
+      this.persistBoardHorizontalScrollPosition();
+      this.persistBoardHorizontalScrollTimeoutId = null;
     }, 150);
   }
 
@@ -1147,6 +1236,37 @@ class BoardManager {
     this.schedulePersistColumnScrollPositions();
   }
 
+  captureBoardHorizontalScrollPosition() {
+    const columnsContainer = this.container?.querySelector('.columns-container');
+    if (!columnsContainer) return;
+
+    this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(columnsContainer.scrollLeft);
+    this.schedulePersistBoardHorizontalScrollPosition();
+  }
+
+  captureExpandedCardState() {
+    const expanded = new Set();
+    let capturedCount = 0;
+
+    this.container?.querySelectorAll('.card.has-overflow[data-card-id]').forEach((cardElement) => {
+      capturedCount += 1;
+      if (cardElement.classList.contains('collapsed')) {
+        return;
+      }
+
+      const cardId = Number(cardElement.getAttribute('data-card-id'));
+      if (Number.isInteger(cardId) && cardId > 0) {
+        expanded.add(cardId);
+      }
+    });
+
+    // Avoid wiping persisted state before cards are rendered during initial load.
+    if (capturedCount === 0) return;
+
+    this.expandedCardIds = expanded;
+    this.persistExpandedCardState();
+  }
+
   restoreColumnScrollPositions() {
     requestAnimationFrame(() => {
       document.querySelectorAll('.column-cards[data-column-id]').forEach(columnCards => {
@@ -1161,9 +1281,49 @@ class BoardManager {
     });
   }
 
+  restoreBoardHorizontalScrollPosition() {
+    requestAnimationFrame(() => {
+      const columnsContainer = this.container?.querySelector('.columns-container');
+      if (!columnsContainer) return;
+
+      if (this.boardHorizontalScrollLeft > 0) {
+        columnsContainer.scrollLeft = this.boardHorizontalScrollLeft;
+      }
+    });
+  }
+
+  restoreExpandedCardState() {
+    if (!this.expandedCardIds || this.expandedCardIds.size === 0) {
+      return;
+    }
+
+    this.container?.querySelectorAll('.card.has-overflow[data-card-id]').forEach((cardElement) => {
+      const cardId = Number(cardElement.getAttribute('data-card-id'));
+      if (!Number.isInteger(cardId) || cardId <= 0) {
+        return;
+      }
+
+      if (!this.expandedCardIds.has(cardId)) {
+        return;
+      }
+
+      const expandBtn = cardElement.querySelector('.card-expand-btn');
+      if (!expandBtn) {
+        return;
+      }
+
+      cardElement.classList.remove('collapsed');
+      expandBtn.textContent = 'Show less...';
+      expandBtn.setAttribute('aria-expanded', 'true');
+    });
+  }
+
   handleBeforeUnload() {
     this.captureColumnScrollPositions();
     this.persistColumnScrollPositions();
+    this.captureBoardHorizontalScrollPosition();
+    this.persistBoardHorizontalScrollPosition();
+    this.captureExpandedCardState();
   }
 
   setupMobileViewportSync() {
@@ -1272,6 +1432,8 @@ class BoardManager {
     if (state.axis === 'horizontal') {
       event.preventDefault();
       state.columnsContainer.scrollLeft -= deltaX;
+      this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(state.columnsContainer.scrollLeft);
+      this.schedulePersistBoardHorizontalScrollPosition();
       state.lastX = touch.clientX;
       state.lastY = touch.clientY;
       return;
@@ -1567,6 +1729,8 @@ class BoardManager {
       this.render();
       this.showBoardLoading();
       this.loadPersistedColumnScrollPositions();
+      this.loadPersistedBoardHorizontalScrollPosition();
+      this.loadPersistedExpandedCardState();
       window.addEventListener('beforeunload', this.beforeUnloadHandler);
 
       if (!this.isPublicMode) {
@@ -1842,6 +2006,8 @@ class BoardManager {
 
     this.stopColumnAutoScroll();
     this.captureColumnScrollPositions();
+    this.captureBoardHorizontalScrollPosition();
+    this.captureExpandedCardState();
     this.showBoardLoading();
 
     // Cancel any in-flight board load request
@@ -2218,9 +2384,16 @@ class BoardManager {
       this.persistScrollTimeoutId = null;
     }
 
+    if (this.persistBoardHorizontalScrollTimeoutId) {
+      clearTimeout(this.persistBoardHorizontalScrollTimeoutId);
+      this.persistBoardHorizontalScrollTimeoutId = null;
+    }
+
     this.stopColumnAutoScroll();
 
     this.persistColumnScrollPositions();
+    this.persistBoardHorizontalScrollPosition();
+    this.persistExpandedCardState();
   }
 
   handleCloseDropdown(e) {
@@ -2784,6 +2957,8 @@ class BoardManager {
             }
           }
         });
+
+        this.restoreExpandedCardState();
       });
 
       // Add event listeners for card expand buttons
@@ -2791,16 +2966,25 @@ class BoardManager {
         btn.addEventListener('click', (e) => {
           e.stopPropagation(); // Prevent card click event
           const card = e.currentTarget.closest('.card');
+          const cardId = Number(card?.getAttribute('data-card-id'));
           
           if (card.classList.contains('collapsed')) {
             card.classList.remove('collapsed');
             e.currentTarget.textContent = 'Show less...';
             e.currentTarget.setAttribute('aria-expanded', 'true');
+            if (Number.isInteger(cardId) && cardId > 0) {
+              this.expandedCardIds.add(cardId);
+            }
           } else {
             card.classList.add('collapsed');
             e.currentTarget.textContent = 'Show more...';
             e.currentTarget.setAttribute('aria-expanded', 'false');
+            if (Number.isInteger(cardId) && cardId > 0) {
+              this.expandedCardIds.delete(cardId);
+            }
           }
+
+          this.persistExpandedCardState();
         });
       });
       
@@ -2913,7 +3097,16 @@ class BoardManager {
         }, { passive: true });
       });
 
+      const columnsContainer = this.container.querySelector('.columns-container');
+      if (columnsContainer) {
+        columnsContainer.addEventListener('scroll', () => {
+          this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(columnsContainer.scrollLeft);
+          this.schedulePersistBoardHorizontalScrollPosition();
+        }, { passive: true });
+      }
+
       this.restoreColumnScrollPositions();
+      this.restoreBoardHorizontalScrollPosition();
 
       this.queueMobileViewportMetricsUpdate();
       
