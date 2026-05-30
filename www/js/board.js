@@ -1647,6 +1647,50 @@ class BoardManager {
     this.updateArchivedViewVisibility();
   }
 
+  syncPublicHeaderWorkingStyle() {
+    if (!this.isPublicMode || !window.header) {
+      return;
+    }
+
+    const applyWorkingStyle = () => {
+      const dropdownMenu = document.getElementById('views-dropdown-menu');
+      if (!dropdownMenu || typeof window.header.updateViewsDropdown !== 'function') {
+        return false;
+      }
+
+      window.header.workingStyle = this.workingStyle;
+      window.header.updateViewsDropdown();
+      return true;
+    };
+
+    if (applyWorkingStyle()) {
+      return;
+    }
+
+    if (typeof MutationObserver === 'function' && document.body) {
+      const observer = new MutationObserver(() => {
+        if (applyWorkingStyle()) {
+          observer.disconnect();
+        }
+      });
+
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+      return;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 20;
+    const intervalId = window.setInterval(() => {
+      attempts += 1;
+      if (applyWorkingStyle() || attempts >= maxAttempts) {
+        window.clearInterval(intervalId);
+      }
+    }, 250);
+  }
+
   // Hide/show archived view option based on working style
   updateArchivedViewVisibility() {
     // Try to apply visibility immediately; if elements are not yet in the DOM,
@@ -1939,6 +1983,7 @@ class BoardManager {
 
       if (typeof board.working_style === 'string') {
         this.workingStyle = board.working_style === 'agile' ? 'agile' : 'kanban';
+        this.syncPublicHeaderWorkingStyle();
       }
 
       const isBoardPublic = board.is_public === true;
