@@ -1982,7 +1982,10 @@ class BoardManager {
       }
 
       if (typeof board.working_style === 'string') {
-        this.workingStyle = board.working_style === 'agile' ? 'agile' : 'kanban';
+        const normalizedWorkingStyle = board.working_style === 'board_task_category'
+          ? 'agile'
+          : (board.working_style === 'agile' ? 'agile' : 'kanban');
+        this.workingStyle = normalizedWorkingStyle;
         this.syncPublicHeaderWorkingStyle();
       }
 
