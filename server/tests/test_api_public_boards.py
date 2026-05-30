@@ -2,6 +2,7 @@
 
 import requests
 import pytest
+import time
 
 
 @pytest.mark.api
@@ -73,6 +74,9 @@ class TestPublicBoardsAPI:
         assert board["id"] == sample_board["id"]
         assert board["is_public"] is True
         assert board["public_slug"] == slug
+        assert isinstance(board.get("default_theme"), dict)
+        assert isinstance(board["default_theme"].get("id"), int)
+        assert isinstance(board["default_theme"].get("settings"), dict)
         assert "owner" not in board
         assert "assignee_filter_users" not in board
         assert "can_edit" not in board
@@ -117,6 +121,65 @@ class TestPublicBoardsAPI:
         assert https_response.status_code == 200
         assert https_response.headers.get("X-Robots-Tag") == "noindex, nofollow, noarchive"
         assert "no-store" in (https_response.headers.get("Cache-Control") or "")
+
+    def test_public_board_uses_configured_instance_default_theme(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+    ):
+        """Public board payload should resolve theme from instance default setting."""
+        current_default_response = authenticated_session.get(f"{api_client}/api/settings/default-theme")
+        assert current_default_response.status_code == 200
+        original_default_theme_id = current_default_response.json()["value"]
+
+        themes_response = authenticated_session.get(f"{api_client}/api/themes")
+        assert themes_response.status_code == 200
+        source_theme = themes_response.json()[0]
+
+        promoted_theme_response = authenticated_session.post(
+            f"{api_client}/api/themes/copy",
+            json={
+                "source_theme_id": source_theme["id"],
+                "new_name": f"Public Board Global Theme {int(time.time() * 1000)}",
+            },
+        )
+        assert promoted_theme_response.status_code == 201, promoted_theme_response.text
+        target_theme_id = promoted_theme_response.json()["id"]
+
+        promote_response = authenticated_session.post(
+            f"{api_client}/api/themes/{target_theme_id}/promote-global"
+        )
+        assert promote_response.status_code == 200, promote_response.text
+
+        set_default_response = authenticated_session.put(
+            f"{api_client}/api/settings/default-theme",
+            json={"theme_id": target_theme_id},
+        )
+        assert set_default_response.status_code == 200
+
+        make_public_response = authenticated_session.patch(
+            f"{api_client}/api/boards/{sample_board['id']}",
+            json={"is_public": True},
+        )
+        assert make_public_response.status_code == 200
+        slug = make_public_response.json()["board"]["public_slug"]
+
+        public_response = requests.get(f"{api_client}/api/public/boards/{slug}")
+        assert public_response.status_code == 200
+        payload = public_response.json()
+        assert payload["board"]["default_theme"]["id"] == target_theme_id
+
+        restore_response = authenticated_session.put(
+            f"{api_client}/api/settings/default-theme",
+            json={"theme_id": original_default_theme_id},
+        )
+        assert restore_response.status_code == 200
+
+        demote_response = authenticated_session.post(
+            f"{api_client}/api/themes/{target_theme_id}/demote-global"
+        )
+        assert demote_response.status_code == 200, demote_response.text
 
     def test_private_or_revoked_public_board_returns_not_found(
         self,

@@ -6,6 +6,12 @@ class Settings {
     this.timeFormatRadios = document.querySelectorAll('input[name="time-format"]');
     this.timezoneSelect = document.getElementById('timezone-select');
     this.themeSelect = document.getElementById('theme-select');
+    this.instanceDefaultThemeSelect = document.getElementById('instance-default-theme');
+    this.instanceDefaultThemeSaveBtn = document.getElementById('instance-default-theme-save-btn');
+    this.promoteGlobalThemeSelect = document.getElementById('promote-global-theme');
+    this.promoteGlobalThemeBtn = document.getElementById('promote-global-theme-btn');
+    this.demoteGlobalThemeSelect = document.getElementById('demote-global-theme');
+    this.demoteGlobalThemeBtn = document.getElementById('demote-global-theme-btn');
     this.workingStyleSelect = document.getElementById('working-style');
     this.statusElement = document.getElementById('settings-status');
     this.currentLogoPreview = document.getElementById('current-logo-preview');
@@ -32,6 +38,9 @@ class Settings {
     await this.loadTimezoneOptions();
     await this.loadTimezoneSetting();
     await this.loadThemes();
+    if (this.canManageBranding) {
+      await this.loadInstanceDefaultTheme();
+    }
     await this.loadWorkingStyle();
     await this.applyThemeColors(); // Ensure theme is loaded on page load
     if (this.canManageBranding) {
@@ -357,16 +366,21 @@ class Settings {
     }
   }
 
+  groupThemesByScope(themes) {
+    return {
+      userThemes: themes.filter(t => !t.system_theme && !t.global_theme).sort((a, b) => a.name.localeCompare(b.name)),
+      globalThemes: themes.filter(t => !t.system_theme && t.global_theme).sort((a, b) => a.name.localeCompare(b.name)),
+      systemThemes: themes.filter(t => t.system_theme).sort((a, b) => a.name.localeCompare(b.name))
+    };
+  }
+
   async loadThemes() {
     try {
       const response = await fetch('/api/themes');
       if (!response.ok) throw new Error('Failed to load themes');
       
       const themes = await response.json();
-      
-      // Split into user and system themes
-      const userThemes = themes.filter(t => !t.system_theme).sort((a, b) => a.name.localeCompare(b.name));
-      const systemThemes = themes.filter(t => t.system_theme).sort((a, b) => a.name.localeCompare(b.name));
+      const { userThemes, globalThemes, systemThemes } = this.groupThemesByScope(themes);
       
       // Populate theme select
       this.themeSelect.innerHTML = '';
@@ -382,6 +396,18 @@ class Settings {
           userGroup.appendChild(option);
         });
         this.themeSelect.appendChild(userGroup);
+      }
+
+      if (globalThemes.length > 0) {
+        const globalGroup = document.createElement('optgroup');
+        globalGroup.label = 'Global Themes';
+        globalThemes.forEach(theme => {
+          const option = document.createElement('option');
+          option.value = theme.id;
+          option.textContent = theme.name;
+          globalGroup.appendChild(option);
+        });
+        this.themeSelect.appendChild(globalGroup);
       }
       
       // Add system themes
@@ -405,6 +431,197 @@ class Settings {
       }
     } catch (error) {
       console.error('Error loading themes:', error);
+    }
+  }
+
+  populateThemeOptions(selectElement, themes) {
+    if (!selectElement) {
+      return;
+    }
+
+    const { userThemes, globalThemes, systemThemes } = this.groupThemesByScope(themes);
+
+    selectElement.innerHTML = '';
+
+    if (userThemes.length > 0) {
+      const userGroup = document.createElement('optgroup');
+      userGroup.label = 'User Themes';
+      userThemes.forEach(theme => {
+        const option = document.createElement('option');
+        option.value = theme.id;
+        option.textContent = theme.name;
+        userGroup.appendChild(option);
+      });
+      selectElement.appendChild(userGroup);
+    }
+
+    if (globalThemes.length > 0) {
+      const globalGroup = document.createElement('optgroup');
+      globalGroup.label = 'Global Themes';
+      globalThemes.forEach(theme => {
+        const option = document.createElement('option');
+        option.value = theme.id;
+        option.textContent = theme.name;
+        globalGroup.appendChild(option);
+      });
+      selectElement.appendChild(globalGroup);
+    }
+
+    if (systemThemes.length > 0) {
+      const systemGroup = document.createElement('optgroup');
+      systemGroup.label = 'System Themes';
+      systemThemes.forEach(theme => {
+        const option = document.createElement('option');
+        option.value = theme.id;
+        option.textContent = theme.name;
+        systemGroup.appendChild(option);
+      });
+      selectElement.appendChild(systemGroup);
+    }
+  }
+
+  async loadInstanceDefaultTheme() {
+    if (!this.instanceDefaultThemeSelect || !this.canManageBranding) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/settings/default-theme');
+      if (!response.ok) {
+        throw new Error('Failed to load instance default theme');
+      }
+
+      const payload = await response.json();
+      if (!payload.success) {
+        throw new Error(payload.message || 'Failed to load instance default theme');
+      }
+
+      const availableThemes = Array.isArray(payload.available_themes) ? payload.available_themes : [];
+      const promotableThemes = Array.isArray(payload.promotable_themes) ? payload.promotable_themes : [];
+      const demotableThemes = Array.isArray(payload.demotable_themes) ? payload.demotable_themes : [];
+
+      this.populateThemeOptions(this.instanceDefaultThemeSelect, availableThemes);
+      this.populateThemeOptions(this.promoteGlobalThemeSelect, promotableThemes);
+      this.populateThemeOptions(this.demoteGlobalThemeSelect, demotableThemes);
+
+      if (payload.value) {
+        this.instanceDefaultThemeSelect.value = String(payload.value);
+      }
+
+      this.setEmptyThemeSelectMessage(this.promoteGlobalThemeSelect, 'No user themes available to promote');
+      this.setEmptyThemeSelectMessage(this.demoteGlobalThemeSelect, 'No global themes available to demote');
+    } catch (error) {
+      console.error('Error loading instance default theme:', error);
+      this.showStatus('Error loading default theme: ' + error.message, 'error');
+    }
+  }
+
+  setEmptyThemeSelectMessage(selectElement, message) {
+    if (!selectElement) {
+      return;
+    }
+
+    if (selectElement.options.length === 0) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = message;
+      selectElement.appendChild(option);
+    }
+  }
+
+  async saveInstanceDefaultTheme() {
+    if (!this.canManageBranding || !this.instanceDefaultThemeSelect) {
+      return;
+    }
+
+    try {
+      this.showStatus('Saving...', 'info');
+
+      const selectedThemeId = parseInt(this.instanceDefaultThemeSelect.value, 10);
+      if (!Number.isInteger(selectedThemeId) || selectedThemeId <= 0) {
+        throw new Error('Please select a valid theme');
+      }
+
+      const response = await fetch('/api/settings/default-theme', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ theme_id: selectedThemeId })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to save default theme');
+      }
+
+      this.showStatus('Saved', 'success');
+      setTimeout(() => {
+        this.statusElement.textContent = '';
+        this.statusElement.className = 'settings-status';
+      }, 2000);
+    } catch (error) {
+      this.showStatus('Error: ' + error.message, 'error');
+    }
+  }
+
+  async promoteThemeToGlobal() {
+    if (!this.canManageBranding || !this.promoteGlobalThemeSelect) {
+      return;
+    }
+
+    try {
+      this.showStatus('Saving...', 'info');
+      const themeId = parseInt(this.promoteGlobalThemeSelect.value, 10);
+      if (!Number.isInteger(themeId) || themeId <= 0) {
+        throw new Error('Please select a valid theme to promote');
+      }
+
+      const response = await fetch(`/api/themes/${themeId}/promote-global`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to promote theme');
+      }
+
+      await this.loadThemes();
+      await this.loadInstanceDefaultTheme();
+      this.showStatus('Saved', 'success');
+    } catch (error) {
+      this.showStatus('Error: ' + error.message, 'error');
+    }
+  }
+
+  async demoteThemeFromGlobal() {
+    if (!this.canManageBranding || !this.demoteGlobalThemeSelect) {
+      return;
+    }
+
+    try {
+      this.showStatus('Saving...', 'info');
+      const themeId = parseInt(this.demoteGlobalThemeSelect.value, 10);
+      if (!Number.isInteger(themeId) || themeId <= 0) {
+        throw new Error('Please select a valid theme to demote');
+      }
+
+      const response = await fetch(`/api/themes/${themeId}/demote-global`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to demote theme');
+      }
+
+      await this.loadThemes();
+      await this.loadInstanceDefaultTheme();
+      this.showStatus('Saved', 'success');
+    } catch (error) {
+      this.showStatus('Error: ' + error.message, 'error');
     }
   }
 
@@ -758,6 +975,24 @@ class Settings {
     if (this.canManageBranding && this.brandingResetBtn) {
       this.brandingResetBtn.addEventListener('click', () => {
         this.resetBrandingLogo();
+      });
+    }
+
+    if (this.canManageBranding && this.instanceDefaultThemeSaveBtn) {
+      this.instanceDefaultThemeSaveBtn.addEventListener('click', () => {
+        this.saveInstanceDefaultTheme();
+      });
+    }
+
+    if (this.canManageBranding && this.promoteGlobalThemeBtn) {
+      this.promoteGlobalThemeBtn.addEventListener('click', () => {
+        this.promoteThemeToGlobal();
+      });
+    }
+
+    if (this.canManageBranding && this.demoteGlobalThemeBtn) {
+      this.demoteGlobalThemeBtn.addEventListener('click', () => {
+        this.demoteThemeFromGlobal();
       });
     }
   }

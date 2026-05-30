@@ -17,6 +17,7 @@ class Theme(Base):
     settings = Column(Text, nullable=False)  # JSON string
     background_image = Column(String(255), nullable=True)
     system_theme = Column(Boolean, nullable=False, default=False)
+    global_theme = Column(Boolean, nullable=False, default=False)
     
     # NULL user_id = system theme, otherwise user's custom theme
     user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=True, index=True)
@@ -38,6 +39,7 @@ class Theme(Base):
             'settings': json.loads(self.settings) if isinstance(self.settings, str) else self.settings,
             'background_image': self.background_image,
             'system_theme': self.system_theme,
+            'global_theme': self.global_theme,
             'created_at': serialize_datetime(self.created_at),
             'updated_at': serialize_datetime(self.updated_at)
         }

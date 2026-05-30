@@ -299,6 +299,23 @@ class ThemeBuilder {
     
     return option;
   }
+
+  addThemeGroup(label, themes) {
+    if (!themes || themes.length === 0) {
+      return;
+    }
+
+    const group = document.createElement('optgroup');
+    group.label = label;
+    themes.forEach(theme => {
+      this.themes[theme.id] = theme;
+      const option = document.createElement('option');
+      option.value = theme.id;
+      option.textContent = theme.name;
+      group.appendChild(option);
+    });
+    this.themeSelect.appendChild(group);
+  }
   
   async loadThemes(preserveSelection = false) {
     // Store current selection if preserving
@@ -319,40 +336,16 @@ class ThemeBuilder {
       }
       this.themes = {};
       
-      // Split into user and system themes
-      const userThemes = themes.filter(t => !t.system_theme).sort((a, b) => a.name.localeCompare(b.name));
+      // Split into user, global, and system themes
+      const userThemes = themes.filter(t => !t.system_theme && !t.global_theme).sort((a, b) => a.name.localeCompare(b.name));
+      const globalThemes = themes.filter(t => !t.system_theme && t.global_theme).sort((a, b) => a.name.localeCompare(b.name));
       const systemThemes = themes.filter(t => t.system_theme).sort((a, b) => a.name.localeCompare(b.name));
       
       // Clear existing options
       this.themeSelect.innerHTML = '';
-      
-      // Add user themes first
-      if (userThemes.length > 0) {
-        const userGroup = document.createElement('optgroup');
-        userGroup.label = 'User Themes';
-        userThemes.forEach(theme => {
-          this.themes[theme.id] = theme;
-          const option = document.createElement('option');
-          option.value = theme.id;
-          option.textContent = theme.name;
-          userGroup.appendChild(option);
-        });
-        this.themeSelect.appendChild(userGroup);
-      }
-      
-      // Add system themes
-      if (systemThemes.length > 0) {
-        const systemGroup = document.createElement('optgroup');
-        systemGroup.label = 'System Themes';
-        systemThemes.forEach(theme => {
-          this.themes[theme.id] = theme;
-          const option = document.createElement('option');
-          option.value = theme.id;
-          option.textContent = theme.name;
-          systemGroup.appendChild(option);
-        });
-        this.themeSelect.appendChild(systemGroup);
-      }
+      this.addThemeGroup('User Themes', userThemes);
+      this.addThemeGroup('Global Themes', globalThemes);
+      this.addThemeGroup('System Themes', systemThemes);
       
       // Restore preserved selection if requested and it exists in the loaded themes
       if (preserveSelection && currentSelection && this.themes[currentSelection]) {
@@ -484,7 +477,7 @@ class ThemeBuilder {
     this.applyThemePreview();
     
     // Update save button state
-    this.updateSaveButtonState(theme.system_theme);
+    this.updateSaveButtonState(theme.system_theme || theme.global_theme);
   }
   
   loadThemeColors(settings) {
@@ -509,44 +502,44 @@ class ThemeBuilder {
     downloadBtn.disabled = !filename;
   }
   
-  updateSaveButtonState(isSystemTheme) {
+  updateSaveButtonState(isReadOnlyTheme) {
     const renameBtn = document.getElementById('rename-theme-btn');
     const deleteBtn = document.getElementById('delete-theme-btn');
     const canEditTheme = this.permissions.canEditTheme;
     const canRenameTheme = this.permissions.canRenameTheme;
     const canDeleteTheme = this.permissions.canDeleteTheme;
     
-    if (isSystemTheme || !canEditTheme) {
+    if (isReadOnlyTheme || !canEditTheme) {
       this.saveBtn.disabled = true;
-      this.saveBtn.title = isSystemTheme
-        ? 'System themes cannot be modified. Create a copy to edit.'
+      this.saveBtn.title = isReadOnlyTheme
+        ? 'System and global themes cannot be modified directly. Create a copy to edit it.'
         : 'You do not have permission to edit themes.';
     } else {
       this.saveBtn.disabled = false;
       this.saveBtn.title = 'Save changes to this theme';
     }
 
-    if (isSystemTheme || !canRenameTheme) {
+    if (isReadOnlyTheme || !canRenameTheme) {
       renameBtn.disabled = true;
-      renameBtn.title = isSystemTheme
-        ? 'System themes cannot be renamed. Create a copy to edit.'
+      renameBtn.title = isReadOnlyTheme
+        ? 'System and global themes cannot be renamed directly.'
         : 'You do not have permission to rename themes.';
     } else {
       renameBtn.disabled = false;
       renameBtn.title = 'Rename the selected theme';
     }
 
-    if (isSystemTheme || !canDeleteTheme) {
+    if (isReadOnlyTheme || !canDeleteTheme) {
       deleteBtn.disabled = true;
-      deleteBtn.title = isSystemTheme
-        ? 'System themes cannot be deleted.'
+      deleteBtn.title = isReadOnlyTheme
+        ? 'System and global themes cannot be deleted directly.'
         : 'You do not have permission to delete themes.';
     } else {
       deleteBtn.disabled = false;
       deleteBtn.title = 'Delete this custom theme permanently';
     }
 
-    const disableThemeEditingFields = isSystemTheme || !canEditTheme;
+    const disableThemeEditingFields = isReadOnlyTheme || !canEditTheme;
 
     // Disable or enable all color inputs.
     for (const inputs of Object.values(this.colorInputs)) {
@@ -583,7 +576,7 @@ class ThemeBuilder {
     }
     
     // System themes can't have changes (inputs are disabled), so apply directly
-    if (this.currentThemeData.system_theme) {
+    if (this.currentThemeData.system_theme || this.currentThemeData.global_theme) {
       await this.doApplyTheme();
       return;
     }
@@ -800,8 +793,8 @@ class ThemeBuilder {
       return;
     }
     
-    if (this.currentThemeData.system_theme) {
-      this.showErrorToast('Cannot save system themes');
+    if (this.currentThemeData.system_theme || this.currentThemeData.global_theme) {
+      this.showErrorToast('Cannot save system or global themes');
       this.lastSaveError = true;
       return;
     }
@@ -1026,8 +1019,8 @@ class ThemeBuilder {
       return;
     }
     
-    if (this.currentThemeData.system_theme) {
-      this.showErrorToast('Cannot rename system themes');
+    if (this.currentThemeData.system_theme || this.currentThemeData.global_theme) {
+      this.showErrorToast('Cannot rename system or global themes');
       return;
     }
 
@@ -1147,8 +1140,8 @@ class ThemeBuilder {
       return;
     }
     
-    if (this.currentThemeData.system_theme) {
-      this.showErrorToast('Cannot delete system themes');
+    if (this.currentThemeData.system_theme || this.currentThemeData.global_theme) {
+      this.showErrorToast('Cannot delete system or global themes');
       return;
     }
 

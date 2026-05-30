@@ -12,10 +12,18 @@ from werkzeug.exceptions import BadRequest
 
 from database import SessionLocal
 from models import Setting, Theme
+from theme_defaults import (
+    DEFAULT_THEME_SETTING_KEY,
+    get_instance_default_theme,
+    upsert_instance_default_theme,
+)
+from permissions import has_permission
 from utils import (
     create_error_response,
     create_success_response,
+    get_user_permissions,
     get_user_scoped_query,
+    require_authentication,
     require_permission,
 )
 
@@ -40,6 +48,49 @@ def _emit_theme_event(event_name, data, user_id=None):
 def _get_user_accessible_theme(session, user_id, theme_id):
     """Return a theme only if it is visible to the current user."""
     return get_user_scoped_query(session, Theme, user_id).filter(Theme.id == theme_id).first()
+
+
+def _get_default_theme_candidates(session):
+    """Return themes eligible to be the instance default theme."""
+    return session.query(Theme).filter(
+        (Theme.system_theme.is_(True) | Theme.global_theme.is_(True)),
+    ).order_by(Theme.name.asc()).all()
+
+
+def _get_promotable_themes(session):
+    """Return user themes that can be promoted to global visibility."""
+    return session.query(Theme).filter(
+        Theme.system_theme.is_(False),
+        Theme.global_theme.is_(False),
+        Theme.user_id.is_not(None),
+    ).order_by(Theme.name.asc()).all()
+
+
+def _get_demotable_themes(session):
+    """Return global themes that can be demoted back to user scope."""
+    return session.query(Theme).filter(
+        Theme.system_theme.is_(False),
+        Theme.global_theme.is_(True),
+        Theme.user_id.is_not(None),
+    ).order_by(Theme.name.asc()).all()
+
+
+def _reset_demoted_theme_users(session, theme):
+    """Move non-owner users off a theme that is losing global visibility."""
+    replacement_theme = get_instance_default_theme(session)
+    replacement_theme_id = str(replacement_theme.id) if replacement_theme else None
+    if not replacement_theme_id:
+        return
+
+    affected_settings = session.query(Setting).filter(
+        Setting.key == 'selected_theme',
+        Setting.value == str(theme.id),
+        Setting.user_id.is_not(None),
+        Setting.user_id != theme.user_id,
+    ).all()
+
+    for setting in affected_settings:
+        setting.value = replacement_theme_id
 
 
 @theme_bp.route("/api/themes", methods=["GET"])
@@ -154,8 +205,8 @@ def update_theme(theme_id):
         if not theme:
             return create_error_response("Theme not found", 404)
 
-        if theme.system_theme:
-            return create_error_response("Cannot update system themes", 400)
+        if theme.system_theme or theme.global_theme:
+          return create_error_response("Cannot update system or global themes", 400)
 
         try:
             data = request.get_json(silent=True)
@@ -236,8 +287,8 @@ def rename_theme(theme_id):
         if not theme:
             return create_error_response("Theme not found", 404)
 
-        if theme.system_theme:
-            return create_error_response("Cannot rename system themes", 400)
+        if theme.system_theme or theme.global_theme:
+          return create_error_response("Cannot rename system or global themes", 400)
 
         data = request.get_json()
         new_name = data.get('name')
@@ -295,7 +346,10 @@ def delete_theme(theme_id):
             return create_error_response("Theme not found", 404)
 
         if theme.system_theme:
-            return create_error_response("Cannot delete system themes", 400)
+          return create_error_response("Cannot delete system themes", 400)
+
+        if theme.global_theme:
+          return create_error_response("Demote global themes before deleting them", 400)
 
         session.delete(theme)
         session.commit()
@@ -358,8 +412,8 @@ def copy_theme():
         if not source_theme:
             return create_error_response("Source theme not found", 404)
 
-        if not source_theme.system_theme:
-            return create_error_response("Only system themes can be copied", 400)
+        if not (source_theme.system_theme or source_theme.global_theme):
+          return create_error_response("Only system or global themes can be copied", 400)
 
         existing = session.query(Theme).filter(Theme.name == new_name).first()
         if existing:
@@ -700,6 +754,245 @@ def get_current_theme():
     except Exception as e:
         logger.error(f"Error getting current theme: {str(e)}")
         return create_error_response(f"Error getting current theme: {str(e)}", 500)
+    finally:
+        session.close()
+
+
+@theme_bp.route("/api/settings/default-theme", methods=["GET"])
+@require_authentication
+def get_default_theme():
+    """Get the instance default theme used for new users and public boards.
+    ---
+    tags:
+      - Themes
+    security:
+      - session: []
+    responses:
+      200:
+        description: Current instance default theme
+      401:
+        description: Authentication required
+      500:
+        description: Server error
+    """
+    session = SessionLocal()
+    try:
+        user_id = g.user.id
+        theme = get_instance_default_theme(session)
+        if not theme:
+            return create_error_response("Default theme not found", 404)
+
+        response_payload = {
+            "success": True,
+            "key": DEFAULT_THEME_SETTING_KEY,
+            "value": theme.id,
+            "theme": theme.to_dict(),
+        }
+
+        user_permissions = get_user_permissions(user_id)
+        if has_permission(user_permissions, 'branding.edit'):
+            response_payload["available_themes"] = [
+                t.to_dict() for t in _get_default_theme_candidates(session)
+            ]
+            response_payload["promotable_themes"] = [
+                t.to_dict() for t in _get_promotable_themes(session)
+            ]
+            response_payload["demotable_themes"] = [
+                t.to_dict() for t in _get_demotable_themes(session)
+            ]
+
+        return jsonify(response_payload), 200
+    except Exception as e:
+        logger.error(f"Error getting default theme: {str(e)}")
+        return create_error_response(f"Error getting default theme: {str(e)}", 500)
+    finally:
+        session.close()
+
+
+@theme_bp.route("/api/settings/default-theme", methods=["PUT"])
+@require_permission('branding.edit')
+def set_default_theme():
+    """Set the instance default theme used for new users and public boards.
+    ---
+    tags:
+      - Themes
+    security:
+      - session: []
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - theme_id
+          properties:
+            theme_id:
+              type: integer
+    responses:
+      200:
+        description: Instance default theme updated
+      400:
+        description: Invalid payload
+      404:
+        description: Theme not found
+      500:
+        description: Server error
+    """
+    session = SessionLocal()
+    try:
+        try:
+            data = request.get_json(silent=True)
+        except BadRequest:
+            data = None
+
+        if not data or not isinstance(data, dict):
+            return create_error_response("Request body must contain valid JSON object", 400)
+
+        raw_theme_id = data.get('theme_id')
+        try:
+            theme_id = int(raw_theme_id)
+            if theme_id <= 0:
+                raise ValueError("theme_id must be a positive integer")
+        except (TypeError, ValueError):
+            return create_error_response("theme_id must be a valid positive integer", 400)
+
+        theme = session.query(Theme).filter(Theme.id == theme_id).first()
+        if not theme:
+            return create_error_response("Theme not found", 404)
+
+        if not (theme.system_theme or theme.global_theme):
+          return create_error_response("Instance default theme must be a system or global theme", 400)
+
+        upsert_instance_default_theme(session, theme_id)
+        session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Default theme updated",
+            "key": DEFAULT_THEME_SETTING_KEY,
+            "value": theme_id,
+            "theme": theme.to_dict(),
+        }), 200
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error setting default theme: {str(e)}")
+        return create_error_response(f"Error setting default theme: {str(e)}", 500)
+    finally:
+        session.close()
+
+
+@theme_bp.route("/api/themes/<int:theme_id>/promote-global", methods=["POST"])
+@require_permission('branding.edit')
+def promote_theme_to_global(theme_id):
+    """Promote a user theme to global visibility.
+    ---
+    tags:
+      - Themes
+    security:
+      - session: []
+    parameters:
+      - name: theme_id
+        in: path
+        required: true
+        type: integer
+    responses:
+      200:
+        description: Theme promoted to global visibility
+      400:
+        description: Theme cannot be promoted
+      404:
+        description: Theme not found
+      500:
+        description: Server error
+    """
+    session = SessionLocal()
+    try:
+        theme = session.query(Theme).filter(Theme.id == theme_id).first()
+        if not theme:
+            return create_error_response("Theme not found", 404)
+
+        if theme.system_theme:
+            return create_error_response("System themes are already globally available", 400)
+
+        if theme.user_id is None:
+            return create_error_response("Only user themes can be promoted", 400)
+
+        if theme.global_theme:
+            return create_error_response("Theme is already global", 400)
+
+        theme.global_theme = True
+        session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Theme promoted to global visibility",
+            "theme": theme.to_dict(),
+        }), 200
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error promoting theme {theme_id} to global: {str(e)}")
+        return create_error_response(f"Error promoting theme: {str(e)}", 500)
+    finally:
+        session.close()
+
+
+@theme_bp.route("/api/themes/<int:theme_id>/demote-global", methods=["POST"])
+@require_permission('branding.edit')
+def demote_theme_from_global(theme_id):
+    """Demote a global theme back to user-only visibility.
+    ---
+    tags:
+      - Themes
+    security:
+      - session: []
+    parameters:
+      - name: theme_id
+        in: path
+        required: true
+        type: integer
+    responses:
+      200:
+        description: Theme demoted from global visibility
+      400:
+        description: Theme cannot be demoted
+      404:
+        description: Theme not found
+      500:
+        description: Server error
+    """
+    session = SessionLocal()
+    try:
+        theme = session.query(Theme).filter(Theme.id == theme_id).first()
+        if not theme:
+            return create_error_response("Theme not found", 404)
+
+        if theme.system_theme:
+            return create_error_response("System themes cannot be demoted", 400)
+
+        if not theme.global_theme:
+            return create_error_response("Theme is not global", 400)
+
+        current_default_theme = get_instance_default_theme(session)
+        if current_default_theme and current_default_theme.id == theme.id:
+            return create_error_response(
+                "Change the instance default theme before demoting this global theme",
+                400,
+            )
+
+        theme.global_theme = False
+        _reset_demoted_theme_users(session, theme)
+        session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Theme demoted from global visibility",
+            "theme": theme.to_dict(),
+        }), 200
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error demoting theme {theme_id} from global: {str(e)}")
+        return create_error_response(f"Error demoting theme: {str(e)}", 500)
     finally:
         session.close()
 

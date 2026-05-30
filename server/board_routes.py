@@ -50,6 +50,7 @@ from board_import_handlers import ImportHandlerFactory
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
 from security_validators import validate_json_import_payload_size
 from settings_schema import get_user_default_working_style
+from theme_defaults import get_instance_default_theme
 from permissions import has_permission
 
 logger = logging.getLogger(__name__)
@@ -1927,10 +1928,15 @@ def get_public_board(slug):
             "working_style": _parse_board_working_style(
                 working_style_setting.value if working_style_setting else None
             ),
+            "default_theme": None,
             "created_at": serialize_datetime(board.created_at),
             "updated_at": serialize_datetime(board.updated_at),
             "columns": [],
         }
+
+        default_theme = get_instance_default_theme(db)
+        if default_theme:
+            result["default_theme"] = default_theme.to_dict()
 
         for column in columns:
             cards_query = db.query(Card).filter(

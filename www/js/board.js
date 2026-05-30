@@ -1928,6 +1928,10 @@ class BoardManager {
 
   processBoard(board) {
     try {
+      if (this.isPublicMode && board && board.default_theme) {
+        this.applyPublicBoardTheme(board.default_theme);
+      }
+
       this.boardName = board.name;
       if (this.isPublicMode && Number.isInteger(board.id) && board.id > 0) {
         this.boardId = board.id;
@@ -2014,6 +2018,59 @@ class BoardManager {
       this.renderBoard();
     } catch (err) {
       this.showError('Error loading board: ' + err.message);
+    }
+  }
+
+  applyPublicBoardTheme(theme) {
+    if (!theme || !theme.settings || typeof theme.settings !== 'object') {
+      return;
+    }
+
+    const root = document.documentElement;
+    const body = document.body;
+    const safeNamePattern = /^[A-Za-z0-9-]+$/;
+    let appliedThemeValue = false;
+    Object.entries(theme.settings).forEach(([key, value]) => {
+      if (typeof key !== 'string' || typeof value !== 'string') {
+        return;
+      }
+
+      if (!safeNamePattern.test(key)) {
+        return;
+      }
+
+      const trimmedValue = value.trim();
+      if (!trimmedValue) {
+        return;
+      }
+
+      if (typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && !CSS.supports('color', trimmedValue)) {
+        return;
+      }
+
+      root.style.setProperty(`--${key}`, trimmedValue);
+      if (body) {
+        body.style.setProperty(`--${key}`, trimmedValue);
+      }
+      appliedThemeValue = true;
+    });
+
+    if (appliedThemeValue && body) {
+      body.classList.remove('public-board-theme-default');
+    }
+
+    const backgroundImage = typeof theme.background_image === 'string' ? theme.background_image.trim() : '';
+    const safeBackground = /^[A-Za-z0-9_.-]+$/.test(backgroundImage) ? backgroundImage : '';
+    if (safeBackground) {
+      root.style.setProperty('--background-image', `url('/images/backgrounds/${safeBackground}')`);
+      if (body) {
+        body.style.setProperty('--background-image', `url('/images/backgrounds/${safeBackground}')`);
+      }
+    } else {
+      root.style.setProperty('--background-image', 'none');
+      if (body) {
+        body.style.setProperty('--background-image', 'none');
+      }
     }
   }
 

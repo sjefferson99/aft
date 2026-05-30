@@ -11,6 +11,7 @@ This file provides examples and helper functions for:
 from database import SessionLocal
 from models import User, Role, UserRole, Board, Card, Setting
 from models import Theme
+from theme_defaults import get_instance_default_theme_id
 from utils import get_user_scoped_query, get_user_permissions, can_access_board
 from permissions import INITIAL_ROLES, has_permission
 from sqlalchemy.exc import IntegrityError
@@ -26,9 +27,6 @@ DEFAULT_USER_SETTINGS = {
     "working_style": '"kanban"',  # JSON-encoded string
     "selected_theme": "1",  # Fallback theme ID (resolved dynamically to Fresh Green)
 }
-
-# Name of the system theme to assign to new users by default
-DEFAULT_THEME_NAME = "Fresh Green"
 
 
 def create_default_user_settings(user_id, db_session=None):
@@ -49,15 +47,8 @@ def create_default_user_settings(user_id, db_session=None):
     
     try:
         settings_created = 0
-        # Resolve default theme ID from DB; fall back to ID 1 if not found
-        default_theme_id = "1"
-        fresh_green = db_session.query(Theme).filter(
-            Theme.name == DEFAULT_THEME_NAME,
-            Theme.system_theme == True,
-            Theme.user_id == None
-        ).first()
-        if fresh_green:
-            default_theme_id = str(fresh_green.id)
+        # Resolve instance default theme; helper falls back to Fresh Green when unset/invalid.
+        default_theme_id = str(get_instance_default_theme_id(db_session) or 1)
 
         resolved_settings = dict(DEFAULT_USER_SETTINGS)
         resolved_settings["selected_theme"] = default_theme_id

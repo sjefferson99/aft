@@ -60,12 +60,27 @@
   align-items: center;
 }
 
+.theme-selector-with-submit {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
 .theme-selector-with-edit select {
   flex: 1;
   max-width: 400px;
 }
 
+.theme-selector-with-submit select {
+  flex: 1;
+  max-width: 400px;
+}
+
 .theme-selector-with-edit .btn {
+  white-space: nowrap;
+}
+
+.theme-selector-with-submit .btn {
   white-space: nowrap;
 }
 
