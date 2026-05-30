@@ -225,8 +225,36 @@ class Header {
     }
 
     const faviconLinks = document.querySelectorAll('link[rel="icon"]');
+    const isDefaultAssets = logoPath === LOGO_PATH && faviconPath === FAVICON_PATH;
+
+    let customMimeType = '';
+    if (!isDefaultAssets) {
+      const normalizedPath = (faviconPath || '').toLowerCase();
+      if (normalizedPath.endsWith('.webp')) {
+        customMimeType = 'image/webp';
+      } else if (normalizedPath.endsWith('.png')) {
+        customMimeType = 'image/png';
+      } else if (normalizedPath.endsWith('.gif')) {
+        customMimeType = 'image/gif';
+      } else if (normalizedPath.endsWith('.jpg') || normalizedPath.endsWith('.jpeg')) {
+        customMimeType = 'image/jpeg';
+      }
+    }
+
     faviconLinks.forEach((faviconLink) => {
+      if (isDefaultAssets) {
+        const currentType = (faviconLink.getAttribute('type') || '').toLowerCase();
+        faviconLink.href = currentType === 'image/webp' ? LOGO_PATH : FAVICON_PATH;
+        return;
+      }
+
       faviconLink.href = faviconPath;
+
+      if (customMimeType) {
+        faviconLink.setAttribute('type', customMimeType);
+      } else {
+        faviconLink.removeAttribute('type');
+      }
     });
   }
 

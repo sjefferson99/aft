@@ -24,7 +24,7 @@ Implementation approach is intentionally two-stage:
 - [ ] CONTRIBUTING.md pre-submission checklist complete
 - [ ] All tests pass (`pytest -v` from fresh DB)
 - [ ] Swagger docstrings on all new routes
-- [ ] `expected_tables` updated in `app.py`
+- [ ] `expected_tables` updated in `server/security_validators.py`
 - [ ] Schema validation tested with backup/restore
 - [ ] Accessibility: ARIA attributes, keyboard nav, screen reader labels
 - [ ] Security: file size limit, extension validation, path traversal protection

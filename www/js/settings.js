@@ -13,7 +13,7 @@ class Settings {
     this.brandingUploadBtn = document.getElementById('branding-upload-btn');
     this.brandingResetBtn = document.getElementById('branding-reset-btn');
     this.brandingStatus = document.getElementById('branding-status');
-    this.defaultLogoPath = '/images/AFT_logo.webp';
+    this.defaultLogoPath = this.currentLogoPreview?.getAttribute('src') || '/images/AFT_logo.webp';
     this.saveTimeout = null;
     this.canManageBranding = false;
   }
