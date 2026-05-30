@@ -2605,12 +2605,9 @@ class BoardManager {
               <div class="column-header">
                 <div class="column-title-group">
                   <h4>${this.escapeHtml(column.name)} <span class="card-count">(${this.getColumnCardCount(column, index)})</span></h4>
-                  ${canUpdateColumns ? `<button class="column-edit-btn" data-column-id="${column.id}" data-column-name="${this.escapeHtml(column.name)}" title="Edit column">✎</button>` : ''}
                 </div>
                 <div class="column-actions">
                   ${!this.showArchived && canCreateCardsInCurrentView ? `<button class="column-add-card-btn" data-column-id="${column.id}" title="Add card">+</button>` : ''}
-                  ${canUpdateColumns ? `<button class="column-move-left-btn" data-column-id="${column.id}" data-order="${column.order}" title="Move left">◀</button>` : ''}
-                  ${canUpdateColumns ? `<button class="column-move-right-btn" data-column-id="${column.id}" data-order="${column.order}" title="Move right">▶</button>` : ''}
                   ${canShowColumnMenu ? `
                   <div class="column-menu-wrapper">
                     <button class="column-menu-btn" data-column-id="${column.id}" title="Column menu">⋮</button>
