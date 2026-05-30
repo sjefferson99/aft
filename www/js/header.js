@@ -218,6 +218,78 @@ class Header {
     this.isPublicBoardPage = (window.location.pathname || '').includes('/public-board.html');
   }
 
+  applyBrandingAssets(logoPath = LOGO_PATH, faviconPath = FAVICON_PATH) {
+    const logoImg = document.querySelector('.header-logo');
+    if (logoImg) {
+      logoImg.src = logoPath;
+    }
+
+    const faviconLinks = document.querySelectorAll('link[rel="icon"]');
+    const isDefaultAssets = logoPath === LOGO_PATH && faviconPath === FAVICON_PATH;
+
+    let customMimeType = '';
+    if (!isDefaultAssets) {
+      const normalizedPath = (faviconPath || '').toLowerCase();
+      if (normalizedPath.endsWith('.webp')) {
+        customMimeType = 'image/webp';
+      } else if (normalizedPath.endsWith('.png')) {
+        customMimeType = 'image/png';
+      } else if (normalizedPath.endsWith('.gif')) {
+        customMimeType = 'image/gif';
+      } else if (normalizedPath.endsWith('.jpg') || normalizedPath.endsWith('.jpeg')) {
+        customMimeType = 'image/jpeg';
+      }
+    }
+
+    faviconLinks.forEach((faviconLink) => {
+      if (isDefaultAssets) {
+        const currentType = (faviconLink.getAttribute('type') || '').toLowerCase();
+        faviconLink.href = currentType === 'image/webp' ? LOGO_PATH : FAVICON_PATH;
+        return;
+      }
+
+      faviconLink.href = faviconPath;
+
+      if (customMimeType) {
+        faviconLink.setAttribute('type', customMimeType);
+      } else {
+        faviconLink.removeAttribute('type');
+      }
+    });
+  }
+
+  async applyCustomLogoIfSet() {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch('/api/branding/logo', {
+        signal: controller.signal,
+        cache: 'no-store'
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      const filename = typeof data.filename === 'string' ? data.filename.trim() : '';
+
+      if (!filename) {
+        return;
+      }
+
+      const customLogoPath = `/images/backgrounds/logos/${encodeURIComponent(filename)}`;
+      this.applyBrandingAssets(customLogoPath, customLogoPath);
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name !== 'AbortError') {
+        console.warn('Failed to load custom branding logo:', error);
+      }
+    }
+  }
+
   getLastVisitedBoardId() {
     const rawBoardId = sessionStorage.getItem('lastVisitedBoardId');
     if (!rawBoardId) {
@@ -263,11 +335,9 @@ class Header {
     document.body.prepend(document.importNode(headerElement, true));
     this.updatePrimaryNavigationTargets();
 
-    // Apply central logo to header image and page favicon
-    const logoImg = document.querySelector('.header-logo');
-    if (logoImg) logoImg.src = LOGO_PATH;
-    const favicon = document.querySelector('link[rel="icon"]');
-    if (favicon) favicon.href = FAVICON_PATH;
+    // Apply default branding first, then replace with custom instance branding if configured.
+    this.applyBrandingAssets();
+    await this.applyCustomLogoIfSet();
     
     // Get references to status elements after HTML is inserted
     this.statusIcon = document.getElementById('status-icon');

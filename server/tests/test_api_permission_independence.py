@@ -211,6 +211,7 @@ PERMISSION_CASES = [
     },
     {"permission": "monitoring.system", "scope": "global", "method": "GET", "path": "/api/broadcast-status", "json": None, "expected": {200}},
     {"permission": "admin.database", "scope": "global", "method": "GET", "path": "/api/database/backups/list", "json": None, "expected": {200}},
+    {"permission": "branding.edit", "scope": "global", "method": "DELETE", "path": "/api/branding/logo", "json": None, "expected": {200}},
     {"permission": "user.manage", "scope": "global", "method": "GET", "path": "/api/users", "json": None, "expected": {200}},
     {"permission": "user.role", "scope": "global", "method": "GET", "path": "/api/roles", "json": None, "expected": {200}},
     {"permission": "role.manage", "scope": "global", "method": "GET", "path": "/api/roles", "json": None, "expected": {200}},

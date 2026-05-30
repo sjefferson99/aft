@@ -102,6 +102,7 @@ def validate_schema_integrity(file_path, expected_tables=None):
             'checklist_items',
             'comments',
             'settings',
+            'instance_config',
             'notifications',
             'scheduled_cards',
             'themes',

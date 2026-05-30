@@ -14,7 +14,7 @@ from database import Base, DATABASE_URL
 # Import ALL models so Alembic can detect them
 from models import (
     Board, BoardColumn, Card, ChecklistItem, Setting, Comment, 
-    Notification, ScheduledCard, Theme, User, Role, UserRole
+    Notification, ScheduledCard, Theme, User, Role, UserRole, InstanceConfig
 )
 
 # this is the Alembic Config object, which provides
