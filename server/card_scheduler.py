@@ -602,6 +602,7 @@ class CardScheduler:
                         'schedule': new_card.schedule,
                         'archived': new_card.archived,
                         'done': new_card.done,
+                        'done_datetime': new_card.done_datetime.isoformat() if new_card.done_datetime else None,
                         'created_at': new_card.created_at.isoformat() if new_card.created_at else None,
                         'updated_at': new_card.updated_at.isoformat() if new_card.updated_at else None
                     }

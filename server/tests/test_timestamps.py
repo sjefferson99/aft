@@ -125,6 +125,8 @@ class TestTimestamps:
         
         assert 'created_at' in data['card']
         assert 'updated_at' in data['card']
+        assert 'done_datetime' in data['card']
+        assert data['card']['done_datetime'] is None
     
     def test_card_timestamps_on_get(self, api_client, authenticated_session, sample_card):
         """Test that card GET endpoints return timestamp fields."""
@@ -134,6 +136,7 @@ class TestTimestamps:
         data = response.json()
         assert 'created_at' in data['card']
         assert 'updated_at' in data['card']
+        assert 'done_datetime' in data['card']
         
         # Test column cards endpoint
         response2 = authenticated_session.get(f'{api_client}/api/columns/{sample_card["column_id"]}/cards')
@@ -141,6 +144,7 @@ class TestTimestamps:
         for card in response2.json()['cards']:
             assert 'created_at' in card
             assert 'updated_at' in card
+            assert 'done_datetime' in card
     
     def test_card_updated_at_on_title_change(self, api_client, authenticated_session, sample_card):
         """Test that card updated_at changes when title is modified."""

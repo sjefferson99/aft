@@ -152,6 +152,116 @@ class TestCardDoneStatus:
             assert response.status_code == 200
             assert response.json()['done'] is expected
 
+    def test_new_card_done_datetime_defaults_to_null(self, api_client, authenticated_session, sample_card):
+        """New cards should default done_datetime to null."""
+        response = authenticated_session.get(f'{api_client}/api/cards/{sample_card["id"]}')
+        assert response.status_code == 200
+        assert response.json()['card']['done_datetime'] is None
+
+    def test_done_datetime_set_when_done_in_agile_mode(self, api_client, authenticated_session, sample_board):
+        """Marking done in agile mode should set done_datetime."""
+        set_style = authenticated_session.put(
+            f'{api_client}/api/boards/{sample_board["id"]}/settings/working-style',
+            json={'value': 'agile'}
+        )
+        assert set_style.status_code == 200
+
+        column = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns',
+            json={'name': 'In Progress'}
+        ).json()['column']
+
+        card = authenticated_session.post(
+            f'{api_client}/api/columns/{column["id"]}/cards',
+            json={'title': 'Agile done timestamp card'}
+        ).json()['card']
+
+        done_response = authenticated_session.patch(
+            f'{api_client}/api/cards/{card["id"]}/done',
+            json={'done': True}
+        )
+        assert done_response.status_code == 200
+        assert done_response.json()['done_datetime'] is not None
+
+    def test_done_datetime_not_set_when_done_in_kanban_mode(self, api_client, authenticated_session, sample_board):
+        """Marking done in kanban mode should not set done_datetime."""
+        set_style = authenticated_session.put(
+            f'{api_client}/api/boards/{sample_board["id"]}/settings/working-style',
+            json={'value': 'kanban'}
+        )
+        assert set_style.status_code == 200
+
+        column = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns',
+            json={'name': 'To Do'}
+        ).json()['column']
+
+        card = authenticated_session.post(
+            f'{api_client}/api/columns/{column["id"]}/cards',
+            json={'title': 'Kanban done timestamp card'}
+        ).json()['card']
+
+        done_response = authenticated_session.patch(
+            f'{api_client}/api/cards/{card["id"]}/done',
+            json={'done': True}
+        )
+        assert done_response.status_code == 200
+        assert done_response.json()['done_datetime'] is None
+
+    def test_done_datetime_set_when_moved_to_done_like_column(self, api_client, authenticated_session, sample_board):
+        """Moving a card to a done-like column should set done_datetime (case-insensitive)."""
+        source = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns',
+            json={'name': 'In Progress'}
+        ).json()['column']
+        target = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns',
+            json={'name': 'CoMpLeTeD'}
+        ).json()['column']
+
+        card = authenticated_session.post(
+            f'{api_client}/api/columns/{source["id"]}/cards',
+            json={'title': 'Move to done-like column'}
+        ).json()['card']
+
+        move_response = authenticated_session.patch(
+            f'{api_client}/api/cards/{card["id"]}',
+            json={'column_id': target['id']}
+        )
+        assert move_response.status_code == 200
+        assert move_response.json()['card']['done_datetime'] is not None
+
+    def test_done_datetime_set_on_batch_move_to_done_like_column(self, api_client, authenticated_session, sample_board):
+        """Batch moving cards to a done-like column should set done_datetime for moved cards."""
+        source = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns',
+            json={'name': 'Source'}
+        ).json()['column']
+        target = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns',
+            json={'name': 'DONE'}
+        ).json()['column']
+
+        card1 = authenticated_session.post(
+            f'{api_client}/api/columns/{source["id"]}/cards',
+            json={'title': 'Batch move card 1'}
+        ).json()['card']
+        card2 = authenticated_session.post(
+            f'{api_client}/api/columns/{source["id"]}/cards',
+            json={'title': 'Batch move card 2'}
+        ).json()['card']
+
+        move_response = authenticated_session.post(
+            f'{api_client}/api/columns/{source["id"]}/cards/move',
+            json={'target_column_id': target['id'], 'position': 'bottom'}
+        )
+        assert move_response.status_code == 200
+
+        card1_after = authenticated_session.get(f'{api_client}/api/cards/{card1["id"]}').json()['card']
+        card2_after = authenticated_session.get(f'{api_client}/api/cards/{card2["id"]}').json()['card']
+        assert card1_after['done_datetime'] is not None
+        assert card2_after['done_datetime'] is not None
+
 
 @pytest.mark.api
 class TestWorkingStyleSetting:

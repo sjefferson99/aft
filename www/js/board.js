@@ -5778,7 +5778,11 @@ class BoardManager {
               </div>
               <div class="card-metadata-item">
                 <span class="card-metadata-label">Updated:</span>
-                <span class="card-metadata-value" ${cardData.updated_at ? `data-tooltip="${formatTooltipDateTime(cardData.updated_at)}" aria-label="Last updated on ${formatTooltipDateTime(cardData.updated_at)}" tabindex="0"` : ''}>${cardData.updated_at ? formatTimeAgoLong(cardData.updated_at) : 'Unknown'}</span>
+                <span class="card-metadata-value" id="card-updated-metadata-value" ${cardData.updated_at ? `data-tooltip="${formatTooltipDateTime(cardData.updated_at)}" aria-label="Last updated on ${formatTooltipDateTime(cardData.updated_at)}" tabindex="0"` : ''}>${cardData.updated_at ? formatTimeAgoLong(cardData.updated_at) : 'Unknown'}</span>
+              </div>
+              <div class="card-metadata-item" id="card-done-metadata" ${cardData.done_datetime ? '' : 'style="display:none;"'}>
+                <span class="card-metadata-label">Done:</span>
+                <span class="card-metadata-value" id="card-done-metadata-value" ${cardData.done_datetime ? `data-tooltip="${formatTooltipDateTime(cardData.done_datetime)}" aria-label="Marked done on ${formatTooltipDateTime(cardData.done_datetime)}" tabindex="0"` : ''}>${cardData.done_datetime ? formatTimeAgoLong(cardData.done_datetime) : ''}</span>
               </div>
               <div class="card-metadata-item" id="card-assignee-metadata">
                 <span class="card-metadata-label">Assigned To:</span>
@@ -6600,7 +6604,7 @@ class BoardManager {
     const modalCardId = document.getElementById('edit-card-modal')?.getAttribute('data-card-id');
     if (modalCardId && parseInt(modalCardId) === cardId) {
       // Update the updated_at metadata in the modal
-      const updatedMetadataValue = document.querySelector('.card-metadata-item:nth-child(2) .card-metadata-value');
+      const updatedMetadataValue = document.getElementById('card-updated-metadata-value');
       if (updatedMetadataValue) {
         if (cardData.updated_at) {
           updatedMetadataValue.textContent = formatTimeAgoLong(cardData.updated_at);
@@ -6612,6 +6616,24 @@ class BoardManager {
           updatedMetadataValue.removeAttribute('data-tooltip');
           updatedMetadataValue.removeAttribute('aria-label');
           updatedMetadataValue.removeAttribute('tabindex');
+        }
+      }
+
+      const doneMetadataRow = document.getElementById('card-done-metadata');
+      const doneMetadataValue = document.getElementById('card-done-metadata-value');
+      if (doneMetadataRow && doneMetadataValue) {
+        if (cardData.done_datetime) {
+          doneMetadataRow.style.display = '';
+          doneMetadataValue.textContent = formatTimeAgoLong(cardData.done_datetime);
+          doneMetadataValue.setAttribute('data-tooltip', formatTooltipDateTime(cardData.done_datetime));
+          doneMetadataValue.setAttribute('aria-label', `Marked done on ${formatTooltipDateTime(cardData.done_datetime)}`);
+          doneMetadataValue.setAttribute('tabindex', '0');
+        } else {
+          doneMetadataRow.style.display = 'none';
+          doneMetadataValue.textContent = '';
+          doneMetadataValue.removeAttribute('data-tooltip');
+          doneMetadataValue.removeAttribute('aria-label');
+          doneMetadataValue.removeAttribute('tabindex');
         }
       }
     }

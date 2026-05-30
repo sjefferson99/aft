@@ -111,6 +111,7 @@ class Card(Base):
     scheduled = Column(Boolean, nullable=False, default=False, index=True)
     schedule = Column(Integer, ForeignKey('scheduled_cards.id', ondelete='SET NULL'), nullable=True, index=True)
     done = Column(Boolean, nullable=False, default=False, index=True)
+    done_datetime = Column(DateTime, nullable=True)
     
     # Track who created the card (inherits board ownership for access)
     created_by_id = Column(Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True)
