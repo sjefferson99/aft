@@ -7,6 +7,8 @@ const COLUMN_AUTO_SCROLL_MAX_EXTRA_STEP_PX = 12;
 const COLUMN_AUTO_SCROLL_MIN_STEP_PX = 4;
 const MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX = 900;
 const MOBILE_BOARD_TOUCH_SCROLL_LOCK_THRESHOLD_PX = 8;
+const MOBILE_CARD_LONG_PRESS_DELAY_MS = 500;
+const MOBILE_CARD_LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 const BOARD_LOADING_OVERLAY_DELAY_MS = 500;
 const INITIAL_BOARD_LOAD_TIMEOUT_MS = 15000;
 const SUBSEQUENT_BOARD_LOAD_TIMEOUT_MS = 10000;
@@ -847,6 +849,7 @@ class BoardManager {
     this.boardTouchStartHandler = this.handleBoardTouchStart.bind(this);
     this.boardTouchMoveHandler = this.handleBoardTouchMove.bind(this);
     this.boardTouchEndHandler = this.handleBoardTouchEnd.bind(this);
+    this.boardContextMenuHandler = this.handleBoardContextMenu.bind(this);
     this.viewportMetricsRafId = null;
     this.currentLoadController = null; // Track in-flight board load requests
     this.currentViewState = null; // Track the view state for the current load
@@ -867,6 +870,8 @@ class BoardManager {
     this.autoScrollPendingDirection = 0;
     this.boardTouchScrollState = null;
     this.boardTouchScrollingSetup = false;
+    this.mobileCardLongPressArmedCardId = null;
+    this.mobileTouchDragSuppressClickUntil = 0;
     this.assigneeFilterUsers = [];
     this.assigneeFilterVisible = false;
     this.assigneeFilterSelectedUserIds = new Set();
@@ -1346,10 +1351,297 @@ class BoardManager {
     this.container.addEventListener('touchmove', this.boardTouchMoveHandler, { passive: false });
     this.container.addEventListener('touchend', this.boardTouchEndHandler, { passive: true });
     this.container.addEventListener('touchcancel', this.boardTouchEndHandler, { passive: true });
+    this.container.addEventListener('contextmenu', this.boardContextMenuHandler);
     this.boardTouchScrollingSetup = true;
   }
 
+  isMobileTouchViewport() {
+    const hasTouchSupport = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    return hasTouchSupport && window.matchMedia(`(max-width: ${MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX}px)`).matches;
+  }
+
+  logMobileCardLongPressDebug(eventName, details = {}) {
+    // Intentionally no-op: temporary mobile drag diagnostics removed.
+    void eventName;
+    void details;
+  }
+
+  canStartMobileCardLongPress(targetElement) {
+    if (!targetElement || !this.canEdit) {
+      return false;
+    }
+
+    const cardElement = targetElement.closest('.card');
+    if (!cardElement) {
+      return false;
+    }
+
+    if (cardElement.getAttribute('data-archived') === 'true') {
+      return false;
+    }
+
+    const interactiveSelector = [
+      '.card-delete-btn',
+      '.card-archive-btn',
+      '.card-unarchive-btn',
+      '.card-done-btn',
+      '.card-move-btn',
+      '.card-expand-btn',
+      '.card-checklist-checkbox',
+      '.card-action-buttons',
+      'button',
+      'input',
+      'textarea',
+      'select',
+      'a'
+    ].join(',');
+
+    if (targetElement.closest(interactiveSelector)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  clearMobileCardLongPress(state, options = {}) {
+    if (!state) {
+      return;
+    }
+
+    if (state.cardLongPressTimerId) {
+      clearTimeout(state.cardLongPressTimerId);
+      state.cardLongPressTimerId = null;
+    }
+
+    if (state.touchDragState?.cardElement) {
+      state.touchDragState.cardElement.classList.remove('dragging');
+      state.touchDragState.cardElement.classList.remove('mobile-drag-armed');
+      state.touchDragState.cardElement.classList.remove('mobile-touch-drag-source');
+      this.stopColumnAutoScroll();
+    }
+
+    if (state.touchDragState?.ghostElement) {
+      state.touchDragState.ghostElement.remove();
+    }
+
+    if (state.cardElement) {
+      const cardId = Number(state.cardElement.getAttribute('data-card-id'));
+      if (Number.isInteger(cardId) && cardId > 0 && this.mobileCardLongPressArmedCardId === cardId) {
+        this.mobileCardLongPressArmedCardId = null;
+      }
+
+      state.cardElement.classList.remove('mobile-drag-armed');
+
+      this.logMobileCardLongPressDebug('clear-long-press', {
+        cardId,
+        isDragging: state.cardElement.classList.contains('dragging')
+      });
+    }
+
+    state.cardLongPressCancelled = true;
+    state.cardLongPressActivated = false;
+    state.touchDragState = null;
+  }
+
+  activateMobileCardLongPress(state) {
+    if (!state || state.cardLongPressCancelled || !state.cardElement?.isConnected) {
+      return;
+    }
+
+    state.cardLongPressTimerId = null;
+    state.cardLongPressActivated = true;
+    const cardId = Number(state.cardElement.getAttribute('data-card-id'));
+    if (Number.isInteger(cardId) && cardId > 0) {
+      this.mobileCardLongPressArmedCardId = cardId;
+    }
+    state.cardElement.classList.add('mobile-drag-armed');
+    this.logMobileCardLongPressDebug('long-press-activated', {
+      cardId,
+      armedCardId: this.mobileCardLongPressArmedCardId
+    });
+  }
+
+  resolveColumnCardsContainerFromPoint(clientX, clientY) {
+    const pointedElement = document.elementFromPoint(clientX, clientY);
+    if (!(pointedElement instanceof Element)) {
+      return null;
+    }
+
+    const directContainer = pointedElement.closest('.column-cards');
+    if (directContainer?.isConnected) {
+      return directContainer;
+    }
+
+    const pointedColumn = pointedElement.closest('.column');
+    const columnContainer = pointedColumn?.querySelector('.column-cards') || null;
+    return columnContainer?.isConnected ? columnContainer : null;
+  }
+
+  captureCardOriginalPosition(cardElement) {
+    if (!cardElement?.isConnected) {
+      return null;
+    }
+
+    const columnId = Number(cardElement.getAttribute('data-column-id'));
+    const order = Number(cardElement.getAttribute('data-order'));
+    const container = cardElement.closest('.column-cards');
+
+    if (!container?.isConnected) {
+      return {
+        columnId,
+        order,
+        index: null,
+        container: null,
+        nextSibling: null
+      };
+    }
+
+    const cardsInContainer = Array.from(container.querySelectorAll('.card'));
+    const rawIndex = cardsInContainer.indexOf(cardElement);
+
+    return {
+      columnId,
+      order,
+      index: rawIndex >= 0 ? rawIndex : null,
+      container,
+      nextSibling: cardElement.nextElementSibling
+    };
+  }
+
+  startMobileTouchCardDrag(state) {
+    if (!state?.cardElement?.isConnected) {
+      return;
+    }
+
+    const cardElement = state.cardElement;
+    const cardRect = cardElement.getBoundingClientRect();
+    const originalPosition = this.captureCardOriginalPosition(cardElement);
+    if (!originalPosition) {
+      return;
+    }
+
+    const oldColumnId = Number(originalPosition.columnId);
+    const oldOrder = Number(originalPosition.order);
+    const originalIndex = originalPosition.index;
+
+    const ghostElement = cardElement.cloneNode(true);
+    ghostElement.removeAttribute('id');
+    ghostElement.querySelectorAll('[id]').forEach((element) => element.removeAttribute('id'));
+    ghostElement.classList.remove('dragging', 'mobile-drag-armed');
+    ghostElement.classList.add('mobile-touch-drag-ghost');
+    ghostElement.setAttribute('aria-hidden', 'true');
+    ghostElement.style.width = `${cardRect.width}px`;
+    ghostElement.style.height = `${cardRect.height}px`;
+    ghostElement.style.transform = `translate3d(${cardRect.left}px, ${cardRect.top}px, 0)`;
+    document.body.appendChild(ghostElement);
+
+    const pointerOffsetX = state.startX - cardRect.left;
+    const pointerOffsetY = state.startY - cardRect.top;
+
+    state.touchDragState = {
+      active: true,
+      cardElement,
+      ghostElement,
+      pointerOffsetX,
+      pointerOffsetY,
+      originalPosition
+    };
+
+    cardElement.classList.add('dragging');
+    cardElement.classList.add('mobile-touch-drag-source');
+
+    const cardId = Number(cardElement.getAttribute('data-card-id'));
+    this.logMobileCardLongPressDebug('touch-drag-started', {
+      cardId,
+      oldColumnId,
+      oldOrder,
+      originalIndex
+    });
+  }
+
+  moveMobileTouchCardDrag(state, touch) {
+    const touchDragState = state?.touchDragState;
+    const draggedCard = touchDragState?.cardElement;
+    if (!touchDragState?.active || !draggedCard?.isConnected) {
+      return;
+    }
+
+    if (touchDragState.ghostElement?.isConnected) {
+      const ghostLeft = touch.clientX - touchDragState.pointerOffsetX;
+      const ghostTop = touch.clientY - touchDragState.pointerOffsetY;
+      touchDragState.ghostElement.style.transform = `translate3d(${ghostLeft}px, ${ghostTop}px, 0)`;
+    }
+
+    const columnContainer = this.resolveColumnCardsContainerFromPoint(touch.clientX, touch.clientY);
+    if (!columnContainer) {
+      this.stopColumnAutoScroll();
+      return;
+    }
+
+    this.updateColumnAutoScrollDuringDrag(columnContainer, touch.clientY);
+
+    const afterElement = this.getDragAfterElement(columnContainer, touch.clientY);
+    if (!afterElement) {
+      const addCardBtn = columnContainer.querySelector('.add-card-btn');
+      if (addCardBtn) {
+        columnContainer.insertBefore(draggedCard, addCardBtn);
+      } else {
+        columnContainer.appendChild(draggedCard);
+      }
+      return;
+    }
+
+    columnContainer.insertBefore(draggedCard, afterElement);
+  }
+
+  async finishMobileTouchCardDrag(state) {
+    const touchDragState = state?.touchDragState;
+    if (!touchDragState?.active || !touchDragState.cardElement?.isConnected) {
+      return;
+    }
+
+    const draggedCard = touchDragState.cardElement;
+    const originalPosition = touchDragState.originalPosition;
+    const targetContainer = draggedCard.closest('.column-cards');
+
+    draggedCard.classList.remove('dragging');
+    draggedCard.classList.remove('mobile-touch-drag-source');
+    if (touchDragState.ghostElement) {
+      touchDragState.ghostElement.remove();
+    }
+    this.stopColumnAutoScroll();
+
+    if (!targetContainer || !originalPosition) {
+      if (originalPosition) {
+        const restored = this.restoreCardPosition(draggedCard, originalPosition);
+        if (!restored) {
+          await this.loadBoard();
+        }
+      }
+      return;
+    }
+
+    const cardId = Number(draggedCard.getAttribute('data-card-id'));
+    const targetColumnId = Number(targetContainer.getAttribute('data-column-id'));
+    const oldColumnId = Number(originalPosition.columnId);
+    const newOrder = this.getDropOrderValue(targetContainer, draggedCard, originalPosition);
+
+    this.logMobileCardLongPressDebug('touch-drop', {
+      cardId,
+      oldColumnId,
+      targetColumnId,
+      oldOrder: originalPosition.order,
+      newOrder
+    });
+
+    if (targetColumnId !== oldColumnId || newOrder !== originalPosition.order) {
+      this.mobileTouchDragSuppressClickUntil = Date.now() + 400;
+      await this.updateCardPosition(cardId, targetColumnId, newOrder, originalPosition);
+    }
+  }
+
   resetBoardTouchScrollingState() {
+    this.clearMobileCardLongPress(this.boardTouchScrollState);
     this.boardTouchScrollState = null;
   }
 
@@ -1362,7 +1654,7 @@ class BoardManager {
   }
 
   handleBoardTouchStart(event) {
-    if (!window.matchMedia(`(max-width: ${MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX}px)`).matches) {
+    if (!this.isMobileTouchViewport()) {
       return;
     }
 
@@ -1382,6 +1674,16 @@ class BoardManager {
     const columnCardsContainer = targetElement?.closest('.column-cards') ||
       touchedColumn?.querySelector('.column-cards') ||
       null;
+    const touchedCard = targetElement?.closest('.card') || null;
+    const shouldTrackCardLongPress = this.canStartMobileCardLongPress(targetElement);
+    const touchedCardId = touchedCard ? Number(touchedCard.getAttribute('data-card-id')) : null;
+
+    this.logMobileCardLongPressDebug('touchstart', {
+      touchId: touch.identifier,
+      targetClass: targetElement?.className || null,
+      touchedCardId,
+      shouldTrackCardLongPress
+    });
 
     this.boardTouchScrollState = {
       active: true,
@@ -1392,8 +1694,24 @@ class BoardManager {
       lastY: touch.clientY,
       axis: null,
       columnsContainer,
-      columnCardsContainer
+      columnCardsContainer,
+      cardElement: shouldTrackCardLongPress ? touchedCard : null,
+      cardLongPressTimerId: null,
+      cardLongPressActivated: false,
+      cardLongPressCancelled: !shouldTrackCardLongPress,
+      touchDragState: null
     };
+
+    if (shouldTrackCardLongPress) {
+      this.boardTouchScrollState.cardLongPressTimerId = setTimeout(() => {
+        this.activateMobileCardLongPress(this.boardTouchScrollState);
+      }, MOBILE_CARD_LONG_PRESS_DELAY_MS);
+
+      this.logMobileCardLongPressDebug('long-press-timer-started', {
+        touchedCardId,
+        delayMs: MOBILE_CARD_LONG_PRESS_DELAY_MS
+      });
+    }
   }
 
   handleBoardTouchMove(event) {
@@ -1412,9 +1730,45 @@ class BoardManager {
     const deltaY = touch.clientY - state.lastY;
     const totalDeltaX = touch.clientX - state.startX;
     const totalDeltaY = touch.clientY - state.startY;
+    const movementDistance = Math.max(Math.abs(totalDeltaX), Math.abs(totalDeltaY));
+
+    if (state.cardElement && !state.cardLongPressCancelled && !state.cardLongPressActivated) {
+      if (movementDistance >= MOBILE_CARD_LONG_PRESS_MOVE_TOLERANCE_PX) {
+        const cardId = Number(state.cardElement.getAttribute('data-card-id'));
+        this.logMobileCardLongPressDebug('long-press-cancelled-by-move', {
+          cardId,
+          movementDistance,
+          tolerance: MOBILE_CARD_LONG_PRESS_MOVE_TOLERANCE_PX
+        });
+        this.clearMobileCardLongPress(state);
+      } else {
+        return;
+      }
+    }
+
+    if (state.cardLongPressActivated) {
+      event.preventDefault();
+
+      if (!state.touchDragState?.active) {
+        this.startMobileTouchCardDrag(state);
+      }
+
+      this.moveMobileTouchCardDrag(state, touch);
+
+      const cardId = state.cardElement ? Number(state.cardElement.getAttribute('data-card-id')) : null;
+      this.logMobileCardLongPressDebug('touchmove-while-armed', {
+        cardId,
+        deltaX,
+        deltaY,
+        totalDeltaX,
+        totalDeltaY
+      });
+      state.lastX = touch.clientX;
+      state.lastY = touch.clientY;
+      return;
+    }
 
     if (!state.axis) {
-      const movementDistance = Math.max(Math.abs(totalDeltaX), Math.abs(totalDeltaY));
       if (movementDistance < MOBILE_BOARD_TOUCH_SCROLL_LOCK_THRESHOLD_PX) {
         return;
       }
@@ -1450,8 +1804,41 @@ class BoardManager {
     this.resetBoardTouchScrollingState();
   }
 
-  handleBoardTouchEnd() {
+  async handleBoardTouchEnd() {
+    if (this.boardTouchScrollState?.cardElement) {
+      const cardId = Number(this.boardTouchScrollState.cardElement.getAttribute('data-card-id'));
+      this.logMobileCardLongPressDebug('touchend', {
+        cardId,
+        longPressActivated: this.boardTouchScrollState.cardLongPressActivated,
+        longPressCancelled: this.boardTouchScrollState.cardLongPressCancelled
+      });
+    }
+
+    if (this.boardTouchScrollState?.cardLongPressActivated && this.boardTouchScrollState?.touchDragState?.active) {
+      await this.finishMobileTouchCardDrag(this.boardTouchScrollState);
+    }
+
     this.resetBoardTouchScrollingState();
+  }
+
+  handleBoardContextMenu(event) {
+    if (!this.isMobileTouchViewport()) {
+      return;
+    }
+
+    const targetElement = event.target instanceof Element ? event.target : null;
+    const cardElement = targetElement?.closest('.card');
+    if (!cardElement) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const cardId = Number(cardElement.getAttribute('data-card-id'));
+    this.logMobileCardLongPressDebug('contextmenu-prevented', {
+      cardId,
+      targetClass: targetElement?.className || null
+    });
   }
 
   queueMobileViewportMetricsUpdate() {
@@ -2372,6 +2759,7 @@ class BoardManager {
       this.container.removeEventListener('touchmove', this.boardTouchMoveHandler);
       this.container.removeEventListener('touchend', this.boardTouchEndHandler);
       this.container.removeEventListener('touchcancel', this.boardTouchEndHandler);
+      this.container.removeEventListener('contextmenu', this.boardContextMenuHandler);
       this.boardTouchScrollingSetup = false;
     }
     this.resetBoardTouchScrollingState();
@@ -2961,6 +3349,12 @@ class BoardManager {
       // Add event listeners for card clicks (open edit modal)
       document.querySelectorAll('.card').forEach(card => {
         card.addEventListener('click', async (e) => {
+          if (this.isMobileTouchViewport() && Date.now() < this.mobileTouchDragSuppressClickUntil) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+
           // Don't trigger if clicking the delete button, checklist checkbox, or expand button
           // Use closest() to handle clicks on button content (like emoji text nodes)
           if (e.target.closest('.card-delete-btn')) return;
@@ -3439,6 +3833,18 @@ class BoardManager {
     // Card drag events
     cards.forEach(card => {
       card.addEventListener('dragstart', (e) => {
+        if (this.isMobileTouchViewport()) {
+          const cardId = Number(card.getAttribute('data-card-id'));
+          this.logMobileCardLongPressDebug('native-dragstart-blocked-mobile', {
+            cardId,
+            targetClass: e.target?.className || null
+          });
+          e.preventDefault();
+          return false;
+        }
+
+        const cardId = Number(card.getAttribute('data-card-id'));
+
         // Don't allow drag if clicking on buttons or interactive elements
         if (e.target.closest('.card-delete-btn') || 
             e.target.closest('.card-archive-btn') || 
@@ -3470,10 +3876,23 @@ class BoardManager {
           container: originalColumnContainer,
           nextSibling: actualNextSibling
         };
+
+        this.logMobileCardLongPressDebug('dragstart-state-captured', {
+          cardId,
+          oldColumnId,
+          oldOrder,
+          originalIndex
+        });
       });
       
       card.addEventListener('dragend', (e) => {
         card.classList.remove('dragging');
+        card.classList.remove('mobile-drag-armed');
+        const cardId = Number(card.getAttribute('data-card-id'));
+        this.logMobileCardLongPressDebug('dragend', {
+          cardId,
+          isMobile: this.isMobileTouchViewport()
+        });
         draggedCard = null;
         originalPosition = null; // Clear stored position
         this.stopColumnAutoScroll();
@@ -3533,6 +3952,14 @@ class BoardManager {
         // Calculate target order using neighboring order values rather than
         // DOM index because persisted order values can contain gaps.
         const newOrder = this.getDropOrderValue(columnContainer, draggedCard, originalPosition);
+
+        this.logMobileCardLongPressDebug('drop', {
+          cardId,
+          oldColumnId,
+          targetColumnId,
+          oldOrder: originalPosition.order,
+          newOrder
+        });
         
         // Only update if position or column changed
         const oldOrder = originalPosition.order;
@@ -3585,7 +4012,7 @@ class BoardManager {
 
     const isSameColumnMove = Number.isFinite(targetColumnId) && Number.isFinite(oldColumnId) && targetColumnId === oldColumnId;
 
-    if (isSameColumnMove && Number.isFinite(originalIndex)) {
+    if (isSameColumnMove && Number.isInteger(originalIndex) && originalIndex >= 0) {
       if (draggedIndex > originalIndex) {
         if (Number.isFinite(previousOrder)) {
           return previousOrder;
@@ -3727,7 +4154,14 @@ class BoardManager {
         if (originalPosition.nextSibling && originalPosition.container.contains(originalPosition.nextSibling)) {
           // Insert before the next sibling (exact original position)
           originalPosition.container.insertBefore(cardElement, originalPosition.nextSibling);
+          return true;
         } else {
+          const cardsInContainer = Array.from(originalPosition.container.querySelectorAll('.card'));
+          if (Number.isInteger(originalPosition.index) && originalPosition.index >= 0 && originalPosition.index < cardsInContainer.length) {
+            originalPosition.container.insertBefore(cardElement, cardsInContainer[originalPosition.index]);
+            return true;
+          }
+
           // If next sibling is gone, append at end
           const addCardBtn = originalPosition.container.querySelector('.add-card-btn');
           if (addCardBtn) {
@@ -3735,16 +4169,19 @@ class BoardManager {
           } else {
             originalPosition.container.appendChild(cardElement);
           }
+          return true;
         }
         
       } else {
         console.warn('Cannot restore card: original container is no longer in the document');
         // Container was removed (column deleted or board reloaded)
         // The calling function will reload the board to get fresh state
+        return false;
       }
     } catch (err) {
       console.error('Failed to restore card position:', err);
       // Will fall back to board reload in calling function
+      return false;
     }
   }
 
@@ -7667,18 +8104,7 @@ class BoardManager {
     const cardElement = this.container.querySelector(`.card[data-card-id="${cardId}"]`);
     if (!cardElement) return null;
 
-    const oldColumnId = parseInt(cardElement.getAttribute('data-column-id'));
-    const oldOrder = parseInt(cardElement.getAttribute('data-order'));
-    const originalColumnContainer = document.querySelector(`[data-column-id="${oldColumnId}"] .column-cards`);
-    const originalIndex = Array.from(originalColumnContainer?.querySelectorAll('.card') || []).indexOf(cardElement);
-
-    return {
-      columnId: oldColumnId,
-      order: oldOrder,
-      index: originalIndex,
-      container: originalColumnContainer,
-      nextSibling: cardElement.nextElementSibling
-    };
+    return this.captureCardOriginalPosition(cardElement);
   }
 
   async openMoveCardModal(cardId) {
