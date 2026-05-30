@@ -1246,8 +1246,10 @@ class BoardManager {
 
   captureExpandedCardState() {
     const expanded = new Set();
+    let capturedCount = 0;
 
     this.container?.querySelectorAll('.card.has-overflow[data-card-id]').forEach((cardElement) => {
+      capturedCount += 1;
       if (cardElement.classList.contains('collapsed')) {
         return;
       }
@@ -1257,6 +1259,9 @@ class BoardManager {
         expanded.add(cardId);
       }
     });
+
+    // Avoid wiping persisted state before cards are rendered during initial load.
+    if (capturedCount === 0) return;
 
     this.expandedCardIds = expanded;
     this.persistExpandedCardState();
@@ -1319,7 +1324,6 @@ class BoardManager {
     this.captureBoardHorizontalScrollPosition();
     this.persistBoardHorizontalScrollPosition();
     this.captureExpandedCardState();
-    this.persistExpandedCardState();
   }
 
   setupMobileViewportSync() {
