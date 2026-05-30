@@ -2073,7 +2073,6 @@ def get_public_card(slug, card_id):
                 BoardColumn.board_id == board.id,
                 Card.id == card_id,
                 Card.scheduled.is_(False),
-                Card.archived.is_(False),
             )
             .options(
                 selectinload(Card.checklist_items),

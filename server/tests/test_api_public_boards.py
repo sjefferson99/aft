@@ -512,6 +512,63 @@ class TestPublicCardAPI:
         assert response.headers.get("X-Robots-Tag") == "noindex, nofollow, noarchive"
         assert "no-store" in (response.headers.get("Cache-Control") or "")
 
+    def test_anonymous_can_read_done_public_card(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Done cards should be readable from the public single-card endpoint."""
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Done Public Card"},
+        )
+        assert card_response.status_code == 201
+        card_id = card_response.json()["card"]["id"]
+
+        mark_done_response = authenticated_session.patch(
+            f"{api_client}/api/cards/{card_id}/done",
+            json={"done": True},
+        )
+        assert mark_done_response.status_code == 200, mark_done_response.text
+
+        slug = self._make_board_public(api_client, authenticated_session, sample_board["id"])
+
+        response = requests.get(f"{api_client}/api/public/boards/{slug}/cards/{card_id}")
+        assert response.status_code == 200
+        card = response.json()["card"]
+        assert card["id"] == card_id
+        assert card["done"] is True
+
+    def test_anonymous_can_read_archived_public_card(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Archived cards should be readable from the public single-card endpoint."""
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{sample_column['id']}/cards",
+            json={"title": "Archived Public Card"},
+        )
+        assert card_response.status_code == 201
+        card_id = card_response.json()["card"]["id"]
+
+        archive_response = authenticated_session.patch(
+            f"{api_client}/api/cards/{card_id}/archive"
+        )
+        assert archive_response.status_code == 200, archive_response.text
+
+        slug = self._make_board_public(api_client, authenticated_session, sample_board["id"])
+
+        response = requests.get(f"{api_client}/api/public/boards/{slug}/cards/{card_id}")
+        assert response.status_code == 200
+        card = response.json()["card"]
+        assert card["id"] == card_id
+        assert card["archived"] is True
+
     def test_anonymous_cannot_write_cards_on_public_board(
         self,
         api_client,
