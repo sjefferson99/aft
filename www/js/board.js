@@ -1588,6 +1588,8 @@ class BoardManager {
    */
   canShowColumnMenu() {
     return this.canEdit ||
+      this.canCallPermissionEndpoint('POST', '/api/columns/:id/cards') ||
+      this.canCallPermissionEndpoint('PATCH', '/api/columns/:id') ||
       this.canCallPermissionEndpoint('POST', '/api/columns/:source_id/cards/move') ||
       this.canCallPermissionEndpoint('POST', '/api/cards/batch/archive') ||
       this.canCallPermissionEndpoint('POST', '/api/cards/batch/unarchive') ||
@@ -2603,16 +2605,33 @@ class BoardManager {
               <div class="column-header">
                 <div class="column-title-group">
                   <h4>${this.escapeHtml(column.name)} <span class="card-count">(${this.getColumnCardCount(column, index)})</span></h4>
-                  ${canUpdateColumns ? `<button class="column-edit-btn" data-column-id="${column.id}" data-column-name="${this.escapeHtml(column.name)}" title="Edit column">✎</button>` : ''}
                 </div>
                 <div class="column-actions">
                   ${!this.showArchived && canCreateCardsInCurrentView ? `<button class="column-add-card-btn" data-column-id="${column.id}" title="Add card">+</button>` : ''}
-                  ${canUpdateColumns ? `<button class="column-move-left-btn" data-column-id="${column.id}" data-order="${column.order}" title="Move left">◀</button>` : ''}
-                  ${canUpdateColumns ? `<button class="column-move-right-btn" data-column-id="${column.id}" data-order="${column.order}" title="Move right">▶</button>` : ''}
                   ${canShowColumnMenu ? `
                   <div class="column-menu-wrapper">
                     <button class="column-menu-btn" data-column-id="${column.id}" title="Column menu">⋮</button>
                     <div class="column-menu-dropdown" data-column-id="${column.id}">
+                      ${!this.showArchived && canCreateCardsInCurrentView ? `
+                        <button class="column-menu-item column-menu-add-card-btn" data-column-id="${column.id}">
+                          <span>+</span>
+                          <span>Add card</span>
+                        </button>
+                      ` : ''}
+                      ${canUpdateColumns ? `
+                        <button class="column-menu-item column-menu-rename-btn" data-column-id="${column.id}" data-column-name="${this.escapeHtml(column.name)}">
+                          <span>✎</span>
+                          <span>Rename column</span>
+                        </button>
+                        <button class="column-menu-item column-menu-move-left-btn" data-column-id="${column.id}" data-order="${column.order}">
+                          <span>◀</span>
+                          <span>Move left</span>
+                        </button>
+                        <button class="column-menu-item column-menu-move-right-btn" data-column-id="${column.id}" data-order="${column.order}">
+                          <span>▶</span>
+                          <span>Move right</span>
+                        </button>
+                      ` : ''}
                       <button class="column-menu-item column-move-all-cards-btn" data-column-id="${column.id}">
                         <span class="icon-span">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2797,6 +2816,15 @@ class BoardManager {
         });
       });
 
+      document.querySelectorAll('.column-menu-rename-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
+          const columnName = e.currentTarget.getAttribute('data-column-name');
+          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
+          this.openEditColumnModal(columnId, columnName);
+        });
+      });
+
       this.setupAssigneeFilterBarListeners();
       
       // Add event listeners for add card buttons (header and empty state)
@@ -2804,6 +2832,15 @@ class BoardManager {
         btn.addEventListener('click', (e) => {
           const columnId = parseInt(e.target.getAttribute('data-column-id'));
           const scheduled = this.currentView === 'scheduled';
+          this.openAddCardModal(columnId, 0, scheduled); // Add at top (order 0)
+        });
+      });
+
+      document.querySelectorAll('.column-menu-add-card-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
+          const scheduled = this.currentView === 'scheduled';
+          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
           this.openAddCardModal(columnId, 0, scheduled); // Add at top (order 0)
         });
       });
@@ -2886,12 +2923,35 @@ class BoardManager {
           }
         });
       });
+
+      document.querySelectorAll('.column-menu-move-left-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
+          const currentOrder = parseInt(e.currentTarget.getAttribute('data-order'));
+          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
+          if (currentOrder > 0) {
+            this.moveColumn(columnId, currentOrder - 1);
+          }
+        });
+      });
       
       document.querySelectorAll('.column-move-right-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const columnId = parseInt(e.target.getAttribute('data-column-id'));
           const currentOrder = parseInt(e.target.getAttribute('data-order'));
           const maxOrder = this.columns.length - 1;
+          if (currentOrder < maxOrder) {
+            this.moveColumn(columnId, currentOrder + 1);
+          }
+        });
+      });
+
+      document.querySelectorAll('.column-menu-move-right-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
+          const currentOrder = parseInt(e.currentTarget.getAttribute('data-order'));
+          const maxOrder = this.columns.length - 1;
+          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
           if (currentOrder < maxOrder) {
             this.moveColumn(columnId, currentOrder + 1);
           }
@@ -3153,17 +3213,17 @@ class BoardManager {
       ? (canCreateCard && canCreateSchedule)
       : canCreateCard;
     if (!canUseAddCardUi) {
-      document.querySelectorAll('.column-add-card-btn, .add-card-btn').forEach(btn => btn.remove());
+      document.querySelectorAll('.column-add-card-btn, .column-menu-add-card-btn, .add-card-btn').forEach(btn => btn.remove());
     }
     
     // Remove column edit buttons if user cannot update columns.
     if (!canUpdateColumn) {
-      document.querySelectorAll('.column-edit-btn').forEach(btn => btn.remove());
+      document.querySelectorAll('.column-edit-btn, .column-menu-rename-btn').forEach(btn => btn.remove());
     }
     
     // Remove column move buttons if user cannot update columns.
     if (!canUpdateColumn) {
-      document.querySelectorAll('.column-move-left-btn, .column-move-right-btn').forEach(btn => btn.remove());
+      document.querySelectorAll('.column-move-left-btn, .column-move-right-btn, .column-menu-move-left-btn, .column-menu-move-right-btn').forEach(btn => btn.remove());
     }
     
     // Remove column menu and its items based on permissions

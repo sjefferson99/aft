@@ -149,6 +149,10 @@
   overflow-x: auto;
   padding-bottom: 20px;
   min-height: calc(100vh - 190px);
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
   justify-content: safe center;
   color-scheme: light;
 }
@@ -202,7 +206,8 @@
   padding: 15px;
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 250px);
+  min-height: 0;
+  max-height: 100%;
   transition: opacity 0.2s;
 }
 
@@ -1846,6 +1851,17 @@ button.readonly-disabled,
 
 #board-container {
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.board-page .canvas {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 80px);
+  min-height: calc(100dvh - 80px);
 }
 
 .board-page {
@@ -1869,6 +1885,7 @@ button.readonly-disabled,
 @media (max-width: 900px) {
   .board-page .canvas {
     padding: 10px 8px 2px;
+    height: calc(100dvh - 68px);
     min-height: calc(100dvh - 68px);
   }
 
@@ -1910,11 +1927,12 @@ button.readonly-disabled,
   .column {
     min-width: var(--mobile-column-width);
     max-width: var(--mobile-column-width);
-    min-height: var(--board-mobile-available-height, calc(100dvh - 154px));
+    min-height: 0;
+    height: 100%;
     padding: 10px;
-    max-height: var(--board-mobile-available-height, calc(100dvh - 154px));
+    max-height: 100%;
     border-radius: 12px;
-    align-self: flex-start;
+    align-self: stretch;
   }
 
   .add-column-placeholder {
@@ -1933,11 +1951,17 @@ button.readonly-disabled,
   }
 
   .column-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title menu"
+      "count menu";
     gap: 10px;
     align-items: flex-start;
   }
 
   .column-title-group {
+    grid-area: title;
     min-width: 0;
     flex: 1;
     flex-wrap: wrap;
@@ -1948,10 +1972,26 @@ button.readonly-disabled,
     overflow-wrap: anywhere;
   }
 
+  .column-header h4 .card-count {
+    display: block;
+    margin-left: 0;
+    margin-top: 2px;
+    font-size: 12px;
+  }
+
   .column-actions {
+    grid-area: menu;
+    justify-self: end;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 6px;
+  }
+
+  .column-edit-btn,
+  .column-add-card-btn,
+  .column-move-left-btn,
+  .column-move-right-btn {
+    display: none;
   }
 
   .column-cards {
@@ -2152,6 +2192,7 @@ button.readonly-disabled,
 @media (max-width: 640px) {
   .board-page .canvas {
     padding: 8px 4px 1px;
+    height: calc(100dvh - 68px);
   }
 
   .columns-container {
@@ -2169,8 +2210,9 @@ button.readonly-disabled,
   .column {
     min-width: var(--mobile-column-width-tight);
     max-width: var(--mobile-column-width-tight);
-    min-height: var(--board-mobile-available-height, calc(100dvh - 138px));
-    max-height: var(--board-mobile-available-height, calc(100dvh - 138px));
+    min-height: 0;
+    height: 100%;
+    max-height: 100%;
   }
 
   .add-column-placeholder {
