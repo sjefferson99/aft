@@ -5657,6 +5657,9 @@ class BoardManager {
     
     // Check if board is read-only
     const isReadOnly = !this.canEdit;
+    const modalTitle = isTemplate
+      ? (isReadOnly ? 'Card Template Detail' : 'Edit Card Template')
+      : (isReadOnly ? 'Card Detail' : 'Edit Card');
     const readonlyAttr = isReadOnly ? 'readonly' : '';
     const disabledAttr = isReadOnly ? 'disabled' : '';
 
@@ -5683,14 +5686,14 @@ class BoardManager {
           <div class="modal-header">
             ${isReadOnly ? '<div class="board-readonly-indicator" style="position: static; margin-bottom: 10px;">Read Only</div>' : ''}
             <div class="modal-header-actions">
-              ${isTemplate && canOpenScheduleEditor ?
+              ${!isReadOnly && isTemplate && canOpenScheduleEditor ?
                 `<button type="button" class="btn btn-secondary" id="edit-schedule-from-template-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
                     <circle cx="12" cy="12" r="10"></circle>
                     <polyline points="12 6 12 12 16 14"></polyline>
                   </svg>
                   Edit Schedule
-                </button>` : (!isReadOnly || canArchiveCard || canUnarchiveCard || canToggleDone) ?
+                </button>` : !isReadOnly ?
                 cardData.archived ? 
                   `${canUnarchiveCard ? `<button type="button" class="btn btn-secondary" id="unarchive-card-detail-btn" data-card-id="${cardData.id}">📂 Unarchive</button>` : ''}` :
                   `${this.workingStyle === 'agile' ? 
@@ -5701,13 +5704,13 @@ class BoardManager {
                   }
                   ${canArchiveCard && this.workingStyle !== 'agile' ? '<button type="button" class="btn btn-secondary" id="archive-card-detail-btn" data-card-id="' + cardData.id + '">🗄️ Archive</button>' : ''}` : ''
               }
-              ${canManageAssignees ? `<button type="button" class="btn btn-secondary" id="assign-assignees-btn" data-card-id="${cardData.id}">👤 Assignees</button>` : ''}
-              ${canDeleteCard ? `<button type="button" class="btn btn-danger" id="delete-card-detail-btn" data-card-id="${cardData.id}">Delete</button>` : ''}
+              ${!isReadOnly && canManageAssignees ? `<button type="button" class="btn btn-secondary" id="assign-assignees-btn" data-card-id="${cardData.id}">👤 Assignees</button>` : ''}
+              ${!isReadOnly && canDeleteCard ? `<button type="button" class="btn btn-danger" id="delete-card-detail-btn" data-card-id="${cardData.id}">Delete</button>` : ''}
               <button type="button" class="btn btn-secondary" id="cancel-edit-card-btn">${isReadOnly ? 'Close' : 'Cancel'}</button>
               ${!isReadOnly ? '<button type="submit" form="edit-card-form" class="btn btn-primary">Save</button>' : ''}
             </div>
             <h2>
-              ${isTemplate ? 'Edit Card Template' : 'Edit Card'}
+              ${modalTitle}
               <span class="card-ref-number">Ref: #${cardData.id}</span>
             </h2>
           </div>
@@ -5721,7 +5724,7 @@ class BoardManager {
               <textarea id="edit-card-description" name="edit-card-description" rows="4" ${readonlyAttr}>${this.escapeHtml(cardData.description || '')}</textarea>
             </div>
             
-            ${!isTemplate && canOpenScheduleEditor ? `
+            ${!isReadOnly && !isTemplate && canOpenScheduleEditor ? `
             <div class="schedule-section">
               <button type="button" class="btn btn-secondary" id="schedule-card-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
@@ -5824,9 +5827,13 @@ class BoardManager {
     const assignAssigneesBtn = document.getElementById('assign-assignees-btn');
     const titleInput = document.getElementById('edit-card-title');
 
-    // Focus on input and select text
-    titleInput.focus();
-    titleInput.select();
+    // Focus title only when editable; otherwise focus Close for accessibility.
+    if (isReadOnly) {
+      cancelBtn.focus();
+    } else {
+      titleInput.focus();
+      titleInput.select();
+    }
 
     // Track changes in title and description
     titleInput.addEventListener('input', () => {
