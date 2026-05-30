@@ -14,7 +14,7 @@ def _create_custom_theme(api_client, session, suffix):
 
     create_response = session.post(f'{api_client}/api/themes/copy', json={
         'source_theme_id': source_theme['id'],
-        'new_name': f'IDOR Theme {suffix} {int(time.time() * 1000)}',
+        'new_name': f'IDOR Theme {suffix} {int(time.time() * 1000)} {uuid.uuid4().hex[:8]}',
     })
     assert create_response.status_code == 201, create_response.text
     return create_response.json()
@@ -226,11 +226,12 @@ class TestThemesAPI:
         themes_response = authenticated_session.get(f'{api_client}/api/themes')
         source_theme = themes_response.json()[0]
         
-        unique_name = f'Update Test Theme {int(time.time() * 1000)}'
+        unique_name = f'Update Test Theme {int(time.time() * 1000)} {uuid.uuid4().hex[:8]}'
         create_response = authenticated_session.post(f'{api_client}/api/themes/copy', json={
             'source_theme_id': source_theme['id'],
             'new_name': unique_name
         })
+        assert create_response.status_code == 201, create_response.text
         theme_id = create_response.json()['id']
         
         # Update it
@@ -280,11 +281,12 @@ class TestThemesAPI:
         themes_response = authenticated_session.get(f'{api_client}/api/themes')
         source_theme = themes_response.json()[0]
         
-        unique_name = f'Invalid JSON Test Theme {int(time.time() * 1000)}'
+        unique_name = f'Invalid JSON Test Theme {int(time.time() * 1000)} {uuid.uuid4().hex[:8]}'
         create_response = authenticated_session.post(f'{api_client}/api/themes/copy', json={
             'source_theme_id': source_theme['id'],
             'new_name': unique_name
         })
+        assert create_response.status_code == 201, create_response.text
         theme_id = create_response.json()['id']
         
         try:
@@ -317,7 +319,7 @@ class TestThemesAPI:
         assert response.status_code == 400  # Changed from 403
         data = response.json()
         assert data['success'] is False
-        assert 'system theme' in data['message'].lower()
+        assert 'system or global themes' in data['message'].lower()
     
     def test_rename_theme(self, api_client, authenticated_session):
         """Test renaming a custom theme."""
@@ -653,6 +655,152 @@ class TestThemesAPI:
             json={'theme_id': original_default_theme_id}
         )
         assert restore_response.status_code == 200
+
+    def test_set_instance_default_theme_rejects_private_user_theme(
+        self, api_client, authenticated_session
+    ):
+        """Instance default theme must be system or promoted global theme."""
+        theme = _create_custom_theme(api_client, authenticated_session, 'private-default')
+
+        response = authenticated_session.put(
+            f'{api_client}/api/settings/default-theme',
+            json={'theme_id': theme['id']}
+        )
+        assert response.status_code == 400, response.text
+        assert 'system or global' in response.json()['message'].lower()
+
+    def test_promote_theme_to_global_makes_it_visible_to_other_users(
+        self, api_client, authenticated_session, second_user_theme_session
+    ):
+        """Promoted themes should become visible and selectable for other users."""
+        theme = _create_custom_theme(api_client, authenticated_session, 'promote-visible')
+
+        promote_response = authenticated_session.post(
+            f'{api_client}/api/themes/{theme["id"]}/promote-global'
+        )
+        assert promote_response.status_code == 200, promote_response.text
+        assert promote_response.json()['theme']['global_theme'] is True
+
+        visible_response = second_user_theme_session.get(f'{api_client}/api/themes/{theme["id"]}')
+        assert visible_response.status_code == 200, visible_response.text
+        assert visible_response.json()['id'] == theme['id']
+
+        select_response = second_user_theme_session.put(
+            f'{api_client}/api/settings/theme',
+            json={'theme_id': theme['id']},
+        )
+        assert select_response.status_code == 200, select_response.text
+
+    def test_promoted_global_theme_can_be_instance_default(
+        self, api_client, authenticated_session
+    ):
+        """A promoted global theme can be selected as the instance default."""
+        current_response = authenticated_session.get(f'{api_client}/api/settings/default-theme')
+        assert current_response.status_code == 200
+        original_default_theme_id = current_response.json()['value']
+
+        theme = _create_custom_theme(api_client, authenticated_session, 'global-default')
+        promote_response = authenticated_session.post(
+            f'{api_client}/api/themes/{theme["id"]}/promote-global'
+        )
+        assert promote_response.status_code == 200, promote_response.text
+
+        set_response = authenticated_session.put(
+            f'{api_client}/api/settings/default-theme',
+            json={'theme_id': theme['id']}
+        )
+        assert set_response.status_code == 200, set_response.text
+        assert set_response.json()['value'] == theme['id']
+
+        restore_response = authenticated_session.put(
+            f'{api_client}/api/settings/default-theme',
+            json={'theme_id': original_default_theme_id}
+        )
+        assert restore_response.status_code == 200
+
+        demote_response = authenticated_session.post(
+            f'{api_client}/api/themes/{theme["id"]}/demote-global'
+        )
+        assert demote_response.status_code == 200, demote_response.text
+
+    def test_demote_global_theme_blocks_when_used_as_instance_default(
+        self, api_client, authenticated_session
+    ):
+        """A global theme cannot be demoted while it is configured as the instance default."""
+        current_response = authenticated_session.get(f'{api_client}/api/settings/default-theme')
+        assert current_response.status_code == 200
+        original_default_theme_id = current_response.json()['value']
+
+        theme = _create_custom_theme(api_client, authenticated_session, 'demote-blocked')
+        promote_response = authenticated_session.post(
+            f'{api_client}/api/themes/{theme["id"]}/promote-global'
+        )
+        assert promote_response.status_code == 200, promote_response.text
+
+        set_response = authenticated_session.put(
+            f'{api_client}/api/settings/default-theme',
+            json={'theme_id': theme['id']}
+        )
+        assert set_response.status_code == 200, set_response.text
+
+        demote_response = authenticated_session.post(
+            f'{api_client}/api/themes/{theme["id"]}/demote-global'
+        )
+        assert demote_response.status_code == 400, demote_response.text
+
+        restore_response = authenticated_session.put(
+            f'{api_client}/api/settings/default-theme',
+            json={'theme_id': original_default_theme_id}
+        )
+        assert restore_response.status_code == 200
+
+        cleanup_demote = authenticated_session.post(
+            f'{api_client}/api/themes/{theme["id"]}/demote-global'
+        )
+        assert cleanup_demote.status_code == 200, cleanup_demote.text
+
+    def test_demote_global_theme_resets_other_users_current_theme(
+        self, api_client, authenticated_session, second_user_theme_session
+    ):
+        """Demoting a global theme should move non-owner users back to a valid theme."""
+        fallback_response = authenticated_session.get(f'{api_client}/api/settings/default-theme')
+        assert fallback_response.status_code == 200
+        fallback_theme_id = fallback_response.json()['value']
+
+        theme = _create_custom_theme(api_client, authenticated_session, 'demote-reset')
+        promote_response = authenticated_session.post(
+            f'{api_client}/api/themes/{theme["id"]}/promote-global'
+        )
+        assert promote_response.status_code == 200, promote_response.text
+
+        select_response = second_user_theme_session.put(
+            f'{api_client}/api/settings/theme',
+            json={'theme_id': theme['id']},
+        )
+        assert select_response.status_code == 200, select_response.text
+
+        demote_response = authenticated_session.post(
+            f'{api_client}/api/themes/{theme["id"]}/demote-global'
+        )
+        assert demote_response.status_code == 200, demote_response.text
+
+        current_theme_response = second_user_theme_session.get(f'{api_client}/api/settings/theme')
+        assert current_theme_response.status_code == 200, current_theme_response.text
+        assert current_theme_response.json()['id'] == fallback_theme_id
+
+    def test_promote_theme_requires_branding_permission(
+        self, api_client, second_user_session
+    ):
+        """Promoting themes is restricted to branding editors."""
+        response = second_user_session.post(f'{api_client}/api/themes/1/promote-global')
+        assert response.status_code == 403
+
+    def test_demote_theme_requires_branding_permission(
+        self, api_client, second_user_session
+    ):
+        """Demoting themes is restricted to branding editors."""
+        response = second_user_session.post(f'{api_client}/api/themes/1/demote-global')
+        assert response.status_code == 403
 
     def test_set_instance_default_theme_requires_branding_permission(
         self, api_client, second_user_session

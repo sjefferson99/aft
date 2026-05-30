@@ -23,6 +23,11 @@ DEFAULT_THEME_SETTING_KEY = 'default_theme'
 def upgrade():
     conn = op.get_bind()
 
+    with op.batch_alter_table('themes') as batch_op:
+        batch_op.add_column(
+            sa.Column('global_theme', sa.Boolean(), nullable=False, server_default=sa.false())
+        )
+
     row = conn.execute(sa.text("""
         SELECT id
         FROM themes
@@ -65,3 +70,6 @@ def downgrade():
         WHERE `key` = :key
           AND user_id IS NULL
     """), {'key': DEFAULT_THEME_SETTING_KEY})
+
+    with op.batch_alter_table('themes') as batch_op:
+        batch_op.drop_column('global_theme')

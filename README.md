@@ -196,7 +196,10 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
   - New users at account creation time
   - Anonymous public board viewers
   - Existing users are not changed automatically
+  - Only system themes and promoted global themes appear in the default-theme selector
   - If unset or invalid, fallback remains the built-in Fresh Green system theme
+- **Global Theme Promotion** - Users with `branding.edit` can promote a user-created theme to global visibility so all users can select and copy it
+- **Global Theme Demotion** - Global themes can be demoted back to user scope from Instance Global Settings when they are no longer being shared
 - **Working Style Default (New Boards)** - Set your default board style for boards created in the future
   - **Kanban**: Traditional column-based workflow where cards move through stages
   - **Agile**: Board-level done tracking with Done/Not Done workflow
@@ -213,10 +216,11 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Database-Backed Themes** - Themes stored in database, persist across sessions
 - **System Themes** - Pre-built themes (Default, Dark, Light, Solarized) that cannot be modified
 - **Custom Themes** - Create unlimited custom themes with your preferred colours
+- **Global Themes** - Promote selected user themes to make them available instance-wide alongside system themes
 - **Theme Management**:
   - **Create**: Copy existing themes to create your own variants
-  - **Edit**: Modify all colour variables (primary, secondary, status, text, backgrounds, header)
-  - **Rename**: Update theme names for better organisation
+  - **Edit**: Modify all colour variables (primary, secondary, status, text, backgrounds, header) on user-scoped themes
+  - **Rename**: Update theme names for better organisation on user-scoped themes
   - **Import/Export**: Share themes as JSON files
   - **Apply**: Instantly preview and apply themes to your session
 - **Background Images** - Select from included background images or upload custom images
@@ -225,8 +229,8 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
   - Background images stored in Docker named volume (persistent across restarts)
 - **Background Images** - Select from available background images or upload custom images
 - **Live Preview** - See colour changes in real-time as you edit
-- **Organised Theme List** - Themes grouped by User Themes and System Themes, alphabetically sorted
-- **Read-Only System Themes** - System themes protected from modification
+- **Organised Theme List** - Themes grouped by User Themes, Global Themes, and System Themes, alphabetically sorted
+- **Read-Only Shared Themes** - System themes and promoted global themes are protected from direct modification
 - **Unsaved Changes Protection** - Warning modal when applying themes with unsaved changes
 - **Comprehensive Colour Control** - Configure 15+ colour variables:
   - Primary and secondary colours with hover states

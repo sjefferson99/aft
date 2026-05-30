@@ -286,6 +286,12 @@ def get_user_scoped_query(db, model, user_id):
         # For settings and themes, user_id can be NULL for system/global items
         # Include both user's items AND global items (where user_id IS NULL)
         if model.__name__ in ['Setting', 'Theme']:
+            if model.__name__ == 'Theme':
+                return query.filter(
+                    (model.user_id == user_id)
+                    | (model.user_id.is_(None))
+                    | (model.global_theme.is_(True))
+                )
             return query.filter((model.user_id == user_id) | (model.user_id.is_(None)))
         # For notifications, only show user's own (already handled above)
         return query.filter(model.user_id == user_id)

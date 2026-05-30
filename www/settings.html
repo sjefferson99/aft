@@ -86,13 +86,37 @@
 
           <div class="setting-item" id="default-theme-section">
             <label for="instance-default-theme">Default Theme</label>
-            <p class="setting-help">Sets the default theme for new users and public board viewers only. Existing users keep their current theme.</p>
+            <p class="setting-help">Sets the default theme for new users and public board viewers only. Existing users keep their current theme. Only system and global themes appear here.</p>
 
             <div class="theme-selector-with-submit">
               <select id="instance-default-theme" class="setting-select">
                 <option value="">Loading...</option>
               </select>
               <button id="instance-default-theme-save-btn" class="btn btn-primary" type="button">Save Default Theme</button>
+            </div>
+          </div>
+
+          <div class="setting-item" id="promote-theme-section">
+            <label for="promote-global-theme">Promote Theme to Global</label>
+            <p class="setting-help">Promoted themes become available to all users in the same way as system themes and can then be used as the instance default.</p>
+
+            <div class="theme-selector-with-submit">
+              <select id="promote-global-theme" class="setting-select">
+                <option value="">Loading...</option>
+              </select>
+              <button id="promote-global-theme-btn" class="btn btn-primary" type="button">Promote Theme</button>
+            </div>
+          </div>
+
+          <div class="setting-item" id="demote-theme-section">
+            <label for="demote-global-theme">Demote Global Theme</label>
+            <p class="setting-help">Demoting removes global visibility and returns the theme to user scope. Change the instance default first if the theme is currently in use as the global default.</p>
+
+            <div class="theme-selector-with-submit">
+              <select id="demote-global-theme" class="setting-select">
+                <option value="">Loading...</option>
+              </select>
+              <button id="demote-global-theme-btn" class="btn btn-secondary" type="button">Demote Theme</button>
             </div>
           </div>
 

@@ -7,6 +7,14 @@ DEFAULT_INSTANCE_THEME_NAME = "Fresh Green"
 DEFAULT_THEME_SETTING_KEY = "default_theme"
 
 
+def _get_instance_default_theme_settings(session):
+    """Return all global default-theme settings in a deterministic order."""
+    return session.query(Setting).filter(
+        Setting.key == DEFAULT_THEME_SETTING_KEY,
+        Setting.user_id.is_(None),
+    ).order_by(Setting.id.desc()).all()
+
+
 def _parse_positive_int(value):
     try:
         parsed = int(value)
@@ -26,15 +34,13 @@ def get_fresh_green_theme(session):
 
 def get_instance_default_theme(session):
     """Resolve the instance default theme from settings with hard fallback."""
-    setting = session.query(Setting).filter(
-        Setting.key == DEFAULT_THEME_SETTING_KEY,
-        Setting.user_id.is_(None),
-    ).first()
-
-    if setting:
+    for setting in _get_instance_default_theme_settings(session):
         theme_id = _parse_positive_int(setting.value)
         if theme_id is not None:
-            selected = session.query(Theme).filter(Theme.id == theme_id).first()
+            selected = session.query(Theme).filter(
+                Theme.id == theme_id,
+                (Theme.system_theme.is_(True) | Theme.global_theme.is_(True)),
+            ).first()
             if selected:
                 return selected
 
@@ -49,13 +55,17 @@ def get_instance_default_theme_id(session):
 
 def upsert_instance_default_theme(session, theme_id):
     """Create or update the global instance default theme setting."""
-    setting = session.query(Setting).filter(
+    settings = session.query(Setting).filter(
         Setting.key == DEFAULT_THEME_SETTING_KEY,
         Setting.user_id.is_(None),
-    ).first()
+    ).order_by(Setting.id.asc()).all()
+
+    setting = settings[0] if settings else None
 
     if setting:
         setting.value = str(theme_id)
+        for duplicate in settings[1:]:
+            session.delete(duplicate)
     else:
         session.add(
             Setting(

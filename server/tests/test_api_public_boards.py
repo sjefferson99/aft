@@ -2,6 +2,7 @@
 
 import requests
 import pytest
+import time
 
 
 @pytest.mark.api
@@ -134,10 +135,22 @@ class TestPublicBoardsAPI:
 
         themes_response = authenticated_session.get(f"{api_client}/api/themes")
         assert themes_response.status_code == 200
-        themes = themes_response.json()
-        target_theme_id = themes[0]["id"]
-        if target_theme_id == original_default_theme_id and len(themes) > 1:
-            target_theme_id = themes[1]["id"]
+        source_theme = themes_response.json()[0]
+
+        promoted_theme_response = authenticated_session.post(
+            f"{api_client}/api/themes/copy",
+            json={
+                "source_theme_id": source_theme["id"],
+                "new_name": f"Public Board Global Theme {int(time.time() * 1000)}",
+            },
+        )
+        assert promoted_theme_response.status_code == 201, promoted_theme_response.text
+        target_theme_id = promoted_theme_response.json()["id"]
+
+        promote_response = authenticated_session.post(
+            f"{api_client}/api/themes/{target_theme_id}/promote-global"
+        )
+        assert promote_response.status_code == 200, promote_response.text
 
         set_default_response = authenticated_session.put(
             f"{api_client}/api/settings/default-theme",
@@ -162,6 +175,11 @@ class TestPublicBoardsAPI:
             json={"theme_id": original_default_theme_id},
         )
         assert restore_response.status_code == 200
+
+        demote_response = authenticated_session.post(
+            f"{api_client}/api/themes/{target_theme_id}/demote-global"
+        )
+        assert demote_response.status_code == 200, demote_response.text
 
     def test_private_or_revoked_public_board_returns_not_found(
         self,
