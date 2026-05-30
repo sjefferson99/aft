@@ -1434,7 +1434,6 @@ def get_board_scheduled_cards(board_id):
                     "archived": card.archived,
                     "done": card.done,
                     "done_datetime": serialize_datetime(card.done_datetime),
-                    "done_datetime": serialize_datetime(card.done_datetime),
                     "scheduled": card.scheduled,
                     "schedule": card.schedule,
                     "created_at": serialize_datetime(card.created_at),

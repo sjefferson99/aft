@@ -54,13 +54,13 @@ card_bp = Blueprint("card", __name__)
 _broadcast_event = None
 
 DONE_COLUMN_NAME_SYNONYMS = {
-  "done",
-  "complete",
-  "completed",
-  "finished",
-  "resolved",
-  "closed",
-  "shipped",
+    "done",
+    "complete",
+    "completed",
+    "finished",
+    "resolved",
+    "closed",
+    "shipped",
 }
 
 
@@ -1270,7 +1270,7 @@ def update_card(card_id):
                 card.column_id = new_column_id
                 card.order = new_order
                 if target_column and _is_done_like_column_name(target_column.name):
-                  card.done_datetime = utc_now()
+                    card.done_datetime = utc_now()
 
             # If reordering within the same column
             elif new_order != old_order:
@@ -1953,8 +1953,8 @@ def update_card_done_status(card_id):
             "success": True,
             "message": "Card done status updated successfully",
             "card_id": card.id,
-          "done": card.done,
-          "done_datetime": serialize_datetime(card.done_datetime)
+            "done": card.done,
+            "done_datetime": serialize_datetime(card.done_datetime)
         }), 200
     except Exception as e:
         db.rollback()
