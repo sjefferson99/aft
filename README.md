@@ -150,6 +150,9 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Timestamps** - Track creation and last update times for all cards, columns, boards, and checklist items
   - Cards display "Updated X ago" on the board view
   - Edit modal shows created and updated timestamps for cards
+  - Cards also track a nullable done timestamp (`done_datetime`) for completion reporting
+  - In **Agile** mode, using the Done button sets `done_datetime` when a card is marked done
+  - Moving cards into done-like columns sets `done_datetime` (case-insensitive): `done`, `complete`, `completed`, `finished`, `resolved`, `closed`, `shipped`
   - Checklist items show created/updated timestamps in tooltips
   - Timestamps update when content changes (title, description, column) but not when reordering
   - Adding/editing comments or checklist items updates the parent card's timestamp
@@ -306,6 +309,7 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Interactive API Docs** - Built-in Swagger UI at `/api/docs`
 - **RESTful API** - Full API access for integrations and automation
 - **Health Checks** - Database connectivity and version endpoints
+- **Card Completion Timestamp** - Card payloads now include `done_datetime` (ISO datetime or null)
 
 Public board API endpoints include:
 - `GET /api/public/boards/<slug>` - Anonymous read-only board payload

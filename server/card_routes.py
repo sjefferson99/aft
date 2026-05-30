@@ -22,6 +22,7 @@ from sqlalchemy.orm import selectinload
 from database import SessionLocal
 from datetime_helpers import serialize_datetime, utc_now
 from models import Board, BoardColumn, Card, CardSecondaryAssignee, User
+from settings_schema import WORKING_STYLE_AGILE, get_board_working_style
 from utils import (
     MAX_DESCRIPTION_LENGTH,
     MAX_TITLE_LENGTH,
@@ -52,6 +53,16 @@ card_bp = Blueprint("card", __name__)
 # Injected at startup via configure_card_routes()
 _broadcast_event = None
 
+DONE_COLUMN_NAME_SYNONYMS = {
+  "done",
+  "complete",
+  "completed",
+  "finished",
+  "resolved",
+  "closed",
+  "shipped",
+}
+
 
 def configure_card_routes(broadcast_event_fn):
     """Inject runtime dependencies into this module."""
@@ -79,6 +90,20 @@ def _get_fully_authorized_batch_cards(db, user_id, card_ids, *, order_by=None):
         return None, unique_card_ids
 
     return cards, unique_card_ids
+
+
+def _normalize_column_name(column_name):
+    if not isinstance(column_name, str):
+        return ""
+
+    # Keep alphanumeric characters and spaces only so labels like "Done!" normalize to "done".
+    cleaned = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in column_name)
+    return " ".join(cleaned.strip().lower().split())
+
+
+def _is_done_like_column_name(column_name):
+    normalized = _normalize_column_name(column_name)
+    return normalized in DONE_COLUMN_NAME_SYNONYMS
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +200,7 @@ def get_column_cards(column_id):
                 "order": c.order,
                 "archived": c.archived,
                 "done": c.done,
+                "done_datetime": serialize_datetime(c.done_datetime),
                 "scheduled": c.scheduled,
                 "schedule": c.schedule,
                 "created_at": serialize_datetime(c.created_at),
@@ -373,6 +399,7 @@ def get_board_cards(board_id):
                     "order": card.order,
                     "archived": card.archived,
                     "done": card.done,
+                    "done_datetime": serialize_datetime(card.done_datetime),
                     "scheduled": card.scheduled,
                     "schedule": card.schedule,
                     "created_at": serialize_datetime(card.created_at),
@@ -635,6 +662,7 @@ def create_card(column_id):
             "schedule": card.schedule,
             "archived": card.archived,
             "done": card.done,
+            "done_datetime": serialize_datetime(card.done_datetime),
             "created_at": serialize_datetime(card.created_at),
             "updated_at": serialize_datetime(card.updated_at)
         }
@@ -889,6 +917,7 @@ def move_all_cards_in_column(source_column_id):
         )
 
         # Calculate new order values based on position
+        target_is_done_like = _is_done_like_column_name(target_column.name)
         if position == "top":
             # Move existing target cards down to make room
             for i, card in enumerate(target_cards):
@@ -898,6 +927,8 @@ def move_all_cards_in_column(source_column_id):
             for i, card in enumerate(source_cards):
                 card.column_id = target_column_id
                 card.order = i
+                if target_is_done_like:
+                    card.done_datetime = utc_now()
         else:  # bottom
             # Target cards keep their order
             # Source cards go after target cards
@@ -905,6 +936,8 @@ def move_all_cards_in_column(source_column_id):
             for i, card in enumerate(source_cards):
                 card.column_id = target_column_id
                 card.order = start_order + i
+                if target_is_done_like:
+                    card.done_datetime = utc_now()
 
         db.commit()
 
@@ -998,6 +1031,7 @@ def get_card(card_id):
             "order": card.order,
             "archived": card.archived,
             "done": card.done,
+            "done_datetime": serialize_datetime(card.done_datetime),
             "scheduled": card.scheduled,
             "schedule": card.schedule,
             "created_at": serialize_datetime(card.created_at),
@@ -1185,6 +1219,7 @@ def update_card(card_id):
             user_content_changed = True
 
         # Handle column and order changes
+        target_column = None
         if "column_id" in data or "order" in data:
             new_column_id = data.get("column_id", card.column_id)
             new_order = data.get("order", card.order)
@@ -1205,12 +1240,12 @@ def update_card(card_id):
 
             # Verify new column exists if changing columns
             if new_column_id != old_column_id:
-                column = (
+                target_column = (
                     db.query(BoardColumn)
                     .filter(BoardColumn.id == new_column_id)
                     .first()
                 )
-                if not column:
+                if not target_column:
                     return create_error_response("Target column not found", 404)
 
                 # Moving to different column is a state change - update timestamp
@@ -1234,6 +1269,8 @@ def update_card(card_id):
 
                 card.column_id = new_column_id
                 card.order = new_order
+                if target_column and _is_done_like_column_name(target_column.name):
+                  card.done_datetime = utc_now()
 
             # If reordering within the same column
             elif new_order != old_order:
@@ -1270,6 +1307,7 @@ def update_card(card_id):
             "description": card.description,
             "order": card.order,
             "done": card.done,
+            "done_datetime": serialize_datetime(card.done_datetime),
             "archived": card.archived,
             "created_at": serialize_datetime(card.created_at),
             "updated_at": serialize_datetime(card.updated_at)
@@ -1627,6 +1665,7 @@ def archive_card(card_id):
             "order": card.order,
             "archived": card.archived,
             "done": card.done,
+            "done_datetime": serialize_datetime(card.done_datetime),
             "created_at": serialize_datetime(card.created_at),
             "updated_at": serialize_datetime(card.updated_at)
         }
@@ -1720,6 +1759,7 @@ def unarchive_card(card_id):
             "order": card.order,
             "archived": card.archived,
             "done": card.done,
+            "done_datetime": serialize_datetime(card.done_datetime),
             "created_at": serialize_datetime(card.created_at),
             "updated_at": serialize_datetime(card.updated_at)
         }
@@ -1791,7 +1831,8 @@ def get_card_done_status(card_id):
         return jsonify({
             "success": True,
             "card_id": card.id,
-            "done": card.done
+            "done": card.done,
+            "done_datetime": serialize_datetime(card.done_datetime)
         }), 200
     except Exception as e:
         logger.error(f"Error getting card done status {card_id}: {str(e)}")
@@ -1873,7 +1914,15 @@ def update_card_done_status(card_id):
         card.done = done_status
 
         # Set updated_at timestamp
-        card.updated_at = utc_now()
+        now = utc_now()
+        card.updated_at = now
+
+        if (
+          done_status
+          and board_id is not None
+          and get_board_working_style(db, board_id, fallback_user_id=user_id) == WORKING_STYLE_AGILE
+        ):
+          card.done_datetime = now
 
         db.commit()
 
@@ -1886,7 +1935,8 @@ def update_card_done_status(card_id):
             "description": card.description,
             "order": card.order,
             "archived": card.archived,
-            "done": card.done
+            "done": card.done,
+            "done_datetime": serialize_datetime(card.done_datetime)
         }
 
         # Broadcast card done status change event
@@ -1903,7 +1953,8 @@ def update_card_done_status(card_id):
             "success": True,
             "message": "Card done status updated successfully",
             "card_id": card.id,
-            "done": card.done
+          "done": card.done,
+          "done_datetime": serialize_datetime(card.done_datetime)
         }), 200
     except Exception as e:
         db.rollback()
