@@ -570,6 +570,8 @@ def get_permissions_mapping():
             'PUT /api/themes/:id': {'permission': 'theme.edit', 'description': 'Update theme'},
             'PUT /api/themes/:id/rename': {'permission': 'theme.edit', 'description': 'Rename theme'},
             'DELETE /api/themes/:id': {'permission': 'theme.delete', 'description': 'Delete theme'},
+            'GET /api/settings/default-theme': {'mode': 'authenticated', 'description': 'Get instance default theme'},
+            'PUT /api/settings/default-theme': {'permission': 'branding.edit', 'description': 'Set instance default theme'},
             'GET /api/stats': {'permission': 'board.view', 'description': 'View statistics'},
             'GET /api/scheduler/health': {'permission': 'setting.view', 'description': 'View scheduler health'},
             'GET /api/broadcast-status': {'permission': 'monitoring.system', 'description': 'View broadcast status'},

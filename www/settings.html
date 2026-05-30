@@ -84,6 +84,18 @@
         <section class="settings-section" id="global-settings-panel" hidden aria-labelledby="global-settings-title">
           <h3 id="global-settings-title">Instance Global Settings</h3>
 
+          <div class="setting-item" id="default-theme-section">
+            <label for="instance-default-theme">Default Theme</label>
+            <p class="setting-help">Sets the default theme for new users and public board viewers only. Existing users keep their current theme.</p>
+
+            <div class="theme-selector-with-submit">
+              <select id="instance-default-theme" class="setting-select">
+                <option value="">Loading...</option>
+              </select>
+              <button id="instance-default-theme-save-btn" class="btn btn-primary" type="button">Save Default Theme</button>
+            </div>
+          </div>
+
           <div class="setting-item" id="branding-section">
             <label for="branding-logo-file">Instance Branding</label>
             <p class="setting-help">Upload a logo used globally in the header and favicon. Recommended WebP or PNG, maximum 100 KB.</p>

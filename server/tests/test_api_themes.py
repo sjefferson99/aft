@@ -607,6 +607,62 @@ class TestThemesAPI:
         assert response.status_code == 404
         data = response.json()
         assert data['success'] is False
+
+    def test_get_instance_default_theme(self, api_client, authenticated_session):
+        """Test getting the instance default theme for authenticated users."""
+        response = authenticated_session.get(f'{api_client}/api/settings/default-theme')
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data['success'] is True
+        assert data['key'] == 'default_theme'
+        assert isinstance(data['value'], int)
+        assert isinstance(data['theme'], dict)
+        assert data['theme']['id'] == data['value']
+
+    def test_set_instance_default_theme(self, api_client, authenticated_session):
+        """Test updating the instance default theme via branding permission endpoint."""
+        current_response = authenticated_session.get(f'{api_client}/api/settings/default-theme')
+        assert current_response.status_code == 200
+        original_default_theme_id = current_response.json()['value']
+
+        themes_response = authenticated_session.get(f'{api_client}/api/themes')
+        assert themes_response.status_code == 200
+        themes = themes_response.json()
+        target_theme_id = themes[0]['id']
+
+        if target_theme_id == original_default_theme_id and len(themes) > 1:
+            target_theme_id = themes[1]['id']
+
+        update_response = authenticated_session.put(
+            f'{api_client}/api/settings/default-theme',
+            json={'theme_id': target_theme_id}
+        )
+        assert update_response.status_code == 200
+        update_data = update_response.json()
+        assert update_data['success'] is True
+        assert update_data['value'] == target_theme_id
+
+        verify_response = authenticated_session.get(f'{api_client}/api/settings/default-theme')
+        assert verify_response.status_code == 200
+        verify_data = verify_response.json()
+        assert verify_data['value'] == target_theme_id
+
+        restore_response = authenticated_session.put(
+            f'{api_client}/api/settings/default-theme',
+            json={'theme_id': original_default_theme_id}
+        )
+        assert restore_response.status_code == 200
+
+    def test_set_instance_default_theme_requires_branding_permission(
+        self, api_client, second_user_session
+    ):
+        """Test setting instance default theme requires branding.edit."""
+        response = second_user_session.put(
+            f'{api_client}/api/settings/default-theme',
+            json={'theme_id': 1}
+        )
+        assert response.status_code == 403
     
     def test_delete_custom_theme(self, api_client, authenticated_session):
         """Test deleting a custom theme."""

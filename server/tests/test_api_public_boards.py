@@ -73,6 +73,9 @@ class TestPublicBoardsAPI:
         assert board["id"] == sample_board["id"]
         assert board["is_public"] is True
         assert board["public_slug"] == slug
+        assert isinstance(board.get("default_theme"), dict)
+        assert isinstance(board["default_theme"].get("id"), int)
+        assert isinstance(board["default_theme"].get("settings"), dict)
         assert "owner" not in board
         assert "assignee_filter_users" not in board
         assert "can_edit" not in board
@@ -117,6 +120,48 @@ class TestPublicBoardsAPI:
         assert https_response.status_code == 200
         assert https_response.headers.get("X-Robots-Tag") == "noindex, nofollow, noarchive"
         assert "no-store" in (https_response.headers.get("Cache-Control") or "")
+
+    def test_public_board_uses_configured_instance_default_theme(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+    ):
+        """Public board payload should resolve theme from instance default setting."""
+        current_default_response = authenticated_session.get(f"{api_client}/api/settings/default-theme")
+        assert current_default_response.status_code == 200
+        original_default_theme_id = current_default_response.json()["value"]
+
+        themes_response = authenticated_session.get(f"{api_client}/api/themes")
+        assert themes_response.status_code == 200
+        themes = themes_response.json()
+        target_theme_id = themes[0]["id"]
+        if target_theme_id == original_default_theme_id and len(themes) > 1:
+            target_theme_id = themes[1]["id"]
+
+        set_default_response = authenticated_session.put(
+            f"{api_client}/api/settings/default-theme",
+            json={"theme_id": target_theme_id},
+        )
+        assert set_default_response.status_code == 200
+
+        make_public_response = authenticated_session.patch(
+            f"{api_client}/api/boards/{sample_board['id']}",
+            json={"is_public": True},
+        )
+        assert make_public_response.status_code == 200
+        slug = make_public_response.json()["board"]["public_slug"]
+
+        public_response = requests.get(f"{api_client}/api/public/boards/{slug}")
+        assert public_response.status_code == 200
+        payload = public_response.json()
+        assert payload["board"]["default_theme"]["id"] == target_theme_id
+
+        restore_response = authenticated_session.put(
+            f"{api_client}/api/settings/default-theme",
+            json={"theme_id": original_default_theme_id},
+        )
+        assert restore_response.status_code == 200
 
     def test_private_or_revoked_public_board_returns_not_found(
         self,

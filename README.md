@@ -4,6 +4,8 @@ Aim, Focus, Track - AFT is an Application For Tasks, it provides an Adaptive Flo
 
 It is fully open source and is self hosted using a simple docker deployment approach.
 
+> Looking for the latest features and changes? Check the GitHub Releases page: https://github.com/sjefferson99/aft/releases
+
 ### Kanban working style
 You can use it as a simple set of Kanban boards, making one or more boards with custom columns including a done column, allowing you to drag cards between them as necessary to reflect your work. 
 
@@ -107,6 +109,7 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Stable Share Link** - Making a board private and public again keeps the same public slug unless you explicitly rotate it.
 - **Rotate Public Link** - Use "Rotate Public Link" in board settings to immediately invalidate the old URL and issue a new one.
 - **Dedicated Public Page** - Public links open at `/public-board.html?slug=<slug>` for anonymous viewing.
+- **Instance Theme Alignment** - Public board viewers use the configured instance default theme, not a fixed hardcoded theme.
 - **Read-Only by Design** - Public boards do not expose edit controls, websocket mutation paths, assignee metadata, or commenter identity fields.
 - **Anonymous Write Denial** - Anonymous POST/PATCH/DELETE requests to protected board/card endpoints remain denied.
 - **Traffic Hardening** - Public board reads are throttled at both application and reverse-proxy layers.
@@ -189,6 +192,11 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 ### ⚙️ Settings & Configuration
 - **Customisable Settings** - Configure application preferences including default board
 - **Time Format Settings** - Choose between 12-hour (AM/PM) or 24-hour time display
+- **Instance Default Theme (Global)** - In Instance Global Settings, users with `branding.edit` can choose a default theme for:
+  - New users at account creation time
+  - Anonymous public board viewers
+  - Existing users are not changed automatically
+  - If unset or invalid, fallback remains the built-in Fresh Green system theme
 - **Working Style Default (New Boards)** - Set your default board style for boards created in the future
   - **Kanban**: Traditional column-based workflow where cards move through stages
   - **Agile**: Board-level done tracking with Done/Not Done workflow
@@ -298,6 +306,10 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 Public board API endpoints include:
 - `GET /api/public/boards/<slug>` - Anonymous read-only board payload
 - `POST /api/boards/<id>/public-link/rotate` - Authenticated link rotation for public boards
+
+Default theme API endpoints include:
+- `GET /api/settings/default-theme` - Authenticated endpoint to read the current instance default theme
+- `PUT /api/settings/default-theme` - Requires `branding.edit` to update the instance default theme
 
 ![API Documentation](images/api_docs.png)
 

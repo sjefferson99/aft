@@ -6,6 +6,8 @@ class Settings {
     this.timeFormatRadios = document.querySelectorAll('input[name="time-format"]');
     this.timezoneSelect = document.getElementById('timezone-select');
     this.themeSelect = document.getElementById('theme-select');
+    this.instanceDefaultThemeSelect = document.getElementById('instance-default-theme');
+    this.instanceDefaultThemeSaveBtn = document.getElementById('instance-default-theme-save-btn');
     this.workingStyleSelect = document.getElementById('working-style');
     this.statusElement = document.getElementById('settings-status');
     this.currentLogoPreview = document.getElementById('current-logo-preview');
@@ -32,6 +34,9 @@ class Settings {
     await this.loadTimezoneOptions();
     await this.loadTimezoneSetting();
     await this.loadThemes();
+    if (this.canManageBranding) {
+      await this.loadInstanceDefaultTheme();
+    }
     await this.loadWorkingStyle();
     await this.applyThemeColors(); // Ensure theme is loaded on page load
     if (this.canManageBranding) {
@@ -408,6 +413,105 @@ class Settings {
     }
   }
 
+  populateThemeOptions(selectElement, themes) {
+    if (!selectElement) {
+      return;
+    }
+
+    const userThemes = themes.filter(t => !t.system_theme).sort((a, b) => a.name.localeCompare(b.name));
+    const systemThemes = themes.filter(t => t.system_theme).sort((a, b) => a.name.localeCompare(b.name));
+
+    selectElement.innerHTML = '';
+
+    if (userThemes.length > 0) {
+      const userGroup = document.createElement('optgroup');
+      userGroup.label = 'User Themes';
+      userThemes.forEach(theme => {
+        const option = document.createElement('option');
+        option.value = theme.id;
+        option.textContent = theme.name;
+        userGroup.appendChild(option);
+      });
+      selectElement.appendChild(userGroup);
+    }
+
+    if (systemThemes.length > 0) {
+      const systemGroup = document.createElement('optgroup');
+      systemGroup.label = 'System Themes';
+      systemThemes.forEach(theme => {
+        const option = document.createElement('option');
+        option.value = theme.id;
+        option.textContent = theme.name;
+        systemGroup.appendChild(option);
+      });
+      selectElement.appendChild(systemGroup);
+    }
+  }
+
+  async loadInstanceDefaultTheme() {
+    if (!this.instanceDefaultThemeSelect || !this.canManageBranding) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/settings/default-theme');
+      if (!response.ok) {
+        throw new Error('Failed to load instance default theme');
+      }
+
+      const payload = await response.json();
+      if (!payload.success) {
+        throw new Error(payload.message || 'Failed to load instance default theme');
+      }
+
+      const availableThemes = Array.isArray(payload.available_themes) ? payload.available_themes : [];
+      this.populateThemeOptions(this.instanceDefaultThemeSelect, availableThemes);
+
+      if (payload.value) {
+        this.instanceDefaultThemeSelect.value = String(payload.value);
+      }
+    } catch (error) {
+      console.error('Error loading instance default theme:', error);
+      this.showStatus('Error loading default theme: ' + error.message, 'error');
+    }
+  }
+
+  async saveInstanceDefaultTheme() {
+    if (!this.canManageBranding || !this.instanceDefaultThemeSelect) {
+      return;
+    }
+
+    try {
+      this.showStatus('Saving...', 'info');
+
+      const selectedThemeId = parseInt(this.instanceDefaultThemeSelect.value, 10);
+      if (!Number.isInteger(selectedThemeId) || selectedThemeId <= 0) {
+        throw new Error('Please select a valid theme');
+      }
+
+      const response = await fetch('/api/settings/default-theme', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ theme_id: selectedThemeId })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to save default theme');
+      }
+
+      this.showStatus('Saved', 'success');
+      setTimeout(() => {
+        this.statusElement.textContent = '';
+        this.statusElement.className = 'settings-status';
+      }, 2000);
+    } catch (error) {
+      this.showStatus('Error: ' + error.message, 'error');
+    }
+  }
+
   async loadWorkingStyle() {
     try {
       // Populate working style options
@@ -758,6 +862,12 @@ class Settings {
     if (this.canManageBranding && this.brandingResetBtn) {
       this.brandingResetBtn.addEventListener('click', () => {
         this.resetBrandingLogo();
+      });
+    }
+
+    if (this.canManageBranding && this.instanceDefaultThemeSaveBtn) {
+      this.instanceDefaultThemeSaveBtn.addEventListener('click', () => {
+        this.saveInstanceDefaultTheme();
       });
     }
   }

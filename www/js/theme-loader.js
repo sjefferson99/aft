@@ -227,6 +227,13 @@
   function init() {
     const currentPath = window.location.pathname || '';
     const isPublicPage = isPublicPagePath(currentPath);
+    const isPublicBoardPage = currentPath.includes('/public-board.html');
+
+    // Public boards apply instance default theme from board payload; avoid cached
+    // user themes and avoid auth-only theme API calls on anonymous pages.
+    if (isPublicBoardPage) {
+      return;
+    }
 
     // First, apply cached theme if available (prevents flash)
     const hasCachedTheme = applyFromSessionStorage({ includeBackgroundImage: isPublicPage });

@@ -12,10 +12,17 @@ from werkzeug.exceptions import BadRequest
 
 from database import SessionLocal
 from models import Setting, Theme
+from theme_defaults import (
+  DEFAULT_THEME_SETTING_KEY,
+  get_instance_default_theme,
+  upsert_instance_default_theme,
+)
 from utils import (
     create_error_response,
     create_success_response,
+  get_user_permissions,
     get_user_scoped_query,
+  require_authentication,
     require_permission,
 )
 
@@ -700,6 +707,121 @@ def get_current_theme():
     except Exception as e:
         logger.error(f"Error getting current theme: {str(e)}")
         return create_error_response(f"Error getting current theme: {str(e)}", 500)
+    finally:
+        session.close()
+
+
+@theme_bp.route("/api/settings/default-theme", methods=["GET"])
+@require_authentication
+def get_default_theme():
+    """Get the instance default theme used for new users and public boards.
+    ---
+    tags:
+      - Themes
+    security:
+      - session: []
+    responses:
+      200:
+        description: Current instance default theme
+      401:
+        description: Authentication required
+      500:
+        description: Server error
+    """
+    session = SessionLocal()
+    try:
+        user_id = g.user.id
+        theme = get_instance_default_theme(session)
+        if not theme:
+            return create_error_response("Default theme not found", 404)
+
+        response_payload = {
+            "success": True,
+            "key": DEFAULT_THEME_SETTING_KEY,
+            "value": theme.id,
+            "theme": theme.to_dict(),
+        }
+
+        user_permissions = get_user_permissions(user_id)
+        if 'branding.edit' in user_permissions:
+            available_themes = get_user_scoped_query(session, Theme, user_id).all()
+            response_payload["available_themes"] = [t.to_dict() for t in available_themes]
+
+        return jsonify(response_payload), 200
+    except Exception as e:
+        logger.error(f"Error getting default theme: {str(e)}")
+        return create_error_response(f"Error getting default theme: {str(e)}", 500)
+    finally:
+        session.close()
+
+
+@theme_bp.route("/api/settings/default-theme", methods=["PUT"])
+@require_permission('branding.edit')
+def set_default_theme():
+    """Set the instance default theme used for new users and public boards.
+    ---
+    tags:
+      - Themes
+    security:
+      - session: []
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - theme_id
+          properties:
+            theme_id:
+              type: integer
+    responses:
+      200:
+        description: Instance default theme updated
+      400:
+        description: Invalid payload
+      404:
+        description: Theme not found
+      500:
+        description: Server error
+    """
+    session = SessionLocal()
+    try:
+        user_id = g.user.id
+        try:
+            data = request.get_json(silent=True)
+        except BadRequest:
+            data = None
+
+        if not data or not isinstance(data, dict):
+            return create_error_response("Request body must contain valid JSON object", 400)
+
+        raw_theme_id = data.get('theme_id')
+        try:
+            theme_id = int(raw_theme_id)
+            if theme_id <= 0:
+                raise ValueError("theme_id must be a positive integer")
+        except (TypeError, ValueError):
+            return create_error_response("theme_id must be a valid positive integer", 400)
+
+        theme = _get_user_accessible_theme(session, user_id, theme_id)
+        if not theme:
+            return create_error_response("Theme not found", 404)
+
+        upsert_instance_default_theme(session, theme_id)
+        session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Default theme updated",
+            "key": DEFAULT_THEME_SETTING_KEY,
+            "value": theme_id,
+            "theme": theme.to_dict(),
+        }), 200
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error setting default theme: {str(e)}")
+        return create_error_response(f"Error setting default theme: {str(e)}", 500)
     finally:
         session.close()
 
