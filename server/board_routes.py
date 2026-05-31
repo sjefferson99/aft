@@ -1796,106 +1796,106 @@ def update_board(board_id):
 @require_board_access()
 @require_permission('board.edit')
 def archive_board(board_id):
-        """Archive a board by ID.
-        ---
-        tags:
-            - Boards
-        parameters:
-            - name: board_id
-                in: path
-                type: integer
-                required: true
-                description: The ID of the board to archive
-        responses:
-            200:
-                description: Board archived successfully
-            404:
-                description: Board not found
-            500:
-                description: Server error
-        """
-        db = SessionLocal()
-        try:
-                board = db.query(Board).filter(Board.id == board_id).first()
-                if not board:
-                        return create_error_response("Board not found", 404)
+    """Archive a board by ID.
+    ---
+    tags:
+        - Boards
+    parameters:
+        - name: board_id
+          in: path
+          type: integer
+          required: true
+          description: The ID of the board to archive
+    responses:
+        200:
+          description: Board archived successfully
+        404:
+          description: Board not found
+        500:
+          description: Server error
+    """
+    db = SessionLocal()
+    try:
+        board = db.query(Board).filter(Board.id == board_id).first()
+        if not board:
+            return create_error_response("Board not found", 404)
 
-                board.archived = True
-                board.updated_at = utc_now()
+        board.archived = True
+        board.updated_at = utc_now()
 
-                db.commit()
-                db.refresh(board)
+        db.commit()
+        db.refresh(board)
 
-                result = {
-                        "id": board.id,
-                        "name": board.name,
-                        "description": board.description,
-                        "is_public": bool(board.is_public),
-                        "public_slug": board.public_slug,
-                        "archived": bool(board.archived),
-                        "created_at": serialize_datetime(board.created_at),
-                        "updated_at": serialize_datetime(board.updated_at),
-                }
-                return create_success_response({"board": result, "message": "Board archived successfully"})
-        except Exception as e:
-                db.rollback()
-                logger.error(f"Error archiving board {board_id}: {str(e)}")
-                return create_error_response("Failed to archive board", 500)
-        finally:
-                db.close()
+        result = {
+            "id": board.id,
+            "name": board.name,
+            "description": board.description,
+            "is_public": bool(board.is_public),
+            "public_slug": board.public_slug,
+            "archived": bool(board.archived),
+            "created_at": serialize_datetime(board.created_at),
+            "updated_at": serialize_datetime(board.updated_at),
+        }
+        return create_success_response({"board": result, "message": "Board archived successfully"})
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error archiving board {board_id}: {str(e)}")
+        return create_error_response("Failed to archive board", 500)
+    finally:
+        db.close()
 
 
 @board_bp.route("/api/boards/<int:board_id>/unarchive", methods=["PATCH"])
 @require_board_access()
 @require_permission('board.edit')
 def unarchive_board(board_id):
-        """Unarchive a board by ID.
-        ---
-        tags:
-            - Boards
-        parameters:
-            - name: board_id
-                in: path
-                type: integer
-                required: true
-                description: The ID of the board to unarchive
-        responses:
-            200:
-                description: Board unarchived successfully
-            404:
-                description: Board not found
-            500:
-                description: Server error
-        """
-        db = SessionLocal()
-        try:
-                board = db.query(Board).filter(Board.id == board_id).first()
-                if not board:
-                        return create_error_response("Board not found", 404)
+    """Unarchive a board by ID.
+    ---
+    tags:
+        - Boards
+    parameters:
+        - name: board_id
+          in: path
+          type: integer
+          required: true
+          description: The ID of the board to unarchive
+    responses:
+        200:
+          description: Board unarchived successfully
+        404:
+          description: Board not found
+        500:
+          description: Server error
+    """
+    db = SessionLocal()
+    try:
+        board = db.query(Board).filter(Board.id == board_id).first()
+        if not board:
+            return create_error_response("Board not found", 404)
 
-                board.archived = False
-                board.updated_at = utc_now()
+        board.archived = False
+        board.updated_at = utc_now()
 
-                db.commit()
-                db.refresh(board)
+        db.commit()
+        db.refresh(board)
 
-                result = {
-                        "id": board.id,
-                        "name": board.name,
-                        "description": board.description,
-                        "is_public": bool(board.is_public),
-                        "public_slug": board.public_slug,
-                        "archived": bool(board.archived),
-                        "created_at": serialize_datetime(board.created_at),
-                        "updated_at": serialize_datetime(board.updated_at),
-                }
-                return create_success_response({"board": result, "message": "Board unarchived successfully"})
-        except Exception as e:
-                db.rollback()
-                logger.error(f"Error unarchiving board {board_id}: {str(e)}")
-                return create_error_response("Failed to unarchive board", 500)
-        finally:
-                db.close()
+        result = {
+            "id": board.id,
+            "name": board.name,
+            "description": board.description,
+            "is_public": bool(board.is_public),
+            "public_slug": board.public_slug,
+            "archived": bool(board.archived),
+            "created_at": serialize_datetime(board.created_at),
+            "updated_at": serialize_datetime(board.updated_at),
+        }
+        return create_success_response({"board": result, "message": "Board unarchived successfully"})
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error unarchiving board {board_id}: {str(e)}")
+        return create_error_response("Failed to unarchive board", 500)
+    finally:
+        db.close()
 
 
 @board_bp.route("/api/boards/<int:board_id>/public-link/rotate", methods=["POST"])
@@ -2020,7 +2020,11 @@ def get_public_board(slug):
 
         board = (
             db.query(Board)
-            .filter(Board.public_slug == safe_slug, Board.is_public.is_(True))
+            .filter(
+                Board.public_slug == safe_slug,
+                Board.is_public.is_(True),
+                Board.archived.is_(False),
+            )
             .first()
         )
         if not board:
@@ -2188,7 +2192,11 @@ def get_public_card(slug, card_id):
 
         board = (
             db.query(Board)
-            .filter(Board.public_slug == safe_slug, Board.is_public.is_(True))
+            .filter(
+                Board.public_slug == safe_slug,
+                Board.is_public.is_(True),
+                Board.archived.is_(False),
+            )
             .first()
         )
         if not board:
