@@ -3,10 +3,12 @@ class BoardsManager {
   constructor() {
     this.container = document.getElementById('boards-container');
     this.boards = [];
+    this.showArchivedBoards = false;
     this.pendingImportFile = null;
     this.activeModalState = null;
     this.previousBodyOverflow = '';
     this.boundModalKeydownHandler = (event) => this.handleModalKeydown(event);
+    this.boundHeaderViewChangedHandler = (event) => this.handleHeaderViewChanged(event);
   }
 
   async init() {
@@ -25,7 +27,72 @@ class BoardsManager {
       return;
     }
     
+    window.addEventListener('viewChanged', this.boundHeaderViewChangedHandler);
+
     this.render();
+    this.configureHeaderViews();
+    await this.loadBoards();
+  }
+
+  configureHeaderViews() {
+    if (!window.header) {
+      return;
+    }
+
+    const desktopTaskLabel = document.querySelector('.views-dropdown-item[data-view="task"] span');
+    if (desktopTaskLabel) {
+      desktopTaskLabel.textContent = 'Active Boards';
+    }
+
+    const desktopArchivedLabel = document.querySelector('.views-dropdown-item[data-view="archived"] span');
+    if (desktopArchivedLabel) {
+      desktopArchivedLabel.textContent = 'Archived Boards';
+    }
+
+    const mobileTaskItem = document.querySelector('.mobile-view-item[data-view="task"]');
+    if (mobileTaskItem) {
+      mobileTaskItem.textContent = 'Active Boards';
+    }
+
+    const mobileArchivedItem = document.querySelector('.mobile-view-item[data-view="archived"]');
+    if (mobileArchivedItem) {
+      mobileArchivedItem.textContent = 'Archived Boards';
+    }
+
+    const desktopScheduled = document.querySelector('.views-dropdown-item[data-view="scheduled"]');
+    if (desktopScheduled) {
+      desktopScheduled.style.display = 'none';
+    }
+    const mobileScheduled = document.querySelector('.mobile-view-item[data-view="scheduled"]');
+    if (mobileScheduled) {
+      mobileScheduled.style.display = 'none';
+    }
+
+    const desktopDone = document.querySelector('.views-dropdown-item[data-view="done"]');
+    if (desktopDone) {
+      desktopDone.style.display = 'none';
+    }
+    const mobileDone = document.querySelector('.mobile-view-item[data-view="done"]');
+    if (mobileDone) {
+      mobileDone.style.display = 'none';
+    }
+
+    window.header.showViewsDropdown(true);
+    window.header.setView(this.showArchivedBoards ? 'archived' : 'task');
+  }
+
+  async handleHeaderViewChanged(event) {
+    const requestedView = event?.detail?.view;
+    if (requestedView !== 'task' && requestedView !== 'archived') {
+      return;
+    }
+
+    const nextShowArchived = requestedView === 'archived';
+    if (nextShowArchived === this.showArchivedBoards) {
+      return;
+    }
+
+    this.showArchivedBoards = nextShowArchived;
     await this.loadBoards();
   }
 
@@ -212,7 +279,9 @@ class BoardsManager {
 
   async loadBoards() {
     try {
-      const response = await fetch('/api/boards');
+      this.configureHeaderViews();
+      const archivedParam = this.showArchivedBoards ? 'true' : 'false';
+      const response = await fetch(`/api/boards?archived=${archivedParam}`);
       let data = null;
 
       const contentType = response.headers.get('content-type') || '';
@@ -262,12 +331,16 @@ class BoardsManager {
     
     if (this.boards.length === 0) {
       listContainer.className = ''; // Remove grid class
+      const emptyTitle = this.showArchivedBoards ? 'No archived boards' : 'No boards yet';
+      const emptyMessage = this.showArchivedBoards
+        ? 'Archived boards will appear here.'
+        : 'Create your first board to get started!';
       listContainer.innerHTML = `
         <div class="empty-state-panel">
           <div class="empty-state">
             <div class="empty-state-icon">📋</div>
-            <h3>No boards yet</h3>
-            <p>Create your first board to get started!</p>
+            <h3>${emptyTitle}</h3>
+            <p>${emptyMessage}</p>
             <div class="empty-state-actions">
               <button class="btn btn-primary" id="empty-state-new-board-btn">+ New Board</button>
               <button class="btn btn-secondary" id="empty-state-import-board-btn">Import Board</button>
@@ -325,6 +398,27 @@ class BoardsManager {
         deleteBtn.setAttribute('aria-label', 'Delete board');
         deleteBtn.textContent = '×';
         card.appendChild(deleteBtn);
+
+        const archiveBtn = document.createElement('button');
+        archiveBtn.className = board.archived ? 'board-unarchive-btn' : 'board-archive-btn';
+        archiveBtn.dataset.boardId = String(board.id);
+        archiveBtn.dataset.boardName = String(board.name || '');
+        archiveBtn.title = board.archived ? 'Unarchive board' : 'Archive board';
+        archiveBtn.setAttribute('aria-label', board.archived ? 'Unarchive board' : 'Archive board');
+        archiveBtn.innerHTML = board.archived
+          ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+              <path d="M12 14v-2"></path>
+              <path d="M9 14l3 2 3-2"></path>
+            </svg>`
+          : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+              <path d="M12 14v2"></path>
+              <path d="M9 16l3-2 3 2"></path>
+            </svg>`;
+        card.appendChild(archiveBtn);
 
         const title = document.createElement('h4');
         title.textContent = String(board.name || 'Untitled Board');
@@ -400,6 +494,24 @@ class BoardsManager {
           this.handleDeleteBoard(parseInt(e.target.dataset.boardId));
         });
       });
+
+      listContainer.querySelectorAll('.board-archive-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation(); // Prevent card click
+          const boardId = parseInt(e.currentTarget.dataset.boardId, 10);
+          const boardName = e.currentTarget.dataset.boardName || 'this board';
+          await this.handleArchiveBoard(boardId, boardName);
+        });
+      });
+
+      listContainer.querySelectorAll('.board-unarchive-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation(); // Prevent card click
+          const boardId = parseInt(e.currentTarget.dataset.boardId, 10);
+          const boardName = e.currentTarget.dataset.boardName || 'this board';
+          await this.handleUnarchiveBoard(boardId, boardName);
+        });
+      });
       
       // Add event listeners for board cards
       listContainer.querySelectorAll('.board-card').forEach(card => {
@@ -434,6 +546,8 @@ class BoardsManager {
       const editBtn = card.querySelector('.board-edit-btn');
       const deleteBtn = card.querySelector('.board-delete-btn');
       const exportBtn = card.querySelector('.board-export-btn');
+      const archiveBtn = card.querySelector('.board-archive-btn');
+      const unarchiveBtn = card.querySelector('.board-unarchive-btn');
       
       // Remove edit button if user doesn't have permission
       // Backend has already calculated board-specific permissions (ownership + roles)
@@ -448,6 +562,15 @@ class BoardsManager {
 
       if (!canExport || !PermissionManager.canCallEndpoint('GET', '/api/boards/:id/export')) {
         exportBtn?.remove();
+      }
+
+      const canArchiveBoard = PermissionManager.canCallEndpoint('PATCH', '/api/boards/:id/archive');
+      const canUnarchiveBoard = PermissionManager.canCallEndpoint('PATCH', '/api/boards/:id/unarchive');
+      if (!canEdit || !canArchiveBoard) {
+        archiveBtn?.remove();
+      }
+      if (!canEdit || !canUnarchiveBoard) {
+        unarchiveBtn?.remove();
       }
     });
     
@@ -478,6 +601,8 @@ class BoardsManager {
       const editBtn = card.querySelector('.board-edit-btn');
       const deleteBtn = card.querySelector('.board-delete-btn');
       const exportBtn = card.querySelector('.board-export-btn');
+      const archiveBtn = card.querySelector('.board-archive-btn');
+      const unarchiveBtn = card.querySelector('.board-unarchive-btn');
       
       if (!canEdit) {
         editBtn?.remove();
@@ -489,6 +614,11 @@ class BoardsManager {
 
       if (!canExport) {
         exportBtn?.remove();
+      }
+
+      if (!canEdit) {
+        archiveBtn?.remove();
+        unarchiveBtn?.remove();
       }
     });
   }
@@ -567,6 +697,56 @@ class BoardsManager {
       }
     } catch (err) {
       this.showErrorToast('Error deleting board: ' + err.message);
+    }
+  }
+
+  async handleArchiveBoard(boardId, boardName) {
+    if (!await showConfirm(`Archive ${boardName}?`, 'Confirm Archive')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/boards/${boardId}/archive`, {
+        method: 'PATCH'
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        await this.loadBoards();
+        if (window.header) {
+          window.header.loadBoardsDropdown();
+        }
+      } else {
+        this.showErrorToast('Failed to archive board: ' + (data.message || 'Unknown error'));
+      }
+    } catch (err) {
+      this.showErrorToast('Error archiving board: ' + err.message);
+    }
+  }
+
+  async handleUnarchiveBoard(boardId, boardName) {
+    if (!await showConfirm(`Unarchive ${boardName}?`, 'Confirm Unarchive')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/boards/${boardId}/unarchive`, {
+        method: 'PATCH'
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        await this.loadBoards();
+        if (window.header) {
+          window.header.loadBoardsDropdown();
+        }
+      } else {
+        this.showErrorToast('Failed to unarchive board: ' + (data.message || 'Unknown error'));
+      }
+    } catch (err) {
+      this.showErrorToast('Error unarchiving board: ' + err.message);
     }
   }
 
@@ -957,7 +1137,7 @@ class BoardsManager {
     const fallbackMessage = 'Operation failed. Please try again.';
     const safeMessage =
       typeof message === 'string' && message.trim().length > 0
-        ? message.trim()
+        ? this.sanitizePlainText(message)
         : fallbackMessage;
     toast.textContent = safeMessage;
     toast.setAttribute('role', 'alert');

@@ -294,6 +294,7 @@ def _build_board_owner_response(board, can_reassign, available_users=None):
         "board": {
             "id": board.id,
             "name": board.name,
+            "archived": bool(board.archived),
             "owner_id": board.owner_id,
         },
         "current_owner": _user_summary(board.owner) if board.owner else None,
@@ -505,6 +506,9 @@ def get_boards():
     db = SessionLocal()
     try:
         user_id = g.user.id
+        archived_param = request.args.get('archived', 'both').lower()
+        if archived_param not in {'true', 'false', 'both'}:
+            return create_error_response("archived must be one of true, false, both", 400)
         
         user_perms = get_user_permissions(user_id)
 
@@ -533,14 +537,21 @@ def get_boards():
         
         if has_permission(user_perms, 'system.admin'):
             # Admins see all boards in the system
-            boards = db.query(Board).order_by(Board.name).all()
+            boards_query = db.query(Board)
         else:
             # Regular users: Get boards owned by user OR where user has a role assignment
             owned_boards = db.query(Board).filter(Board.owner_id == user_id)
             role_boards = db.query(Board).join(UserRole).filter(UserRole.user_id == user_id)
             
             # Combine both queries and remove duplicates
-            boards = owned_boards.union(role_boards).all()
+            boards_query = owned_boards.union(role_boards)
+
+        if archived_param == 'true':
+            boards_query = boards_query.filter(Board.archived.is_(True))
+        elif archived_param == 'false':
+            boards_query = boards_query.filter(Board.archived.is_(False))
+
+        boards = boards_query.order_by(Board.name).all()
         
         # Build board list with per-board permissions
         boards_data = []
@@ -557,6 +568,7 @@ def get_boards():
                 "description": b.description,
                 "is_public": bool(b.is_public),
                 "public_slug": b.public_slug,
+                "archived": bool(b.archived),
                 "created_at": serialize_datetime(b.created_at),
                 "updated_at": serialize_datetime(b.updated_at),
                 "can_delete": can_delete,
@@ -706,6 +718,7 @@ def create_board():
             "description": board.description,
             "is_public": bool(board.is_public),
             "public_slug": board.public_slug,
+            "archived": bool(board.archived),
             "created_at": serialize_datetime(board.created_at),
             "updated_at": serialize_datetime(board.updated_at)
         }
@@ -812,6 +825,7 @@ def export_board(board_id):
                 "id": board.id,
                 "name": board.name,
                 "description": board.description,
+                "archived": bool(board.archived),
                 "owner_id": board.owner_id,
                 "created_at": serialize_datetime(board.created_at),
                 "updated_at": serialize_datetime(board.updated_at),
@@ -1070,6 +1084,7 @@ def import_board_from_export():
         new_board = Board(
             name=resolved_board_name,
             description=board_description,
+            archived=coerce_bool(board_data.get("archived"), default=False),
             owner_id=user_id,
             updated_at=utc_now(),
         )
@@ -1319,6 +1334,7 @@ def import_board_from_export():
                     "id": new_board.id,
                     "name": new_board.name,
                     "description": new_board.description,
+                    "archived": bool(new_board.archived),
                 },
                 "import_meta": {
                     "source_board_name": source_board_name,
@@ -1401,6 +1417,7 @@ def get_board_scheduled_cards(board_id):
             "name": board.name,
             "is_public": bool(board.is_public),
             "public_slug": board.public_slug,
+            "archived": bool(board.archived),
             "columns": [],
         }
         result.update(_build_board_owner_metadata(board, g.user.id, db, include_candidates=include_owner_candidates))
@@ -1759,6 +1776,7 @@ def update_board(board_id):
             "description": board.description,
             "is_public": bool(board.is_public),
             "public_slug": board.public_slug,
+            "archived": bool(board.archived),
             "created_at": serialize_datetime(board.created_at),
             "updated_at": serialize_datetime(board.updated_at)
         }
@@ -1770,6 +1788,112 @@ def update_board(board_id):
         db.rollback()
         logger.error(f"Error updating board {board_id}: {str(e)}")
         return create_error_response("Failed to update board", 500)
+    finally:
+        db.close()
+
+
+@board_bp.route("/api/boards/<int:board_id>/archive", methods=["PATCH"])
+@require_board_access()
+@require_permission('board.edit')
+def archive_board(board_id):
+    """Archive a board by ID.
+    ---
+    tags:
+        - Boards
+    parameters:
+        - name: board_id
+          in: path
+          type: integer
+          required: true
+          description: The ID of the board to archive
+    responses:
+        200:
+          description: Board archived successfully
+        404:
+          description: Board not found
+        500:
+          description: Server error
+    """
+    db = SessionLocal()
+    try:
+        board = db.query(Board).filter(Board.id == board_id).first()
+        if not board:
+            return create_error_response("Board not found", 404)
+
+        board.archived = True
+        board.updated_at = utc_now()
+
+        db.commit()
+        db.refresh(board)
+
+        result = {
+            "id": board.id,
+            "name": board.name,
+            "description": board.description,
+            "is_public": bool(board.is_public),
+            "public_slug": board.public_slug,
+            "archived": bool(board.archived),
+            "created_at": serialize_datetime(board.created_at),
+            "updated_at": serialize_datetime(board.updated_at),
+        }
+        return create_success_response({"board": result, "message": "Board archived successfully"})
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error archiving board {board_id}: {str(e)}")
+        return create_error_response("Failed to archive board", 500)
+    finally:
+        db.close()
+
+
+@board_bp.route("/api/boards/<int:board_id>/unarchive", methods=["PATCH"])
+@require_board_access()
+@require_permission('board.edit')
+def unarchive_board(board_id):
+    """Unarchive a board by ID.
+    ---
+    tags:
+        - Boards
+    parameters:
+        - name: board_id
+          in: path
+          type: integer
+          required: true
+          description: The ID of the board to unarchive
+    responses:
+        200:
+          description: Board unarchived successfully
+        404:
+          description: Board not found
+        500:
+          description: Server error
+    """
+    db = SessionLocal()
+    try:
+        board = db.query(Board).filter(Board.id == board_id).first()
+        if not board:
+            return create_error_response("Board not found", 404)
+
+        board.archived = False
+        board.updated_at = utc_now()
+
+        db.commit()
+        db.refresh(board)
+
+        result = {
+            "id": board.id,
+            "name": board.name,
+            "description": board.description,
+            "is_public": bool(board.is_public),
+            "public_slug": board.public_slug,
+            "archived": bool(board.archived),
+            "created_at": serialize_datetime(board.created_at),
+            "updated_at": serialize_datetime(board.updated_at),
+        }
+        return create_success_response({"board": result, "message": "Board unarchived successfully"})
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error unarchiving board {board_id}: {str(e)}")
+        return create_error_response("Failed to unarchive board", 500)
     finally:
         db.close()
 
@@ -1825,6 +1949,7 @@ def rotate_public_board_link(board_id):
             "description": board.description,
             "is_public": bool(board.is_public),
             "public_slug": board.public_slug,
+            "archived": bool(board.archived),
             "created_at": serialize_datetime(board.created_at),
             "updated_at": serialize_datetime(board.updated_at),
         }
@@ -1895,7 +2020,11 @@ def get_public_board(slug):
 
         board = (
             db.query(Board)
-            .filter(Board.public_slug == safe_slug, Board.is_public.is_(True))
+            .filter(
+                Board.public_slug == safe_slug,
+                Board.is_public.is_(True),
+                Board.archived.is_(False),
+            )
             .first()
         )
         if not board:
@@ -1927,6 +2056,7 @@ def get_public_board(slug):
             "description": board.description,
             "is_public": bool(board.is_public),
             "public_slug": board.public_slug,
+            "archived": bool(board.archived),
             "working_style": _parse_board_working_style(
                 working_style_setting.value if working_style_setting else None
             ),
@@ -2062,7 +2192,11 @@ def get_public_card(slug, card_id):
 
         board = (
             db.query(Board)
-            .filter(Board.public_slug == safe_slug, Board.is_public.is_(True))
+            .filter(
+                Board.public_slug == safe_slug,
+                Board.is_public.is_(True),
+                Board.archived.is_(False),
+            )
             .first()
         )
         if not board:

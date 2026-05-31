@@ -2546,6 +2546,7 @@ class BoardManager {
 
       const isBoardPublic = board.is_public === true;
       this.isBoardPublic = isBoardPublic;
+      this.boardArchived = board.archived === true;
       if (isBoardPublic && typeof board.public_slug === 'string' && board.public_slug.length > 0) {
         this.publicSlug = board.public_slug;
       } else {
@@ -2601,6 +2602,7 @@ class BoardManager {
             boardId: this.boardId,
             can_edit: this.canEdit,
             is_public: this.isBoardPublic,
+            archived: this.boardArchived,
             public_slug: this.publicSlug,
             ...this.boardOwnerData,
           }

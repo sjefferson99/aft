@@ -103,8 +103,41 @@ class TestBoardsAPI:
         assert data['success'] is True
         assert len(data['boards']) == 1
         assert data['boards'][0]['name'] == 'Test Board'
+        assert data['boards'][0]['archived'] is False
         assert 'created_at' in data['boards'][0]
         assert 'updated_at' in data['boards'][0]
+
+    def test_archive_and_unarchive_board(self, api_client, authenticated_session, sample_board):
+        """Test archiving and unarchiving a board with archived list filtering."""
+        board_id = sample_board['id']
+
+        archive_response = authenticated_session.patch(f'{api_client}/api/boards/{board_id}/archive')
+        assert archive_response.status_code == 200
+        archive_data = archive_response.json()
+        assert archive_data['success'] is True
+        assert archive_data['board']['archived'] is True
+
+        active_list = authenticated_session.get(f'{api_client}/api/boards?archived=false')
+        assert active_list.status_code == 200
+        active_board_ids = {board['id'] for board in active_list.json()['boards']}
+        assert board_id not in active_board_ids
+
+        archived_list = authenticated_session.get(f'{api_client}/api/boards?archived=true')
+        assert archived_list.status_code == 200
+        archived_board_ids = {board['id'] for board in archived_list.json()['boards']}
+        assert board_id in archived_board_ids
+
+        board_cards_response = authenticated_session.get(f'{api_client}/api/boards/{board_id}/cards')
+        assert board_cards_response.status_code == 200
+        board_cards_data = board_cards_response.json()
+        assert board_cards_data['success'] is True
+        assert board_cards_data['board']['archived'] is True
+
+        unarchive_response = authenticated_session.patch(f'{api_client}/api/boards/{board_id}/unarchive')
+        assert unarchive_response.status_code == 200
+        unarchive_data = unarchive_response.json()
+        assert unarchive_data['success'] is True
+        assert unarchive_data['board']['archived'] is False
     
     def test_create_board(self, api_client, authenticated_session):
         """Test creating a new board."""

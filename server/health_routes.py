@@ -498,6 +498,8 @@ def get_permissions_mapping():
             },
             'DELETE /api/boards/:id': {'permission': 'board.delete', 'description': 'Delete board'},
             'PATCH /api/boards/:id': {'permission': 'board.edit', 'description': 'Edit board'},
+            'PATCH /api/boards/:id/archive': {'permission': 'board.edit', 'description': 'Archive board'},
+            'PATCH /api/boards/:id/unarchive': {'permission': 'board.edit', 'description': 'Unarchive board'},
             'GET /api/boards/:id/export': {'permission': 'board.view', 'description': 'Export board as JSON'},
             'GET /api/boards/:id/cards/scheduled': {'permission': 'schedule.view', 'description': 'View scheduled cards'},
             'GET /api/boards/:id/cards': {'permission': 'card.view', 'description': 'View board cards'},

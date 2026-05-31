@@ -200,6 +200,7 @@ class Header {
     this.boardStyleEditable = false;
     this.boardVisibilityEditable = false;
     this.boardIsPublic = false;
+    this.boardArchived = false;
     this.boardPublicSlug = null;
     this.currentBoardId = null;
     this.dbConnected = false; // Track database connection status
@@ -391,6 +392,9 @@ class Header {
 
     // Initialize board visibility toggle in settings menu
     this.initializeBoardVisibilityToggleMenu();
+
+    // Initialize board archive toggle in settings menu
+    this.initializeBoardArchiveToggleMenu();
 
     // Initialize public-link rotation action in settings menu
     this.initializeRotatePublicLinkMenu();
@@ -1439,6 +1443,47 @@ class Header {
     this.updateBoardVisibilityMenuState();
   }
 
+  initializeBoardArchiveToggleMenu() {
+    const menuItems = [
+      document.getElementById('archive-board-menu-item'),
+      document.getElementById('mobile-archive-board-menu-item')
+    ].filter(Boolean);
+
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    if (!this.currentBoardId || this.isPublicBoardPage) {
+      menuItems.forEach((menuItem) => {
+        menuItem.style.display = 'none';
+      });
+      return;
+    }
+
+    if (!this.boardOwnerDataListenerBound) {
+      window.addEventListener('boardOwnerDataLoaded', this.boardOwnerDataLoadedHandler);
+      this.boardOwnerDataListenerBound = true;
+    }
+
+    if (window.boardManager && window.boardManager.boardId === this.currentBoardId) {
+      this.hydrateBoardArchiveState({ archived: window.boardManager.boardArchived === true });
+    }
+
+    menuItems.forEach((menuItem) => {
+      if (!menuItem.dataset.boundArchiveToggleHandler) {
+        menuItem.addEventListener('click', async (e) => {
+          e.preventDefault();
+          await this.toggleBoardArchive();
+          closeAllMenusExcept(null);
+          updateMenuHoverState();
+        });
+        menuItem.dataset.boundArchiveToggleHandler = 'true';
+      }
+    });
+
+    this.updateBoardArchiveMenuState();
+  }
+
   initializeRotatePublicLinkMenu() {
     const menuItems = [
       document.getElementById('rotate-public-link-menu-item'),
@@ -1534,6 +1579,15 @@ class Header {
       isPublicPage: this.isPublicBoardPage,
       showLoginCta: this.isPublicBoardPage && !window.currentUser,
     });
+  }
+
+  hydrateBoardArchiveState(detail) {
+    if (!detail) {
+      return;
+    }
+
+    this.boardArchived = detail.archived === true;
+    this.updateBoardArchiveMenuState();
   }
 
   updateBoardVisibilityMenuState() {
@@ -1696,6 +1750,180 @@ class Header {
       console.error('Error toggling board visibility:', error);
       this.showBoardPageToast(error.message || 'Failed to update board visibility.');
     }
+  }
+
+  async toggleBoardArchive() {
+    if (!this.currentBoardId || !this.boardVisibilityEditable || this.isPublicBoardPage) {
+      return;
+    }
+
+    const targetArchived = !this.boardArchived;
+    const confirmed = targetArchived
+      ? await this.confirmArchiveBoard()
+      : await this.confirmUnarchiveBoard();
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/boards/${this.currentBoardId}/${targetArchived ? 'archive' : 'unarchive'}`, {
+        method: 'PATCH'
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `HTTP error ${response.status}`);
+      }
+
+      this.boardArchived = targetArchived;
+      if (window.boardManager) {
+        window.boardManager.boardArchived = targetArchived;
+      }
+      this.updateBoardArchiveMenuState();
+      this.showHeaderToast(targetArchived ? 'Board archived' : 'Board unarchived');
+    } catch (error) {
+      console.error('Error updating board archive state:', error);
+      this.showBoardPageToast(error.message || (targetArchived ? 'Failed to archive board.' : 'Failed to unarchive board.'));
+    }
+  }
+
+  async confirmArchiveBoard() {
+    return this.confirmBoardArchiveChange(
+      'Archive Board?',
+      'This will move the board to the archived boards view. You can unarchive it later.',
+      'Archive Board'
+    );
+  }
+
+  async confirmUnarchiveBoard() {
+    return this.confirmBoardArchiveChange(
+      'Unarchive Board?',
+      'This will move the board back to the active boards view.',
+      'Unarchive Board'
+    );
+  }
+
+  async confirmBoardArchiveChange(titleText, descriptionText, confirmLabel) {
+    const existingModal = document.getElementById('board-archive-confirm-modal');
+    if (existingModal) {
+      existingModal.remove();
+    }
+
+    return new Promise((resolve) => {
+      const previousActiveElement = document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+      const previousOverflow = document.body.style.overflow;
+
+      const modal = document.createElement('div');
+      modal.className = 'modal';
+      modal.id = 'board-archive-confirm-modal';
+      modal.setAttribute('role', 'dialog');
+      modal.setAttribute('aria-modal', 'true');
+      modal.setAttribute('aria-labelledby', 'board-archive-confirm-title');
+      modal.setAttribute('aria-describedby', 'board-archive-confirm-description');
+
+      const modalContent = document.createElement('div');
+      modalContent.className = 'modal-content board-owner-modal-content';
+
+      const modalHeader = document.createElement('div');
+      modalHeader.className = 'modal-header';
+
+      const title = document.createElement('h2');
+      title.id = 'board-archive-confirm-title';
+      title.textContent = titleText;
+
+      modalHeader.appendChild(title);
+
+      const description = document.createElement('p');
+      description.id = 'board-archive-confirm-description';
+      description.className = 'modal-description';
+      description.textContent = descriptionText;
+
+      const actions = document.createElement('div');
+      actions.className = 'modal-header-actions';
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.className = 'btn btn-secondary';
+      cancelBtn.textContent = 'Cancel';
+
+      const okBtn = document.createElement('button');
+      okBtn.type = 'button';
+      okBtn.className = 'btn btn-primary';
+      okBtn.textContent = confirmLabel;
+
+      actions.append(okBtn, cancelBtn);
+      modalContent.append(modalHeader, description, actions);
+      modal.appendChild(modalContent);
+      document.body.appendChild(modal);
+      document.body.style.overflow = 'hidden';
+
+      let mouseDownOnBackground = false;
+      let settled = false;
+
+      const settle = (accepted) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        modal.remove();
+        document.body.style.overflow = previousOverflow;
+        if (previousActiveElement) {
+          previousActiveElement.focus();
+        }
+        resolve(accepted);
+      };
+
+      modal.addEventListener('mousedown', (event) => {
+        mouseDownOnBackground = event.target === modal;
+      });
+
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal && mouseDownOnBackground) {
+          settle(false);
+        }
+        mouseDownOnBackground = false;
+      });
+
+      const handleKeydown = (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          settle(false);
+          return;
+        }
+
+        if (event.key !== 'Tab') {
+          return;
+        }
+
+        const focusable = Array.from(modal.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ));
+
+        if (focusable.length === 0) {
+          return;
+        }
+
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      };
+
+      modal.addEventListener('keydown', handleKeydown);
+      cancelBtn.addEventListener('click', () => settle(false));
+      okBtn.addEventListener('click', () => settle(true));
+      okBtn.focus();
+    });
   }
 
   async rotatePublicLink() {
@@ -2266,8 +2494,28 @@ class Header {
 
     this.hydrateBoardReassignmentOptions(detail);
     this.hydrateBoardVisibilityState(detail);
+    this.hydrateBoardArchiveState(detail);
 
     this.refreshBoardReassignMenuState();
+  }
+
+  updateBoardArchiveMenuState() {
+    const menuItems = [
+      document.getElementById('archive-board-menu-item'),
+      document.getElementById('mobile-archive-board-menu-item')
+    ].filter(Boolean);
+
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    const visible = !!this.currentBoardId && !this.isPublicBoardPage && this.boardVisibilityEditable;
+    const label = this.boardArchived ? 'Unarchive Board' : 'Archive Board';
+
+    menuItems.forEach((menuItem) => {
+      menuItem.style.display = visible ? '' : 'none';
+      menuItem.textContent = label;
+    });
   }
 
   async fetchBoardReassignmentOptions(showErrors = false) {
@@ -2945,13 +3193,19 @@ class Header {
     // Update dropdown label
     const label = document.getElementById('views-dropdown-label');
     if (label) {
-      const viewNames = {
-        'task': 'Task View',
-        'scheduled': 'Scheduled View',
-        'archived': 'Archived View',
-        'done': 'Done View'
-      };
-      label.textContent = viewNames[view] || 'Task View';
+      const isBoardsPage = document.body.classList.contains('boards-page');
+      const viewNames = isBoardsPage
+        ? {
+            'task': 'Active Boards',
+            'archived': 'Archived Boards',
+          }
+        : {
+            'task': 'Task View',
+            'scheduled': 'Scheduled View',
+            'archived': 'Archived View',
+            'done': 'Done View'
+          };
+      label.textContent = viewNames[view] || (isBoardsPage ? 'Active Boards' : 'Task View');
     }
 
     // Highlight active item
