@@ -306,7 +306,8 @@ def before_request():
         load_user_from_session()
         return
     
-    # Check if initial setup is complete (any active user with password exists)
+    # Check if initial setup is complete (any active user with password exists).
+    has_users = None
     db = SessionLocal()
     try:
       try:
@@ -318,39 +319,35 @@ def before_request():
         # During /api/database resets, tables are briefly absent while Alembic
         # recreates the schema. Let reset/restore routes continue so their own
         # locking and wait logic can finish the operation.
+        # IMPORTANT: do NOT treat a transient DB disconnect as "setup not done";
+        # we only redirect to initial setup when we actually know there are no users.
         logger.info(f"Setup check skipped during transient database reset: {error}")
-
         if request.path.startswith('/api/database'):
           load_user_from_session()
           return
 
-        if request.path.startswith('/api/'):
-          return jsonify({
-            'success': False,
-            'message': 'Initial setup required',
-            'redirect': '/setup.html'
-          }), 503
-
-        if request.path != '/setup.html':
-          from flask import redirect
-          return redirect('/setup.html', code=302)
-        return
-        
-        if not has_users:
-            # Redirect to setup page for HTML requests
-            if not request.path.startswith('/api/'):
-                if request.path != '/setup.html':
-                    from flask import redirect
-                    return redirect('/setup.html', code=302)
-            # For API requests, return a specific error
-            else:
-                return jsonify({
-                    'success': False,
-                    'message': 'Initial setup required',
-                    'redirect': '/setup.html'
-                }), 503
+        if has_users is None:
+            return jsonify({
+                'success': False,
+                'message': 'Service temporarily unavailable',
+                'redirect': None,
+            }), 503
     finally:
         db.close()
+
+    if has_users is False:
+        # Redirect to setup page for HTML requests
+        if not request.path.startswith('/api/'):
+            if request.path != '/setup.html':
+                from flask import redirect
+                return redirect('/setup.html', code=302)
+        # For API requests, return a specific error
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Initial setup required',
+                'redirect': '/setup.html'
+            }), 503
     
     load_user_from_session()
 
