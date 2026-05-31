@@ -56,7 +56,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Application version
-APP_VERSION = "2026.5.1"
+APP_VERSION = "2026.5.2"
 
 app = Flask(__name__)
 
