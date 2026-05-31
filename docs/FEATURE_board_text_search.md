@@ -288,11 +288,48 @@ Tradeoff:
   - Startup log verification shows Gunicorn workers booting cleanly with no traceback.
 
 ## Phase 2: Database migration + indexes
-- [ ] Add Alembic migration for search indexes.
-- [ ] Verify migration idempotency and rollback path.
-- [ ] Validate query plans on representative data volume.
-- [ ] Run migration + rollback test build in local/dev compose environment.
-- [ ] Re-run affected API tests after migration application.
+- [x] Add Alembic migration for search indexes.
+- [x] Verify migration idempotency and rollback path.
+- [x] Validate query plans on representative data volume.
+- [x] Run migration + rollback test build in local/dev compose environment.
+- [x] Re-run affected API tests after migration application.
+
+### Phase 2 Validation Notes (2026-05-31)
+
+- Migration implemented:
+  - Added `server/alembic/versions/032_add_text_search_fulltext_indexes.py`.
+  - Upgrade adds:
+    - `idx_cards_fulltext_title_description` on `cards(title, description)`
+    - `idx_checklist_items_fulltext_name` on `checklist_items(name)`
+  - Downgrade drops both indexes.
+
+- Migration verification:
+  - Alembic history shows `031 -> 032 (head)`.
+  - Executed migration lifecycle checks:
+    - `alembic upgrade head`
+    - `alembic downgrade -1`
+    - `alembic upgrade head`
+    - `alembic upgrade head` (no-op idempotency check)
+  - Final revision confirmed at `032 (head)`.
+
+- DB-level index/query checks:
+  - `SHOW INDEX` confirms both FULLTEXT indexes exist.
+  - `EXPLAIN ... MATCH(title, description) AGAINST (...)` shows full-text index search using `idx_cards_fulltext_title_description`.
+  - `EXPLAIN ... title LIKE '%alpha%'` still shows table scan (expected for leading-wildcard LIKE).
+  - Representative-volume run (temporary seeded 5,000-card board, then cleaned up):
+    - `LIKE` query (`title/description LIKE '%alpha%'`): table scan, ~1.98 ms, 33 rows.
+    - `MATCH ... AGAINST ('alpha')`: full-text index search, ~0.09 ms, 33 rows.
+    - Cleanup verified (`cleanup_remaining_boards=0`).
+
+- Compose/build checks:
+  - `docker compose up -d --build server` successful.
+  - Stack healthy after migration tests (`db`, `redis`, `server`, `nginx`).
+
+- API regression checks after migration:
+  - Re-ran affected board text-search tests.
+  - Result: `8 passed, 95 deselected`.
+
+
 
 ## Phase 3: Frontend search controls and sync
 - [ ] Add header search control for board page (desktop + mobile).
