@@ -39,6 +39,7 @@ from utils import (
 )
 from board_routes import (
     _apply_assignee_card_filters,
+  _apply_text_search_filter,
     _build_board_owner_metadata,
     _get_board_assignee_users,
     _get_board_eligible_assignee_ids,
@@ -259,6 +260,14 @@ def get_board_cards(board_id):
         description: Include owner reassignment candidate users when true
         enum: ['true', 'false']
         default: 'false'
+      - name: q
+        in: query
+        type: string
+        required: false
+        description: >
+          Optional text search query. Spaces are AND, commas are OR, quoted phrases
+          are exact matches, and repeated double quotes inside quoted phrases escape a
+          literal quote. Unquoted #<digits> tokens match card id only.
     responses:
       200:
         description: Nested structure of board with columns and cards
@@ -341,6 +350,7 @@ def get_board_cards(board_id):
         include_unassigned = request.args.get('include_unassigned', 'false').lower() == 'true'
         include_secondary_assignees = request.args.get('include_secondary_assignees', 'false').lower() == 'true'
         include_owner_candidates = request.args.get('include_owner_candidates', 'false').lower() == 'true'
+        text_query = request.args.get('q')
 
         # Get board
         board = db.query(Board).filter(Board.id == board_id).first()
@@ -381,6 +391,8 @@ def get_board_cards(board_id):
                 include_unassigned,
                 include_secondary_assignees,
             )
+
+            cards_query = _apply_text_search_filter(cards_query, text_query)
 
             # Apply archived filter
             if archived_param == 'true':

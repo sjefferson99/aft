@@ -36,6 +36,14 @@ def _create_second_user_accessible_card(api_client, authenticated_session, secon
     return shared_card_response.json()['card']
 
 
+def _collect_board_card_ids(board_payload):
+    return {
+        card['id']
+        for column in board_payload['board']['columns']
+        for card in column['cards']
+    }
+
+
 @pytest.mark.api
 class TestCardsAPI:
     """Test cases for card API endpoints."""
@@ -417,6 +425,277 @@ class TestCardsAPI:
             for card in column['cards']
         }
         assert sample_card['id'] in with_secondary_ids
+
+    def test_get_board_cards_text_search_matches_title_description_and_checklist(
+        self,
+        api_client,
+        authenticated_session,
+        sample_column,
+    ):
+        """Text search matches title, description, and checklist item content."""
+        board_id = sample_column['board_id']
+        column_id = sample_column['id']
+
+        title_card_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': 'Alpha Signal', 'description': 'no match here'}
+        )
+        assert title_card_response.status_code == 201
+        title_card_id = title_card_response.json()['card']['id']
+
+        description_card_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': 'Description Holder', 'description': 'Contains Zephyr marker'}
+        )
+        assert description_card_response.status_code == 201
+        description_card_id = description_card_response.json()['card']['id']
+
+        checklist_card_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': 'Checklist Host', 'description': 'no keyword'}
+        )
+        assert checklist_card_response.status_code == 201
+        checklist_card_id = checklist_card_response.json()['card']['id']
+
+        checklist_item_response = authenticated_session.post(
+            f'{api_client}/api/cards/{checklist_card_id}/checklist-items',
+            json={'name': 'Need orbit token', 'checked': False, 'order': 0}
+        )
+        assert checklist_item_response.status_code == 201
+
+        title_search_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': 'alpha'}
+        )
+        assert title_search_response.status_code == 200
+        title_ids = _collect_board_card_ids(title_search_response.json())
+        assert title_card_id in title_ids
+        assert description_card_id not in title_ids
+        assert checklist_card_id not in title_ids
+
+        description_search_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': 'zephyr'}
+        )
+        assert description_search_response.status_code == 200
+        description_ids = _collect_board_card_ids(description_search_response.json())
+        assert title_card_id not in description_ids
+        assert description_card_id in description_ids
+        assert checklist_card_id not in description_ids
+
+        checklist_search_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': 'orbit'}
+        )
+        assert checklist_search_response.status_code == 200
+        checklist_ids = _collect_board_card_ids(checklist_search_response.json())
+        assert title_card_id not in checklist_ids
+        assert description_card_id not in checklist_ids
+        assert checklist_card_id in checklist_ids
+
+    def test_get_board_cards_text_search_supports_and_or_and_quoted_grammar(
+        self,
+        api_client,
+        authenticated_session,
+        sample_column,
+    ):
+        """Text search supports spaces=AND, commas=OR, and escaped quotes in phrases."""
+        board_id = sample_column['board_id']
+        column_id = sample_column['id']
+
+        and_card_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': 'red marker', 'description': 'blue marker'}
+        )
+        assert and_card_response.status_code == 201
+        and_card_id = and_card_response.json()['card']['id']
+
+        red_only_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': 'red only card'}
+        )
+        assert red_only_response.status_code == 201
+        red_only_id = red_only_response.json()['card']['id']
+
+        green_only_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': 'green only card'}
+        )
+        assert green_only_response.status_code == 201
+        green_only_id = green_only_response.json()['card']['id']
+
+        quoted_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': 'literal "quote" phrase'}
+        )
+        assert quoted_response.status_code == 201
+        quoted_id = quoted_response.json()['card']['id']
+
+        and_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': 'red blue'}
+        )
+        assert and_response.status_code == 200
+        and_ids = _collect_board_card_ids(and_response.json())
+        assert and_card_id in and_ids
+        assert red_only_id not in and_ids
+        assert green_only_id not in and_ids
+
+        or_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': 'red,green'}
+        )
+        assert or_response.status_code == 200
+        or_ids = _collect_board_card_ids(or_response.json())
+        assert and_card_id in or_ids
+        assert red_only_id in or_ids
+        assert green_only_id in or_ids
+
+        phrase_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': '"red marker"'}
+        )
+        assert phrase_response.status_code == 200
+        phrase_ids = _collect_board_card_ids(phrase_response.json())
+        assert and_card_id in phrase_ids
+        assert red_only_id not in phrase_ids
+
+        escaped_quote_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': '"literal ""quote"" phrase"'}
+        )
+        assert escaped_quote_response.status_code == 200
+        escaped_quote_ids = _collect_board_card_ids(escaped_quote_response.json())
+        assert quoted_id in escaped_quote_ids
+
+    def test_get_board_cards_text_search_hash_reference_rules(
+        self,
+        api_client,
+        authenticated_session,
+        sample_card,
+        sample_column,
+    ):
+        """Unquoted #id is id-only while quoted hashes remain text search."""
+        board_id = sample_column['board_id']
+        column_id = sample_column['id']
+        card_id = sample_card['id']
+
+        text_hash_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': f'Reference token #{card_id}'}
+        )
+        assert text_hash_response.status_code == 201
+        text_hash_id = text_hash_response.json()['card']['id']
+
+        leading_zero_token = f'#00{card_id}'
+        leading_zero_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': f'Leading zero token {leading_zero_token}'}
+        )
+        assert leading_zero_response.status_code == 201
+        leading_zero_id = leading_zero_response.json()['card']['id']
+
+        alpha_hash_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': 'Hash token #abc'}
+        )
+        assert alpha_hash_response.status_code == 201
+        alpha_hash_id = alpha_hash_response.json()['card']['id']
+
+        unquoted_hash_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': f'#{card_id}'}
+        )
+        assert unquoted_hash_response.status_code == 200
+        unquoted_hash_ids = _collect_board_card_ids(unquoted_hash_response.json())
+        assert card_id in unquoted_hash_ids
+        assert text_hash_id not in unquoted_hash_ids
+
+        quoted_hash_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': f'"#{card_id}"'}
+        )
+        assert quoted_hash_response.status_code == 200
+        quoted_hash_ids = _collect_board_card_ids(quoted_hash_response.json())
+        assert card_id not in quoted_hash_ids
+        assert text_hash_id in quoted_hash_ids
+
+        leading_zero_search_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': leading_zero_token}
+        )
+        assert leading_zero_search_response.status_code == 200
+        leading_zero_ids = _collect_board_card_ids(leading_zero_search_response.json())
+        assert card_id not in leading_zero_ids
+        assert leading_zero_id in leading_zero_ids
+
+        alpha_hash_search_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': '#abc'}
+        )
+        assert alpha_hash_search_response.status_code == 200
+        alpha_hash_ids = _collect_board_card_ids(alpha_hash_search_response.json())
+        assert alpha_hash_id in alpha_hash_ids
+
+    def test_get_board_cards_text_search_combines_with_assignee_filters(
+        self,
+        api_client,
+        authenticated_session,
+        second_user_session,
+        sample_card,
+        sample_column,
+    ):
+        """Text search results are intersected with assignee filters."""
+        board_id = sample_column['board_id']
+        column_id = sample_column['id']
+
+        me_response = authenticated_session.get(f'{api_client}/api/auth/me')
+        assert me_response.status_code == 200
+        my_id = me_response.json()['user']['id']
+
+        second_user_me_response = second_user_session.get(f'{api_client}/api/auth/me')
+        assert second_user_me_response.status_code == 200
+        second_user_id = second_user_me_response.json()['user']['id']
+
+        role_response = authenticated_session.post(
+            f'{api_client}/api/users/{second_user_id}/roles',
+            json={'role_name': 'board_editor', 'board_id': board_id}
+        )
+        assert role_response.status_code == 200, role_response.text
+
+        rename_sample_response = authenticated_session.patch(
+            f'{api_client}/api/cards/{sample_card["id"]}',
+            json={'title': 'Fusion Filter Mine'}
+        )
+        assert rename_sample_response.status_code == 200
+
+        assign_sample_response = authenticated_session.put(
+            f'{api_client}/api/cards/{sample_card["id"]}/assignees',
+            json={'assigned_to_id': my_id, 'secondary_assignee_ids': []}
+        )
+        assert assign_sample_response.status_code == 200
+
+        other_card_response = authenticated_session.post(
+            f'{api_client}/api/columns/{column_id}/cards',
+            json={'title': 'Fusion Filter Other'}
+        )
+        assert other_card_response.status_code == 201
+        other_card_id = other_card_response.json()['card']['id']
+
+        assign_other_response = authenticated_session.put(
+            f'{api_client}/api/cards/{other_card_id}/assignees',
+            json={'assigned_to_id': second_user_id, 'secondary_assignee_ids': []}
+        )
+        assert assign_other_response.status_code == 200
+
+        combined_filter_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': 'Fusion Filter', 'assignee_ids': str(my_id)}
+        )
+        assert combined_filter_response.status_code == 200
+        combined_ids = _collect_board_card_ids(combined_filter_response.json())
+        assert sample_card['id'] in combined_ids
+        assert other_card_id not in combined_ids
     
     def test_get_column_cards_empty(self, api_client, authenticated_session, sample_column):
         """Test getting cards when column is empty."""

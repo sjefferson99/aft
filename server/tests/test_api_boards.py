@@ -579,6 +579,112 @@ class TestBoardsAPI:
         }
         assert template_card_id in with_secondary_ids
 
+    def test_get_scheduled_cards_text_search_hash_rules(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+        sample_column,
+    ):
+        """Scheduled endpoint applies unquoted id and quoted hash text semantics."""
+        from datetime import datetime, timedelta
+
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%S')
+
+        anchor_source_response = authenticated_session.post(
+            f'{api_client}/api/columns/{sample_column["id"]}/cards',
+            json={'title': 'Scheduled Anchor Source', 'description': 'anchor source'}
+        )
+        assert anchor_source_response.status_code == 201
+        anchor_source_id = anchor_source_response.json()['card']['id']
+
+        alias_source_response = authenticated_session.post(
+            f'{api_client}/api/columns/{sample_column["id"]}/cards',
+            json={'title': 'Scheduled Alias Source', 'description': 'alias source'}
+        )
+        assert alias_source_response.status_code == 201
+        alias_source_id = alias_source_response.json()['card']['id']
+
+        schedule_anchor_response = authenticated_session.post(
+            f'{api_client}/api/schedules',
+            json={
+                'card_id': anchor_source_id,
+                'run_every': 1,
+                'unit': 'day',
+                'start_datetime': tomorrow,
+                'end_datetime': None,
+                'schedule_enabled': True,
+                'allow_duplicates': False,
+                'keep_source_card': True,
+            }
+        )
+        assert schedule_anchor_response.status_code == 201
+
+        schedule_alias_response = authenticated_session.post(
+            f'{api_client}/api/schedules',
+            json={
+                'card_id': alias_source_id,
+                'run_every': 1,
+                'unit': 'day',
+                'start_datetime': tomorrow,
+                'end_datetime': None,
+                'schedule_enabled': True,
+                'allow_duplicates': False,
+                'keep_source_card': True,
+            }
+        )
+        assert schedule_alias_response.status_code == 201
+
+        scheduled_cards_response = authenticated_session.get(
+            f'{api_client}/api/boards/{sample_board["id"]}/cards/scheduled'
+        )
+        assert scheduled_cards_response.status_code == 200
+        scheduled_cards_data = scheduled_cards_response.json()
+
+        template_by_title = {}
+        for column in scheduled_cards_data['board']['columns']:
+            for card in column['cards']:
+                template_by_title[card['title']] = card['id']
+
+        anchor_template_id = template_by_title.get('Scheduled Anchor Source')
+        alias_template_id = template_by_title.get('Scheduled Alias Source')
+        assert isinstance(anchor_template_id, int)
+        assert isinstance(alias_template_id, int)
+
+        alias_rename_response = authenticated_session.patch(
+            f'{api_client}/api/cards/{alias_template_id}',
+            json={'title': f'Scheduled Alias #{anchor_template_id}'}
+        )
+        assert alias_rename_response.status_code == 200
+
+        unquoted_hash_response = authenticated_session.get(
+            f'{api_client}/api/boards/{sample_board["id"]}/cards/scheduled',
+            params={'q': f'#{anchor_template_id}'}
+        )
+        assert unquoted_hash_response.status_code == 200
+        unquoted_hash_data = unquoted_hash_response.json()
+        unquoted_ids = {
+            card['id']
+            for column in unquoted_hash_data['board']['columns']
+            for card in column['cards']
+        }
+        assert anchor_template_id in unquoted_ids
+        assert alias_template_id not in unquoted_ids
+
+        quoted_hash_response = authenticated_session.get(
+            f'{api_client}/api/boards/{sample_board["id"]}/cards/scheduled',
+            params={'q': f'"#{anchor_template_id}"'}
+        )
+        assert quoted_hash_response.status_code == 200
+        quoted_hash_data = quoted_hash_response.json()
+        quoted_ids = {
+            card['id']
+            for column in quoted_hash_data['board']['columns']
+            for card in column['cards']
+        }
+        assert anchor_template_id not in quoted_ids
+        assert alias_template_id in quoted_ids
+
     def test_export_board_success(self, api_client, authenticated_session, sample_board):
         """Board export returns AFT JSON payload and attachment headers."""
         response = authenticated_session.get(f'{api_client}/api/boards/{sample_board["id"]}/export')

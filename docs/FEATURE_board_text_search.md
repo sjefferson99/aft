@@ -254,16 +254,38 @@ Tradeoff:
 - [x] Confirm mobile search is always present (icon-expand allowed for layout).
 
 ## Phase 1: Backend API + query implementation
-- [ ] Add q parsing and validation in board card endpoints.
-- [ ] Add tokenizer/parser for spaces, commas, quoted phrases, and escaped quotes.
-- [ ] Add text search predicates for title/description/checklist.
-- [ ] Add strict #<digits> card id predicate support for unquoted tokens.
-- [ ] Ensure quoted "#<digits>" stays text-only.
-- [ ] Keep existing assignee/archived/scheduled/permission filters intact.
-- [ ] Ensure same predicate logic is used for task, done, and archived result views.
-- [ ] Add/extend endpoint docstrings for new parameter.
-- [ ] Run targeted API tests for new parser and predicate behavior before phase sign-off.
-- [ ] Run a build/smoke check after endpoint changes and capture results in this doc.
+- [x] Add q parsing and validation in board card endpoints.
+- [x] Add tokenizer/parser for spaces, commas, quoted phrases, and escaped quotes.
+- [x] Add text search predicates for title/description/checklist.
+- [x] Add strict #<digits> card id predicate support for unquoted tokens.
+- [x] Ensure quoted "#<digits>" stays text-only.
+- [x] Keep existing assignee/archived/scheduled/permission filters intact.
+- [x] Ensure same predicate logic is used for task, done, and archived result views.
+- [x] Add/extend endpoint docstrings for new parameter.
+- [x] Run targeted API tests for new parser and predicate behavior before phase sign-off.
+- [x] Run a build/smoke check after endpoint changes and capture results in this doc.
+
+### Phase 1 Validation Notes (2026-05-31)
+
+- Backend implementation:
+  - Added shared parser and predicate helpers in `server/board_routes.py` and applied them to:
+    - `GET /api/boards/<board_id>/cards`
+    - `GET /api/boards/<board_id>/cards/scheduled`
+  - Search grammar implemented for spaces (AND), commas (OR), quoted phrases, and repeated double-quote escaping inside quoted phrases.
+  - Unquoted `#<digits>` tokens map to strict `card.id` matching only; quoted `"#<digits>"` remains text-only.
+  - Tokens like `#00379`, `#abc`, `##123` remain text tokens.
+
+- Tests executed:
+  - Command:
+    - `..\\.venv\\Scripts\\python.exe -m pytest tests/test_api_cards.py tests/test_api_boards.py -k "text_search or filter_by_assignees_and_unassigned or includes_secondary_assignees_when_enabled" -v`
+  - Result:
+    - `8 passed, 95 deselected`
+
+- Build/smoke checks:
+  - `docker compose up -d --build server` completed successfully.
+  - `docker compose up -d nginx` restored API ingress for integration tests.
+  - `docker compose ps` healthy state observed for `db`, `redis`, `server`, and `nginx` containers.
+  - Startup log verification shows Gunicorn workers booting cleanly with no traceback.
 
 ## Phase 2: Database migration + indexes
 - [ ] Add Alembic migration for search indexes.
