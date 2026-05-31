@@ -745,6 +745,34 @@ class TestCardsAPI:
         assert no_result_response.status_code == 200
         no_result_ids = _collect_board_card_ids(no_result_response.json())
         assert no_result_ids == set()
+
+    def test_get_board_cards_text_search_rejects_invalid_query_contract(
+        self,
+        api_client,
+        authenticated_session,
+        sample_column,
+    ):
+        """q contract rejects excessive query length and excessive term count."""
+        board_id = sample_column['board_id']
+
+        too_long_query_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': 'a' * 201}
+        )
+        assert too_long_query_response.status_code == 400
+        too_long_data = too_long_query_response.json()
+        assert too_long_data['success'] is False
+        assert 'at most 200 characters' in too_long_data['message']
+
+        too_many_terms_query = ' '.join([f'term{i}' for i in range(1, 26)])
+        too_many_terms_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': too_many_terms_query}
+        )
+        assert too_many_terms_response.status_code == 400
+        too_many_terms_data = too_many_terms_response.json()
+        assert too_many_terms_data['success'] is False
+        assert 'at most 24 terms' in too_many_terms_data['message']
     
     def test_get_column_cards_empty(self, api_client, authenticated_session, sample_column):
         """Test getting cards when column is empty."""

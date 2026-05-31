@@ -80,6 +80,11 @@ _public_rate_limit_redis = None
 _public_rate_limit_redis_init = False
 
 CARD_ID_SEARCH_TOKEN_PATTERN = re.compile(r"^#[1-9][0-9]*$")
+TEXT_SEARCH_MIN_QUERY_LENGTH = 2
+TEXT_SEARCH_MAX_QUERY_LENGTH = 200
+TEXT_SEARCH_MAX_OR_GROUPS = 12
+TEXT_SEARCH_MAX_TOTAL_TERMS = 24
+TEXT_SEARCH_MAX_TERM_LENGTH = 80
 
 
 def configure_board_routes(app_version):
@@ -386,7 +391,7 @@ def _parse_text_search_query(raw_query):
         return []
 
     query = str(raw_query).strip()
-    if len(query) < 2:
+    if len(query) < TEXT_SEARCH_MIN_QUERY_LENGTH:
         return []
 
     groups = []
@@ -506,8 +511,52 @@ def _build_text_search_predicate(parsed_groups):
     return or_(*or_group_predicates)
 
 
-def _apply_text_search_filter(cards_query, raw_query):
-    parsed_groups = _parse_text_search_query(raw_query)
+def _normalize_text_search_query(raw_query):
+    if raw_query is None:
+        return None
+
+    return str(raw_query).strip()
+
+
+def _validate_and_parse_text_search_query(raw_query):
+    normalized_query = _normalize_text_search_query(raw_query)
+    if normalized_query is None or normalized_query == "":
+        return normalized_query, [], None
+
+    if len(normalized_query) > TEXT_SEARCH_MAX_QUERY_LENGTH:
+        return None, None, (
+            f"Query parameter q must be at most {TEXT_SEARCH_MAX_QUERY_LENGTH} characters"
+        )
+
+    parsed_groups = _parse_text_search_query(normalized_query)
+    if not parsed_groups:
+        return normalized_query, [], None
+
+    if len(parsed_groups) > TEXT_SEARCH_MAX_OR_GROUPS:
+        return None, None, (
+            f"Query parameter q supports at most {TEXT_SEARCH_MAX_OR_GROUPS} comma-separated groups"
+        )
+
+    total_terms = 0
+    for group in parsed_groups:
+        total_terms += len(group)
+        if total_terms > TEXT_SEARCH_MAX_TOTAL_TERMS:
+            return None, None, (
+                f"Query parameter q supports at most {TEXT_SEARCH_MAX_TOTAL_TERMS} terms"
+            )
+
+        for term in group:
+            term_value = str(term.get("value", ""))
+            if len(term_value) > TEXT_SEARCH_MAX_TERM_LENGTH:
+                return None, None, (
+                    f"Each term in q must be at most {TEXT_SEARCH_MAX_TERM_LENGTH} characters"
+                )
+
+    return normalized_query, parsed_groups, None
+
+
+def _apply_text_search_filter(cards_query, raw_query, parsed_groups=None):
+    parsed_groups = parsed_groups if parsed_groups is not None else _parse_text_search_query(raw_query)
     predicate = _build_text_search_predicate(parsed_groups)
     if predicate is None:
         return cards_query
@@ -1532,9 +1581,10 @@ def get_board_scheduled_cards(board_id):
                 type: string
                 required: false
                 description: >
-                    Optional text search query. Spaces are AND, commas are OR, quoted phrases
-                    are exact matches, and repeated double quotes inside quoted phrases escape a
-                    literal quote. Unquoted #<digits> tokens match card id only.
+                    Optional text search query (max 200 chars, max 12 OR groups, max 24 total terms,
+                    max 80 chars per term). Spaces are AND, commas are OR, quoted phrases are exact
+                    matches, and repeated double quotes inside quoted phrases escape a literal quote.
+                    Unquoted #<digits> tokens match card id only.
     responses:
       200:
         description: Board with columns and scheduled cards
@@ -1566,7 +1616,11 @@ def get_board_scheduled_cards(board_id):
         include_unassigned = request.args.get('include_unassigned', 'false').lower() == 'true'
         include_secondary_assignees = request.args.get('include_secondary_assignees', 'false').lower() == 'true'
         include_owner_candidates = request.args.get('include_owner_candidates', 'false').lower() == 'true'
-        text_query = request.args.get('q')
+        text_query, parsed_text_query, text_query_error = _validate_and_parse_text_search_query(
+            request.args.get('q')
+        )
+        if text_query_error:
+            return create_error_response(text_query_error, 400)
 
         # Build nested structure with scheduled cards
         result = {
@@ -1598,7 +1652,7 @@ def get_board_scheduled_cards(board_id):
                 include_secondary_assignees,
             )
 
-            cards = _apply_text_search_filter(cards, text_query).order_by(Card.order).all()
+            cards = _apply_text_search_filter(cards, text_query, parsed_groups=parsed_text_query).order_by(Card.order).all()
 
             # Serialize cards with checklist items and comments
             cards_data = [

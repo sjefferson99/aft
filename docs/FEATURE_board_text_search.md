@@ -239,7 +239,7 @@ Tradeoff:
 ## Delivery Plan and Checklist
 
 ## Phase 0: Alignment and guardrails
-- [ ] Confirm q parameter contract and empty-query behavior.
+- [x] Confirm q parameter contract and empty-query behavior.
 - [x] Confirm MVP semantics:
   - [x] Spaces = AND
   - [x] Commas = OR
@@ -252,6 +252,12 @@ Tradeoff:
 - [x] Confirm minimum execution length is 2 characters.
 - [x] Confirm done and archived views use identical search behavior.
 - [x] Confirm mobile search is always present (icon-expand allowed for layout).
+- [x] Enforce backend q contract:
+  - [x] Max query length 200 characters
+  - [x] Max comma-separated OR groups 12
+  - [x] Max total terms 24
+  - [x] Max individual term length 80 characters
+  - [x] Invalid q returns HTTP 400 with a clear validation message
 
 ## Phase 1: Backend API + query implementation
 - [x] Add q parsing and validation in board card endpoints.

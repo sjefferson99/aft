@@ -13,6 +13,7 @@ const BOARD_LOADING_OVERLAY_DELAY_MS = 500;
 const INITIAL_BOARD_LOAD_TIMEOUT_MS = 15000;
 const SUBSEQUENT_BOARD_LOAD_TIMEOUT_MS = 10000;
 const MAX_INITIAL_BOARD_LOAD_ATTEMPTS = 2;
+const BOARD_SEARCH_TOOLTIP_FALLBACK_TEXT = 'Search cards using spaces (AND), commas (OR), and quoted phrases for exact matches.';
 
 /**
  * Calculate the percentage of checked items in a checklist
@@ -884,8 +885,8 @@ class BoardManager {
     this.searchInputWatcherId = null;
     this.searchFocusRestoreTargetId = null;
     this.searchFocusRestoreEnabled = false;
+    this.searchTooltipText = null;
     this.boardFiltersToggleRequestHandler = this.handleBoardFiltersToggleRequest.bind(this);
-    this.boardFiltersShowRequestHandler = this.handleBoardFiltersShowRequest.bind(this);
     this.boardFiltersStateRequestHandler = this.handleBoardFiltersStateRequest.bind(this);
     this.boardFiltersClearRequestHandler = this.handleBoardFiltersClearRequest.bind(this);
     this.boardWorkingStyleChangedHandler = this.handleBoardWorkingStyleChanged.bind(this);
@@ -1058,7 +1059,14 @@ class BoardManager {
   }
 
   getSearchTooltipText() {
-    return 'Search grammar: spaces = AND, commas = OR, "quoted phrases" are exact, and use "" inside quotes to match a literal quote. Unquoted #123 matches card ID 123 only; quoted "#123" is text search only.';
+    if (this.searchTooltipText) {
+      return this.searchTooltipText;
+    }
+
+    const headerTooltip = document.getElementById('board-header-search-tooltip');
+    const tooltipText = headerTooltip ? headerTooltip.textContent.trim() : '';
+    this.searchTooltipText = tooltipText || BOARD_SEARCH_TOOLTIP_FALLBACK_TEXT;
+    return this.searchTooltipText;
   }
 
   normalizeSearchQuery(rawValue) {
@@ -1320,10 +1328,6 @@ class BoardManager {
     this.notifyBoardFilterVisibilityChanged();
     this.renderBoard();
     this.queueMobileViewportMetricsUpdate();
-  }
-
-  handleBoardFiltersShowRequest() {
-    this.handleBoardFiltersToggleRequest();
   }
 
   handleBoardFiltersStateRequest() {
@@ -2387,7 +2391,6 @@ class BoardManager {
         this.watchForHeaderSearchControl();
         this.notifyBoardFilterVisibilityChanged();
         window.addEventListener('boardFiltersToggleRequested', this.boardFiltersToggleRequestHandler);
-        window.addEventListener('boardFiltersShowRequested', this.boardFiltersShowRequestHandler);
         window.addEventListener('boardFiltersStateRequest', this.boardFiltersStateRequestHandler);
         window.addEventListener('boardFiltersClearRequest', this.boardFiltersClearRequestHandler);
         window.addEventListener('boardWorkingStyleChanged', this.boardWorkingStyleChangedHandler);
@@ -3001,7 +3004,6 @@ class BoardManager {
     document.removeEventListener('click', this.closeDropdownHandler);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
     window.removeEventListener('boardFiltersToggleRequested', this.boardFiltersToggleRequestHandler);
-    window.removeEventListener('boardFiltersShowRequested', this.boardFiltersShowRequestHandler);
     window.removeEventListener('boardFiltersStateRequest', this.boardFiltersStateRequestHandler);
     window.removeEventListener('boardFiltersClearRequest', this.boardFiltersClearRequestHandler);
     window.removeEventListener('boardWorkingStyleChanged', this.boardWorkingStyleChangedHandler);

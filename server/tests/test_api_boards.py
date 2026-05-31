@@ -685,6 +685,22 @@ class TestBoardsAPI:
         assert anchor_template_id not in quoted_ids
         assert alias_template_id in quoted_ids
 
+    def test_get_scheduled_cards_rejects_invalid_text_search_query_contract(
+        self,
+        api_client,
+        authenticated_session,
+        sample_board,
+    ):
+        """Scheduled cards endpoint enforces the same q limits as board cards."""
+        too_long_query_response = authenticated_session.get(
+            f'{api_client}/api/boards/{sample_board["id"]}/cards/scheduled',
+            params={'q': 'a' * 201}
+        )
+        assert too_long_query_response.status_code == 400
+        too_long_data = too_long_query_response.json()
+        assert too_long_data['success'] is False
+        assert 'at most 200 characters' in too_long_data['message']
+
     def test_export_board_success(self, api_client, authenticated_session, sample_board):
         """Board export returns AFT JSON payload and attachment headers."""
         response = authenticated_session.get(f'{api_client}/api/boards/{sample_board["id"]}/export')
