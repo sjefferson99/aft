@@ -195,6 +195,7 @@ class Header {
     this.statusIcon = null;
     this.statusText = null;
     this.versionInfo = null;
+    this.statusPresentationObserver = null;
     this.currentView = 'task'; // Default view
     this.workingStyle = 'kanban'; // Working style: 'kanban' or 'agile'
     this.boardStyleEditable = false;
@@ -358,7 +359,16 @@ class Header {
       dbStatus.addEventListener('click', () => {
         window.location.href = '/system-info.html';
       });
+      dbStatus.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+          return;
+        }
+        event.preventDefault();
+        window.location.href = '/system-info.html';
+      });
     }
+
+    this.initializeStatusWidgetPresentation();
     
     // Initialize notifications if the class exists
     if (typeof Notifications !== 'undefined') {
@@ -454,6 +464,78 @@ class Header {
         }
       }, 150);
     }
+  }
+
+  buildStatusWidgetTooltipText() {
+    const statusLabel = this.statusText ? (this.statusText.textContent || '').trim() : '';
+    const versionLabel = this.versionInfo ? (this.versionInfo.textContent || '').trim() : '';
+    const lines = [];
+
+    if (statusLabel) {
+      lines.push(statusLabel);
+    }
+    if (versionLabel) {
+      lines.push(versionLabel);
+    }
+    lines.push('More info: Open System Info');
+
+    return lines.join(' | ');
+  }
+
+  refreshStatusWidgetPresentation() {
+    const dbStatus = document.querySelector('.db-status');
+    if (!dbStatus || !this.statusIcon || !this.statusText) {
+      return;
+    }
+
+    const isHealthy = this.statusIcon.classList.contains('success');
+    const tooltipText = this.buildStatusWidgetTooltipText();
+
+    dbStatus.setAttribute('role', 'button');
+    dbStatus.setAttribute('tabindex', '0');
+    dbStatus.setAttribute('aria-label', tooltipText);
+    dbStatus.setAttribute('title', tooltipText);
+
+    if (isHealthy) {
+      dbStatus.classList.add('status-compact');
+    } else {
+      dbStatus.classList.remove('status-compact');
+    }
+  }
+
+  initializeStatusWidgetPresentation() {
+    if (!this.statusIcon || !this.statusText) {
+      return;
+    }
+
+    if (this.statusPresentationObserver) {
+      this.statusPresentationObserver.disconnect();
+      this.statusPresentationObserver = null;
+    }
+
+    this.statusPresentationObserver = new MutationObserver(() => {
+      this.refreshStatusWidgetPresentation();
+    });
+
+    this.statusPresentationObserver.observe(this.statusIcon, {
+      attributes: true,
+      attributeFilter: ['class']
+    });
+    this.statusPresentationObserver.observe(this.statusText, {
+      childList: true,
+      characterData: true,
+      subtree: true
+    });
+
+    if (this.versionInfo) {
+      this.statusPresentationObserver.observe(this.versionInfo, {
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+    }
+
+    this.refreshStatusWidgetPresentation();
   }
 
   /**

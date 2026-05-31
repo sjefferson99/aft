@@ -39,10 +39,12 @@ from utils import (
 )
 from board_routes import (
     _apply_assignee_card_filters,
+    _apply_text_search_filter,
     _build_board_owner_metadata,
     _get_board_assignee_users,
     _get_board_eligible_assignee_ids,
     _parse_assignee_ids_query_param,
+    _validate_and_parse_text_search_query,
     _user_summary,
 )
 
@@ -259,6 +261,15 @@ def get_board_cards(board_id):
         description: Include owner reassignment candidate users when true
         enum: ['true', 'false']
         default: 'false'
+      - name: q
+        in: query
+        type: string
+        required: false
+        description: >
+          Optional text search query (max 200 chars, max 12 OR groups, max 24 total terms,
+          max 80 chars per term). Spaces are AND, commas are OR, quoted phrases are exact
+          matches, and repeated double quotes inside quoted phrases escape a literal quote.
+          Unquoted #<digits> tokens match card id only.
     responses:
       200:
         description: Nested structure of board with columns and cards
@@ -341,6 +352,12 @@ def get_board_cards(board_id):
         include_unassigned = request.args.get('include_unassigned', 'false').lower() == 'true'
         include_secondary_assignees = request.args.get('include_secondary_assignees', 'false').lower() == 'true'
         include_owner_candidates = request.args.get('include_owner_candidates', 'false').lower() == 'true'
+        text_query, parsed_text_query, text_query_error = _validate_and_parse_text_search_query(
+          request.args.get('q')
+        )
+        if text_query_error:
+          db.close()
+          return create_error_response(text_query_error, 400)
 
         # Get board
         board = db.query(Board).filter(Board.id == board_id).first()
@@ -381,6 +398,8 @@ def get_board_cards(board_id):
                 include_unassigned,
                 include_secondary_assignees,
             )
+
+            cards_query = _apply_text_search_filter(cards_query, text_query, parsed_groups=parsed_text_query)
 
             # Apply archived filter
             if archived_param == 'true':

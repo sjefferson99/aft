@@ -13,7 +13,7 @@ import secrets
 import string
 import threading
 import time
-from sqlalchemy import func, or_
+from sqlalchemy import and_, exists, func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from database import SessionLocal
@@ -78,6 +78,13 @@ _public_rate_limit_store = {
 }
 _public_rate_limit_redis = None
 _public_rate_limit_redis_init = False
+
+CARD_ID_SEARCH_TOKEN_PATTERN = re.compile(r"^#[1-9][0-9]*$")
+TEXT_SEARCH_MIN_QUERY_LENGTH = 2
+TEXT_SEARCH_MAX_QUERY_LENGTH = 200
+TEXT_SEARCH_MAX_OR_GROUPS = 12
+TEXT_SEARCH_MAX_TOTAL_TERMS = 24
+TEXT_SEARCH_MAX_TERM_LENGTH = 80
 
 
 def configure_board_routes(app_version):
@@ -365,6 +372,196 @@ def _apply_assignee_card_filters(cards_query, selected_assignee_ids, include_una
         filters.append(Card.assigned_to_id.is_(None))
 
     return cards_query.filter(or_(*filters))
+
+
+def _append_text_search_term(terms, term_text, was_quoted):
+    normalized = term_text if was_quoted else term_text.strip()
+    if not normalized:
+        return
+
+    if not was_quoted and CARD_ID_SEARCH_TOKEN_PATTERN.fullmatch(normalized):
+        terms.append({"kind": "id", "value": int(normalized[1:])})
+        return
+
+    terms.append({"kind": "text", "value": normalized})
+
+
+def _parse_text_search_query(raw_query):
+    if raw_query is None:
+        return []
+
+    query = str(raw_query).strip()
+    if len(query) < TEXT_SEARCH_MIN_QUERY_LENGTH:
+        return []
+
+    groups = []
+    current_group = []
+    current_chars = []
+    current_was_quoted = False
+    in_quotes = False
+    index = 0
+
+    while index < len(query):
+        char = query[index]
+
+        if in_quotes:
+            if char == '"':
+                # Two double-quotes inside a quoted phrase represent a literal quote.
+                if index + 1 < len(query) and query[index + 1] == '"':
+                    current_chars.append('"')
+                    index += 2
+                    continue
+                in_quotes = False
+                current_was_quoted = True
+                index += 1
+                continue
+
+            current_chars.append(char)
+            index += 1
+            continue
+
+        if char == '"' and not current_chars:
+            in_quotes = True
+            current_was_quoted = True
+            index += 1
+            continue
+
+        if char == ',':
+            _append_text_search_term(
+                current_group,
+                ''.join(current_chars),
+                current_was_quoted,
+            )
+            current_chars = []
+            current_was_quoted = False
+
+            if current_group:
+                groups.append(current_group)
+                current_group = []
+
+            index += 1
+            continue
+
+        if char.isspace():
+            _append_text_search_term(
+                current_group,
+                ''.join(current_chars),
+                current_was_quoted,
+            )
+            current_chars = []
+            current_was_quoted = False
+            index += 1
+            continue
+
+        current_chars.append(char)
+        index += 1
+
+    _append_text_search_term(
+        current_group,
+        ''.join(current_chars),
+        current_was_quoted,
+    )
+    if current_group:
+        groups.append(current_group)
+
+    return groups
+
+
+def _escape_like_query_value(value):
+    return value.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
+
+def _build_text_search_predicate(parsed_groups):
+    if not parsed_groups:
+        return None
+
+    or_group_predicates = []
+    for group in parsed_groups:
+        and_term_predicates = []
+        for term in group:
+            if term.get("kind") == "id":
+                and_term_predicates.append(Card.id == term["value"])
+                continue
+
+            raw_value = term.get("value", "")
+            if not raw_value:
+                continue
+
+            like_value = f"%{_escape_like_query_value(raw_value)}%"
+            checklist_match = exists().where(
+                and_(
+                    ChecklistItem.card_id == Card.id,
+                    ChecklistItem.name.ilike(like_value, escape='\\'),
+                )
+            )
+            and_term_predicates.append(
+                or_(
+                    Card.title.ilike(like_value, escape='\\'),
+                    Card.description.ilike(like_value, escape='\\'),
+                    checklist_match,
+                )
+            )
+
+        if and_term_predicates:
+            or_group_predicates.append(and_(*and_term_predicates))
+
+    if not or_group_predicates:
+        return None
+
+    return or_(*or_group_predicates)
+
+
+def _normalize_text_search_query(raw_query):
+    if raw_query is None:
+        return None
+
+    return str(raw_query).strip()
+
+
+def _validate_and_parse_text_search_query(raw_query):
+    normalized_query = _normalize_text_search_query(raw_query)
+    if normalized_query is None or normalized_query == "":
+        return normalized_query, [], None
+
+    if len(normalized_query) > TEXT_SEARCH_MAX_QUERY_LENGTH:
+        return None, None, (
+            f"Query parameter q must be at most {TEXT_SEARCH_MAX_QUERY_LENGTH} characters"
+        )
+
+    parsed_groups = _parse_text_search_query(normalized_query)
+    if not parsed_groups:
+        return normalized_query, [], None
+
+    if len(parsed_groups) > TEXT_SEARCH_MAX_OR_GROUPS:
+        return None, None, (
+            f"Query parameter q supports at most {TEXT_SEARCH_MAX_OR_GROUPS} comma-separated groups"
+        )
+
+    total_terms = 0
+    for group in parsed_groups:
+        total_terms += len(group)
+        if total_terms > TEXT_SEARCH_MAX_TOTAL_TERMS:
+            return None, None, (
+                f"Query parameter q supports at most {TEXT_SEARCH_MAX_TOTAL_TERMS} terms"
+            )
+
+        for term in group:
+            term_value = str(term.get("value", ""))
+            if len(term_value) > TEXT_SEARCH_MAX_TERM_LENGTH:
+                return None, None, (
+                    f"Each term in q must be at most {TEXT_SEARCH_MAX_TERM_LENGTH} characters"
+                )
+
+    return normalized_query, parsed_groups, None
+
+
+def _apply_text_search_filter(cards_query, raw_query, parsed_groups=None):
+    parsed_groups = parsed_groups if parsed_groups is not None else _parse_text_search_query(raw_query)
+    predicate = _build_text_search_predicate(parsed_groups)
+    if predicate is None:
+        return cards_query
+
+    return cards_query.filter(predicate)
 
 
 # ---------------------------------------------------------------------------
@@ -1379,6 +1576,15 @@ def get_board_scheduled_cards(board_id):
         description: Include owner reassignment candidate users when true
         enum: ['true', 'false']
         default: 'false'
+            - name: q
+                in: query
+                type: string
+                required: false
+                description: >
+                    Optional text search query (max 200 chars, max 12 OR groups, max 24 total terms,
+                    max 80 chars per term). Spaces are AND, commas are OR, quoted phrases are exact
+                    matches, and repeated double quotes inside quoted phrases escape a literal quote.
+                    Unquoted #<digits> tokens match card id only.
     responses:
       200:
         description: Board with columns and scheduled cards
@@ -1410,6 +1616,11 @@ def get_board_scheduled_cards(board_id):
         include_unassigned = request.args.get('include_unassigned', 'false').lower() == 'true'
         include_secondary_assignees = request.args.get('include_secondary_assignees', 'false').lower() == 'true'
         include_owner_candidates = request.args.get('include_owner_candidates', 'false').lower() == 'true'
+        text_query, parsed_text_query, text_query_error = _validate_and_parse_text_search_query(
+            request.args.get('q')
+        )
+        if text_query_error:
+            return create_error_response(text_query_error, 400)
 
         # Build nested structure with scheduled cards
         result = {
@@ -1435,11 +1646,13 @@ def get_board_scheduled_cards(board_id):
             )
 
             cards = _apply_assignee_card_filters(
-              cards,
-              selected_assignee_ids,
-              include_unassigned,
-              include_secondary_assignees,
-            ).order_by(Card.order).all()
+                cards,
+                selected_assignee_ids,
+                include_unassigned,
+                include_secondary_assignees,
+            )
+
+            cards = _apply_text_search_filter(cards, text_query, parsed_groups=parsed_text_query).order_by(Card.order).all()
 
             # Serialize cards with checklist items and comments
             cards_data = [

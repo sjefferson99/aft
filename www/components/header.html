@@ -26,6 +26,46 @@
       </div>
     </nav>
     <div class="header-right">
+      <div class="board-search-control" id="board-header-search-control">
+        <label class="visually-hidden" for="board-header-search-input">Search board cards</label>
+        <div class="board-search-input-wrap board-search-tooltip-wrap">
+          <input
+            type="text"
+            id="board-header-search-input"
+            class="board-search-input"
+            placeholder="Search cards"
+            maxlength="200"
+            aria-label="Search board cards"
+            aria-describedby="board-header-search-tooltip"
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <button
+            type="button"
+            id="board-header-search-clear-btn"
+            class="board-search-clear-btn"
+            aria-label="Clear board search"
+            title="Clear search"
+            style="display: none;"
+          >
+            x
+          </button>
+          <button
+            type="button"
+            id="board-header-search-filters-btn"
+            class="board-search-filter-btn"
+            aria-label="Toggle filters panel"
+            title="Toggle filters"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+            </svg>
+          </button>
+          <div class="board-search-tooltip" id="board-header-search-tooltip" role="tooltip">
+            Search grammar: spaces = AND, commas = OR, "quoted phrases" are exact, and use "" inside quotes to match a literal quote. Unquoted #123 matches card ID 123 only; quoted "#123" is text search only.
+          </div>
+        </div>
+      </div>
       <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu-drawer">
         <span></span>
         <span></span>
@@ -100,7 +140,6 @@
           <a href="javascript:void(0)" class="settings-dropdown-item" id="rotate-public-link-menu-item" style="display: none;">Rotate Public Link</a>
           <a href="javascript:void(0)" class="settings-dropdown-item" id="copy-embed-code-menu-item" style="display: none;">Copy Embed Code</a>
           <a href="javascript:void(0)" class="settings-dropdown-item" id="reassign-board-menu-item" style="display: none;">Reassign Board</a>
-          <a href="javascript:void(0)" class="settings-dropdown-item" id="toggle-board-filters-menu-item" style="display: none;">Show Filters</a>
           <a href="javascript:void(0)" class="settings-dropdown-item" id="clear-board-filters-menu-item" style="display: none;">Clear Filters</a>
           <a href="/backup-restore.html" class="settings-dropdown-item">Backup & Restore</a>
           <a href="/theme-builder.html" class="settings-dropdown-item">Theme Builder</a>
@@ -222,7 +261,6 @@
             <button type="button" class="mobile-menu-link" id="mobile-rotate-public-link-menu-item" style="display: none;">Rotate Public Link</button>
             <button type="button" class="mobile-menu-link" id="mobile-copy-embed-code-menu-item" style="display: none;">Copy Embed Code</button>
             <button type="button" class="mobile-menu-link" id="mobile-reassign-board-menu-item" style="display: none;">Reassign Board</button>
-            <button type="button" class="mobile-menu-link" id="mobile-toggle-board-filters-menu-item" style="display: none;">Show Filters</button>
             <button type="button" class="mobile-menu-link" id="mobile-clear-board-filters-menu-item" style="display: none;">Clear Filters</button>
             <a href="/backup-restore.html" class="mobile-menu-link">Backup & Restore</a>
             <a href="/theme-builder.html" class="mobile-menu-link">Theme Builder</a>
