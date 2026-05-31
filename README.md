@@ -144,7 +144,9 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Update Cards** - Edit card details, titles, and descriptions
 - **Assign Responsibility** - Set a primary assignee and optional secondary assignees per card from users with board access
 - **Assignee Avatars** - Cards show the primary assignee initials in a bottom-left avatar circle using the assignee's profile colour
-- **Board Assignee Filters** - Toggle a compact assignee filter bar from the header settings menu to show cards for selected assignees, include unassigned cards, and optionally match secondary assignees. When filters are active, a visual indicator appears next to the board name. Clear all filters quickly via the settings menu "Clear filters" option.
+- **Board Assignee Filters** - Open/toggle the compact assignee filter bar from the header search field's filter icon to show cards for selected assignees, include unassigned cards, and optionally match secondary assignees. When filters are active, a visual indicator appears next to the board name. Clear all filters quickly via the settings menu "Clear filters" option.
+- **Board Text Search** - Search cards from the header or filter bar with shared state and a 500ms debounce. Search matches card title, description, and checklist item text. Query grammar supports spaces as AND, commas as OR, quoted exact phrases, and repeated double quotes inside phrases for literal quote matching.
+- **Card ID Search Tokens** - Use unquoted `#123` to match card ID 123 only. Use quoted `"#123"` for text-only matching. Tokens like `#00379`, `#abc`, and `##123` are treated as normal text tokens.
 - **Delete Cards** - Remove completed or cancelled tasks
 - **Archive Cards** - Archive completed cards to declutter your board while preserving history
 - **Unarchive Cards** - Restore archived cards back to active view when needed

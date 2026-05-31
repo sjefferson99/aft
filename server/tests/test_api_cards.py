@@ -637,6 +637,14 @@ class TestCardsAPI:
         alpha_hash_ids = _collect_board_card_ids(alpha_hash_search_response.json())
         assert alpha_hash_id in alpha_hash_ids
 
+        double_hash_search_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': f'##{card_id}'}
+        )
+        assert double_hash_search_response.status_code == 200
+        double_hash_ids = _collect_board_card_ids(double_hash_search_response.json())
+        assert card_id not in double_hash_ids
+
     def test_get_board_cards_text_search_combines_with_assignee_filters(
         self,
         api_client,
@@ -696,6 +704,47 @@ class TestCardsAPI:
         combined_ids = _collect_board_card_ids(combined_filter_response.json())
         assert sample_card['id'] in combined_ids
         assert other_card_id not in combined_ids
+
+    def test_get_board_cards_text_search_empty_and_no_result_behavior(
+        self,
+        api_client,
+        authenticated_session,
+        sample_card,
+        sample_column,
+    ):
+        """Empty/whitespace q is ignored and no-result queries return an empty card set."""
+        board_id = sample_column['board_id']
+
+        baseline_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards'
+        )
+        assert baseline_response.status_code == 200
+        baseline_ids = _collect_board_card_ids(baseline_response.json())
+        assert sample_card['id'] in baseline_ids
+
+        empty_query_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': ''}
+        )
+        assert empty_query_response.status_code == 200
+        empty_query_ids = _collect_board_card_ids(empty_query_response.json())
+        assert empty_query_ids == baseline_ids
+
+        whitespace_query_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': '   '}
+        )
+        assert whitespace_query_response.status_code == 200
+        whitespace_query_ids = _collect_board_card_ids(whitespace_query_response.json())
+        assert whitespace_query_ids == baseline_ids
+
+        no_result_response = authenticated_session.get(
+            f'{api_client}/api/boards/{board_id}/cards',
+            params={'q': 'zzztotallynomatchtermzzz'}
+        )
+        assert no_result_response.status_code == 200
+        no_result_ids = _collect_board_card_ids(no_result_response.json())
+        assert no_result_ids == set()
     
     def test_get_column_cards_empty(self, api_client, authenticated_session, sample_column):
         """Test getting cards when column is empty."""

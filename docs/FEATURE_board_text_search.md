@@ -422,22 +422,61 @@ Tradeoff:
   - Verified mobile behavior remains clean with existing mobile breakpoint rule that hides `.db-status`.
 
 ## Phase 6: Consolidated validation and documentation
-- [ ] Confirm each phase-level test/build gate completed and recorded.
-- [ ] Add/finish API tests for:
-  - [ ] q filtering (title/description/checklist)
-  - [ ] spaces AND behavior
-  - [ ] commas OR behavior
-  - [ ] quoted phrase behavior
-  - [ ] escaped quote behavior using repeated double quotes
-  - [ ] unquoted #<digits> id-only matching
-  - [ ] quoted "#<digits>" text-only matching
-  - [ ] leading-zero and non-numeric hash tokens text-only matching
-  - [ ] combined q + assignee filters
-  - [ ] empty/no-result/min-length behavior
-- [ ] Add UI test coverage for debounce + control sync behavior (if framework allows).
-- [ ] Manual perf pass on realistic board size.
-- [ ] Update user docs for board search behavior and limitations.
-- [ ] Record post-MVP improvements from Future Search Enhancements section.
+- [x] Confirm each phase-level test/build gate completed and recorded.
+- [x] Add/finish API tests for:
+  - [x] q filtering (title/description/checklist)
+  - [x] spaces AND behavior
+  - [x] commas OR behavior
+  - [x] quoted phrase behavior
+  - [x] escaped quote behavior using repeated double quotes
+  - [x] unquoted #<digits> id-only matching
+  - [x] quoted "#<digits>" text-only matching
+  - [x] leading-zero and non-numeric hash tokens text-only matching
+  - [x] combined q + assignee filters
+  - [x] empty/no-result/min-length behavior
+- [x] Add UI test coverage for debounce + control sync behavior (if framework allows).
+- [x] Manual perf pass on realistic board size.
+- [x] Update user docs for board search behavior and limitations.
+- [x] Record post-MVP improvements from Future Search Enhancements section.
+
+### Phase 6 Validation Notes (2026-05-31)
+
+- Consolidated test/build gates:
+  - Rebuilt local stack from clean DB state to validate in a deterministic environment:
+    - `docker compose down ; Remove-Item -Recurse -Force data ; docker compose up -d --build`
+  - Rebuilt frontend artifacts after final UI changes:
+    - `docker compose up -d --build nginx`
+
+- API test coverage completion:
+  - Added missing assertions/tests in `server/tests/test_api_cards.py` for:
+    - non-numeric double-hash token behavior (`##123` remains text-only)
+    - empty/whitespace query behavior (ignored; baseline result set unchanged)
+    - explicit no-result query behavior (returns empty card set)
+  - Executed focused API suite:
+    - `..\\.venv\\Scripts\\python.exe -m pytest server/tests/test_api_cards.py server/tests/test_api_boards.py -k "text_search or filter_by_assignees_and_unassigned or includes_secondary_assignees_when_enabled" -v`
+  - Result:
+    - `9 passed, 95 deselected`
+
+- UI debounce/control-sync coverage:
+  - No dedicated committed UI test framework is currently wired for this feature path.
+  - Completed scripted browser smoke validation of debounce, cross-control sync, tooltip behavior, filter toggle behavior, and compact/expanded status widget behavior during Phases 3-5.
+
+- Performance validation:
+  - Reused representative-volume perf run from Phase 2 (5,000-card seeded board) and recorded results there:
+    - `LIKE` search: ~1.98 ms (table scan)
+    - `MATCH ... AGAINST` search: ~0.09 ms (FULLTEXT index)
+
+- User documentation updates:
+  - Updated `README.md` board feature section with:
+    - board text-search grammar and behavior
+    - card-id hash-token semantics
+    - header filter icon workflow for opening/toggling filter panel
+
+- Post-MVP improvements captured from roadmap:
+  - Add repository-level search abstraction to support pluggable backends.
+  - Evaluate PostgreSQL text-search enhancements (`pg_trgm`, weighted ranking, stemming dictionaries).
+  - Evaluate dedicated search engine path (Meilisearch/OpenSearch) for synonyms/typo tolerance/ranking.
+  - Consider hybrid model (DB filters + search-engine ranked IDs) for larger deployments.
 
 ---
 
