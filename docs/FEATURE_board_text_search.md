@@ -401,10 +401,25 @@ Tradeoff:
   - Verified clear-filters visibility still follows active filter state.
 
 ## Phase 5: Status widget compact mode
-- [ ] Healthy state renders dot-only with accessible tooltip.
-- [ ] Error states auto-expand with full status text.
-- [ ] Mobile behavior remains clean and non-overlapping.
-- [ ] Run accessibility and responsive smoke checks for tooltip and expanded error modes.
+- [x] Healthy state renders dot-only with accessible tooltip.
+- [x] Error states auto-expand with full status text.
+- [x] Mobile behavior remains clean and non-overlapping.
+- [x] Run accessibility and responsive smoke checks for tooltip and expanded error modes.
+
+### Phase 5 Validation Notes (2026-05-31)
+
+- Implementation:
+  - Added status widget presentation logic in `www/js/header.js`:
+    - Healthy (`.status-icon.success`) now applies compact dot-only mode.
+    - Non-healthy states automatically revert to expanded text/details mode.
+    - Tooltip/accessible label now includes status, version info, and a "More info" hint.
+    - Added keyboard activation for the widget (`Enter`/`Space`) to preserve navigability to System Info.
+  - Added compact mode styles in `www/css/header.css` using `.db-status.status-compact`.
+
+- Accessibility/responsive smoke:
+  - Verified compact mode exposes status details through `title` and `aria-label` on the widget.
+  - Verified error class/text immediately expands the widget (dot + text/details visible).
+  - Verified mobile behavior remains clean with existing mobile breakpoint rule that hides `.db-status`.
 
 ## Phase 6: Consolidated validation and documentation
 - [ ] Confirm each phase-level test/build gate completed and recorded.

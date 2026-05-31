@@ -943,9 +943,24 @@ body.board-page:not(.public-board-page) .board-search-control {
   color: var(--header-text-color);
 }
 
+.db-status.status-compact {
+  padding: 8px 10px;
+  min-width: 30px;
+  border-radius: 999px;
+}
+
 .db-status:hover {
   background-color: var(--header-button-hover);
   transform: translateY(-1px);
+}
+
+.db-status.status-compact .status-line {
+  gap: 0;
+}
+
+.db-status.status-compact .status-text,
+.db-status.status-compact .version-line {
+  display: none;
 }
 
 .status-line {
