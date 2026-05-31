@@ -332,21 +332,73 @@ Tradeoff:
 
 
 ## Phase 3: Frontend search controls and sync
-- [ ] Add header search control for board page (desktop + mobile).
-- [ ] Add search control to board filter bar UI.
-- [ ] Add 500ms debounce and board reload wiring in board.js.
-- [ ] Keep search value synchronized between both controls.
-- [ ] Add clear behavior and active-filter indicator integration.
-- [ ] Add hover/focus tooltip describing AND/OR/quotes/escaped-quote behavior.
-- [ ] Enforce minimum 2-character trigger (with #1 explicitly valid).
-- [ ] Verify same search experience in task, done, and archived views.
-- [ ] Run frontend build/smoke checks and board interaction tests for this phase.
+- [x] Add header search control for board page (desktop + mobile).
+- [x] Add search control to board filter bar UI.
+- [x] Add 500ms debounce and board reload wiring in board.js.
+- [x] Keep search value synchronized between both controls.
+- [x] Add clear behavior and active-filter indicator integration.
+- [x] Add hover/focus tooltip describing AND/OR/quotes/escaped-quote behavior.
+- [x] Enforce minimum 2-character trigger (with #1 explicitly valid).
+- [x] Verify same search experience in task, done, and archived views.
+- [x] Run frontend build/smoke checks and board interaction tests for this phase.
+
+### Phase 3 Validation Notes (2026-05-31)
+
+- Frontend implementation:
+  - Added header search control in `www/components/header.html` (desktop/mobile responsive in existing header layout).
+  - Added reusable header search styles and tooltip behavior in `www/css/header.css`.
+  - Added filter-panel search control and styling near assignee filters in `www/js/board.js` and `www/css/board.css`.
+  - Added board-level search state and synchronization in `www/js/board.js`:
+    - `searchQueryRaw`, `searchQueryDebounced`, 500ms debounce timer.
+    - Query wiring to existing card endpoints through `q` parameter.
+    - 2-character minimum gate before requests are sent.
+    - Shared clear behavior and active-filter indicator integration.
+    - Search integrated into existing filter clear flow.
+  - Initial `q` value now hydrates from URL query params on board page load.
+
+- Static validation:
+  - VS Code diagnostics check reports no errors in changed files:
+    - `www/js/board.js`
+    - `www/components/header.html`
+    - `www/css/header.css`
+    - `www/css/board.css`
+
+- Compose/frontend smoke:
+  - Command executed:
+    - `docker compose up -d --build nginx ; docker compose ps`
+  - Result:
+    - `nginx`, `server`, `db`, and `redis` containers up; `server` and `redis` healthy.
+
+- Browser interaction checks (authenticated):
+  - Logged in successfully via `/login.html` and navigated to an accessible board.
+  - Verified header search control is present and shows grammar tooltip.
+  - Enabled filter panel and verified filter-bar search control appears with matching tooltip.
+  - Verified control synchronization in both directions (header <-> filter panel).
+  - Verified min-length gate behavior:
+    - 1-character query (`a`) does not activate filter state.
+    - 2-character query (`ab`) activates filter state and shows filter-active indicator.
+  - Verified clear-button behavior resets both controls and clears active-filter state.
 
 ## Phase 4: Filter button and settings menu changes
-- [ ] Add filter-panel toggle button at end of search input.
-- [ ] Remove/replace board filter toggle item from settings menu.
-- [ ] Keep clear filters entry as-is or move if needed.
-- [ ] Run UI regression checks for header menus and mobile drawer interactions.
+- [x] Add filter-panel toggle button at end of search input.
+- [x] Remove/replace board filter toggle item from settings menu.
+- [x] Keep clear filters entry as-is or move if needed.
+- [x] Run UI regression checks for header menus and mobile drawer interactions.
+
+### Phase 4 Validation Notes (2026-05-31)
+
+- Header search action:
+  - Added trailing filter icon button in `www/components/header.html`.
+  - Button dispatches a dedicated open-filters event path in `www/js/board.js` (`boardFiltersShowRequested`) so the panel opens predictably.
+
+- Settings menu cleanup:
+  - Removed board filter toggle entries from settings menus (desktop + mobile) in `www/components/header.html`.
+  - Kept existing clear-filters entries unchanged.
+
+- UI behavior/regression checks:
+  - Verified filter panel can be opened from the new header search filter button.
+  - Verified settings menu no longer shows "Show/Hide Filters" entries.
+  - Verified clear-filters visibility still follows active filter state.
 
 ## Phase 5: Status widget compact mode
 - [ ] Healthy state renders dot-only with accessible tooltip.

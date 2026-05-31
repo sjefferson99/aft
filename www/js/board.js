@@ -877,7 +877,15 @@ class BoardManager {
     this.assigneeFilterSelectedUserIds = new Set();
     this.assigneeFilterIncludeUnassigned = false;
     this.assigneeFilterIncludeSecondaryAssignees = false;
+    this.searchQueryRaw = '';
+    this.searchQueryDebounced = '';
+    this.searchDebounceTimer = null;
+    this.searchDebounceDelayMs = 500;
+    this.searchInputWatcherId = null;
+    this.searchFocusRestoreTargetId = null;
+    this.searchFocusRestoreEnabled = false;
     this.boardFiltersToggleRequestHandler = this.handleBoardFiltersToggleRequest.bind(this);
+    this.boardFiltersShowRequestHandler = this.handleBoardFiltersShowRequest.bind(this);
     this.boardFiltersStateRequestHandler = this.handleBoardFiltersStateRequest.bind(this);
     this.boardFiltersClearRequestHandler = this.handleBoardFiltersClearRequest.bind(this);
     this.boardWorkingStyleChangedHandler = this.handleBoardWorkingStyleChanged.bind(this);
@@ -1042,7 +1050,238 @@ class BoardManager {
       params.set('include_secondary_assignees', 'true');
     }
 
+    if (this.searchQueryDebounced) {
+      params.set('q', this.searchQueryDebounced);
+    }
+
     return params;
+  }
+
+  getSearchTooltipText() {
+    return 'Search grammar: spaces = AND, commas = OR, "quoted phrases" are exact, and use "" inside quotes to match a literal quote. Unquoted #123 matches card ID 123 only; quoted "#123" is text search only.';
+  }
+
+  normalizeSearchQuery(rawValue) {
+    return typeof rawValue === 'string' ? rawValue.trim() : '';
+  }
+
+  isSearchQueryEligible(rawValue) {
+    return this.normalizeSearchQuery(rawValue).length >= 2;
+  }
+
+  prepareSearchFocusRestore(targetInputId) {
+    if (!targetInputId) {
+      return;
+    }
+
+    const activeElement = document.activeElement;
+    if (!activeElement || activeElement.id !== targetInputId) {
+      return;
+    }
+
+    this.searchFocusRestoreEnabled = true;
+    this.searchFocusRestoreTargetId = targetInputId;
+  }
+
+  restoreSearchInputFocusIfNeeded() {
+    if (!this.searchFocusRestoreEnabled || !this.searchFocusRestoreTargetId) {
+      return;
+    }
+
+    const targetInput = document.getElementById(this.searchFocusRestoreTargetId);
+    if (!targetInput) {
+      return;
+    }
+
+    if (document.activeElement !== targetInput) {
+      targetInput.focus({ preventScroll: true });
+    }
+
+    const cursorPosition = targetInput.value.length;
+    if (typeof targetInput.setSelectionRange === 'function') {
+      targetInput.setSelectionRange(cursorPosition, cursorPosition);
+    }
+  }
+
+  updateSearchControlState() {
+    const selectors = [
+      '#board-header-search-input',
+      '#board-filter-search-input'
+    ];
+    selectors.forEach((selector) => {
+      const input = document.querySelector(selector);
+      if (!input) {
+        return;
+      }
+
+      if (input.value !== this.searchQueryRaw) {
+        input.value = this.searchQueryRaw;
+      }
+
+      const tooltipText = this.getSearchTooltipText();
+      input.removeAttribute('title');
+      input.setAttribute('aria-label', `Search board cards. ${tooltipText}`);
+      input.setAttribute('maxlength', '200');
+    });
+
+    const clearButtons = [
+      '#board-header-search-clear-btn',
+      '#board-filter-search-clear-btn'
+    ];
+    const showClearButton = this.searchQueryRaw.length > 0;
+    clearButtons.forEach((selector) => {
+      const button = document.querySelector(selector);
+      if (!button) {
+        return;
+      }
+
+      button.style.display = showClearButton ? 'inline-flex' : 'none';
+      button.setAttribute('aria-hidden', showClearButton ? 'false' : 'true');
+    });
+  }
+
+  setSearchQueryFromInput(rawValue, sourceInputId = null) {
+    this.searchQueryRaw = String(rawValue || '');
+    this.updateSearchControlState();
+
+    if (this.searchDebounceTimer) {
+      clearTimeout(this.searchDebounceTimer);
+      this.searchDebounceTimer = null;
+    }
+
+    if (!this.isSearchQueryEligible(this.searchQueryRaw)) {
+      if (this.searchQueryDebounced) {
+        this.prepareSearchFocusRestore(sourceInputId);
+        this.searchQueryDebounced = '';
+        this.notifyBoardFilterActiveStateChanged();
+        this.loadBoard();
+      } else {
+        this.notifyBoardFilterActiveStateChanged();
+      }
+      return;
+    }
+
+    this.searchDebounceTimer = setTimeout(() => {
+      this.searchDebounceTimer = null;
+      const normalized = this.normalizeSearchQuery(this.searchQueryRaw);
+      if (!this.isSearchQueryEligible(normalized)) {
+        if (this.searchQueryDebounced) {
+          this.prepareSearchFocusRestore(sourceInputId);
+          this.searchQueryDebounced = '';
+          this.notifyBoardFilterActiveStateChanged();
+          this.loadBoard();
+        }
+        return;
+      }
+
+      if (normalized !== this.searchQueryDebounced) {
+        this.prepareSearchFocusRestore(sourceInputId);
+        this.searchQueryDebounced = normalized;
+        this.notifyBoardFilterActiveStateChanged();
+        this.loadBoard();
+      }
+    }, this.searchDebounceDelayMs);
+  }
+
+  async clearSearchQuery() {
+    if (this.searchDebounceTimer) {
+      clearTimeout(this.searchDebounceTimer);
+      this.searchDebounceTimer = null;
+    }
+
+    const hadActiveSearch = !!this.searchQueryDebounced;
+    this.searchQueryRaw = '';
+    this.searchQueryDebounced = '';
+    this.updateSearchControlState();
+    this.notifyBoardFilterActiveStateChanged();
+
+    if (hadActiveSearch) {
+      await this.loadBoard();
+    }
+  }
+
+  bindSearchInputEvents() {
+    const inputSelectorMap = [
+      '#board-header-search-input',
+      '#board-filter-search-input'
+    ];
+    inputSelectorMap.forEach((selector) => {
+      const input = document.querySelector(selector);
+      if (!input || input.dataset.boundSearchInput === 'true') {
+        return;
+      }
+
+      input.addEventListener('input', (event) => {
+        this.setSearchQueryFromInput(event.target.value, event.target.id);
+      });
+      input.addEventListener('focus', () => {
+        this.searchFocusRestoreEnabled = true;
+        this.searchFocusRestoreTargetId = input.id;
+      });
+      input.addEventListener('blur', () => {
+        window.setTimeout(() => {
+          const activeId = document.activeElement ? document.activeElement.id : null;
+          const isSearchInputStillFocused = activeId === 'board-header-search-input' ||
+            activeId === 'board-filter-search-input';
+
+          if (isSearchInputStillFocused) {
+            this.searchFocusRestoreEnabled = true;
+            this.searchFocusRestoreTargetId = activeId;
+            return;
+          }
+
+          this.searchFocusRestoreEnabled = false;
+          this.searchFocusRestoreTargetId = null;
+        }, 0);
+      });
+      input.dataset.boundSearchInput = 'true';
+    });
+
+    const clearButtonSelectorMap = [
+      '#board-header-search-clear-btn',
+      '#board-filter-search-clear-btn'
+    ];
+    clearButtonSelectorMap.forEach((selector) => {
+      const button = document.querySelector(selector);
+      if (!button || button.dataset.boundSearchClear === 'true') {
+        return;
+      }
+
+      button.addEventListener('click', async () => {
+        await this.clearSearchQuery();
+      });
+      button.dataset.boundSearchClear = 'true';
+    });
+
+    const openFiltersButton = document.getElementById('board-header-search-filters-btn');
+    if (openFiltersButton && openFiltersButton.dataset.boundSearchFilters !== 'true') {
+      openFiltersButton.addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('boardFiltersToggleRequested'));
+      });
+      openFiltersButton.dataset.boundSearchFilters = 'true';
+    }
+
+    this.updateSearchControlState();
+  }
+
+  watchForHeaderSearchControl() {
+    if (this.searchInputWatcherId) {
+      clearInterval(this.searchInputWatcherId);
+      this.searchInputWatcherId = null;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 50;
+    this.searchInputWatcherId = setInterval(() => {
+      attempts += 1;
+      this.bindSearchInputEvents();
+
+      const headerSearchInput = document.getElementById('board-header-search-input');
+      if (headerSearchInput || attempts >= maxAttempts) {
+        clearInterval(this.searchInputWatcherId);
+        this.searchInputWatcherId = null;
+      }
+    }, 100);
   }
 
   /**
@@ -1050,7 +1289,9 @@ class BoardManager {
    * @returns {boolean} True if specific assignees are selected or unassigned filter is active
    */
   hasActiveFilters() {
-    return this.assigneeFilterSelectedUserIds.size > 0 || this.assigneeFilterIncludeUnassigned;
+    return this.assigneeFilterSelectedUserIds.size > 0 ||
+      this.assigneeFilterIncludeUnassigned ||
+      !!this.searchQueryDebounced;
   }
 
   /**
@@ -1058,9 +1299,17 @@ class BoardManager {
    * Resets selected assignees, unassigned toggle, and secondary assignees toggle
    */
   clearFilters() {
+    if (this.searchDebounceTimer) {
+      clearTimeout(this.searchDebounceTimer);
+      this.searchDebounceTimer = null;
+    }
+
     this.assigneeFilterSelectedUserIds.clear();
     this.assigneeFilterIncludeUnassigned = false;
     this.assigneeFilterIncludeSecondaryAssignees = false;
+    this.searchQueryRaw = '';
+    this.searchQueryDebounced = '';
+    this.updateSearchControlState();
     this.notifyBoardFilterActiveStateChanged();
     this.loadBoard();
   }
@@ -1071,6 +1320,10 @@ class BoardManager {
     this.notifyBoardFilterVisibilityChanged();
     this.renderBoard();
     this.queueMobileViewportMetricsUpdate();
+  }
+
+  handleBoardFiltersShowRequest() {
+    this.handleBoardFiltersToggleRequest();
   }
 
   handleBoardFiltersStateRequest() {
@@ -2096,6 +2349,11 @@ class BoardManager {
       } else {
         // Get board ID from URL query parameter
         const boardIdParam = urlParams.get('id');
+        const initialSearchQuery = this.normalizeSearchQuery(urlParams.get('q'));
+        this.searchQueryRaw = initialSearchQuery;
+        this.searchQueryDebounced = this.isSearchQueryEligible(initialSearchQuery)
+          ? initialSearchQuery
+          : '';
 
         // Parse and validate board ID to prevent XSS
         this.boardId = boardIdParam ? parseInt(boardIdParam, 10) : null;
@@ -2125,8 +2383,11 @@ class BoardManager {
       if (!this.isPublicMode) {
         this.loadPersistedAssigneeFilterVisibility();
         this.watchForAssigneeFilterVisibilityUser();
+        this.bindSearchInputEvents();
+        this.watchForHeaderSearchControl();
         this.notifyBoardFilterVisibilityChanged();
         window.addEventListener('boardFiltersToggleRequested', this.boardFiltersToggleRequestHandler);
+        window.addEventListener('boardFiltersShowRequested', this.boardFiltersShowRequestHandler);
         window.addEventListener('boardFiltersStateRequest', this.boardFiltersStateRequestHandler);
         window.addEventListener('boardFiltersClearRequest', this.boardFiltersClearRequestHandler);
         window.addEventListener('boardWorkingStyleChanged', this.boardWorkingStyleChangedHandler);
@@ -2740,11 +3001,22 @@ class BoardManager {
     document.removeEventListener('click', this.closeDropdownHandler);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
     window.removeEventListener('boardFiltersToggleRequested', this.boardFiltersToggleRequestHandler);
+    window.removeEventListener('boardFiltersShowRequested', this.boardFiltersShowRequestHandler);
     window.removeEventListener('boardFiltersStateRequest', this.boardFiltersStateRequestHandler);
     window.removeEventListener('boardFiltersClearRequest', this.boardFiltersClearRequestHandler);
     window.removeEventListener('boardWorkingStyleChanged', this.boardWorkingStyleChangedHandler);
     window.removeEventListener('resize', this.viewportMetricsHandler);
     window.removeEventListener('orientationchange', this.viewportMetricsHandler);
+
+    if (this.searchDebounceTimer) {
+      clearTimeout(this.searchDebounceTimer);
+      this.searchDebounceTimer = null;
+    }
+
+    if (this.searchInputWatcherId) {
+      clearInterval(this.searchInputWatcherId);
+      this.searchInputWatcherId = null;
+    }
 
     if (this.assigneeFilterVisibilityWatcherId) {
       clearInterval(this.assigneeFilterVisibilityWatcherId);
@@ -2890,6 +3162,38 @@ class BoardManager {
               <span>Include secondary assignees</span>
             </label>
           </div>
+          <div class="board-filter-search-control board-search-control-inline">
+            <label class="visually-hidden" for="board-filter-search-input">Search board cards</label>
+            <div class="board-search-input-wrap board-search-tooltip-wrap">
+              <input
+                type="text"
+                id="board-filter-search-input"
+                class="board-search-input"
+                placeholder="Search cards"
+                value="${this.escapeHtml(this.searchQueryRaw)}"
+                maxlength="200"
+                aria-label="Search board cards"
+                aria-describedby="board-filter-search-tooltip"
+                autocomplete="off"
+                spellcheck="false"
+              >
+              <button
+                type="button"
+                id="board-filter-search-clear-btn"
+                class="board-search-clear-btn"
+                aria-label="Clear board search"
+                title="Clear search"
+                style="display:${this.searchQueryRaw ? 'inline-flex' : 'none'}"
+              >
+                x
+              </button>
+              <div
+                class="board-search-tooltip"
+                id="board-filter-search-tooltip"
+                role="tooltip"
+              >${this.escapeHtml(this.getSearchTooltipText())}</div>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -2899,6 +3203,8 @@ class BoardManager {
     if (!this.assigneeFilterVisible) {
       return;
     }
+
+    this.bindSearchInputEvents();
 
     const assigneeButtons = this.container.querySelectorAll('.assignee-filter-avatar-btn');
     assigneeButtons.forEach((button) => {
@@ -2930,6 +3236,8 @@ class BoardManager {
         await this.loadBoard();
       });
     }
+
+    this.restoreSearchInputFocusIfNeeded();
   }
 
   renderBoard() {

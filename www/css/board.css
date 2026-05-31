@@ -31,12 +31,13 @@
 }
 
 .board-assignee-filter-bar {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  width: auto;
-  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  width: max-content;
+  max-width: min(100%, 1100px);
   padding: 8px 10px;
   min-height: 44px;
   margin-bottom: 10px;
@@ -48,13 +49,57 @@
 .board-assignee-filter-users {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  align-content: flex-start;
+  flex-wrap: wrap;
   gap: 6px;
+  flex: 0 1 auto;
+  max-width: 560px;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: visible;
   padding: 2px 0;
   padding-bottom: 2px;
+}
+
+.board-search-control-inline {
+  width: clamp(144px, 25.6vw, 288px);
+  min-width: 144px;
+  flex: 0 1 auto;
+}
+
+.board-search-control-inline .board-search-input {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--page-panel-background);
+  color: var(--text-bold);
+  height: 34px;
+  font-size: 13px;
+  padding: 0 34px 0 10px;
+}
+
+.board-search-control-inline .board-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+.board-search-control-inline .board-search-clear-btn {
+  right: 6px;
+  background: var(--background-light);
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+}
+
+.board-search-control-inline .board-search-clear-btn:hover,
+.board-search-control-inline .board-search-clear-btn:focus-visible {
+  background: var(--header-menu-hover);
+  color: var(--text-bold);
+}
+
+.board-search-control-inline .board-search-tooltip {
+  left: 0;
+  right: auto;
+  width: min(90vw, 420px);
+  background: var(--page-panel-background);
+  color: var(--text-bold);
 }
 
 .assignee-filter-avatar-btn {
@@ -102,7 +147,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-left: 8px;
+  margin-left: 0;
+  margin-top: 2px;
   font-size: 12px;
   color: var(--text-muted);
   white-space: nowrap;
@@ -161,10 +207,23 @@
   .board-assignee-filter-bar {
     gap: 8px;
     padding: 6px 8px;
+    width: 100%;
+  }
+
+  .board-assignee-filter-users {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+
+  .board-search-control-inline {
+    width: 100%;
+    min-width: 0;
+    flex-basis: 100%;
   }
 
   .assignee-filter-secondary-toggle {
     font-size: 11px;
+    flex-basis: 100%;
   }
 }
 
