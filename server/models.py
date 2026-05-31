@@ -59,6 +59,7 @@ class Board(Base):
     description = Column(Text, nullable=True)
     is_public = Column(Boolean, nullable=False, default=False)
     public_slug = Column(String(64), nullable=True, unique=True, index=True)
+    archived = Column(Boolean, nullable=False, default=False, index=True)
     
     # Owner has full control over the board
     owner_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=True, index=True)

@@ -101,6 +101,9 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Create Multiple Boards** - Organise different projects with separate Kanban boards
 - **Update Board Details** - Rename boards and modify their properties
 - **Delete Boards** - Remove boards when projects are complete
+- **Archive Boards** - Archive boards from the boards list to declutter active workspaces while preserving data
+- **Unarchive Boards** - Restore archived boards from the Archived Boards view
+- **Boards View Switching** - Toggle between Active Boards and Archived Boards from the header view menu
 - **Default Board Setting** - Set a default board to load on startup
 - **Board Statistics** - View counts of boards, columns, and cards
 

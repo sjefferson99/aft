@@ -362,6 +362,7 @@ def get_board_cards(board_id):
           "name": board.name,
           "is_public": bool(board.is_public),
           "public_slug": board.public_slug,
+          "archived": bool(board.archived),
           "columns": [],
         }
         result.update(_build_board_owner_metadata(board, g.user.id, db, include_candidates=include_owner_candidates))
