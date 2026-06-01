@@ -706,6 +706,17 @@ class Header {
   // Set the board name in the header
   setBoardName(boardName) {
     const navBoardNameText = document.getElementById('nav-board-name-text');
+    const mobileBoardNameText = document.getElementById('header-mobile-board-name');
+
+    if (mobileBoardNameText) {
+      mobileBoardNameText.textContent = boardName || '';
+      if (boardName) {
+        mobileBoardNameText.setAttribute('title', boardName);
+      } else {
+        mobileBoardNameText.removeAttribute('title');
+      }
+    }
+
     if (navBoardNameText) {
       if (boardName) {
         navBoardNameText.textContent = boardName;
