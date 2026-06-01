@@ -54,6 +54,14 @@
   color: var(--header-text-color);
 }
 
+.header-brand-title {
+  min-width: 0;
+}
+
+.header-mobile-board-name {
+  display: none;
+}
+
 .board-name-separator {
   opacity: 0.5;
   font-weight: 600;
@@ -639,6 +647,10 @@
   display: none;
 }
 
+.board-search-toggle-btn {
+  display: none;
+}
+
 body.board-page:not(.public-board-page) .board-search-control {
   display: flex;
   align-items: center;
@@ -651,6 +663,7 @@ body.board-page:not(.public-board-page) .board-search-control {
   display: flex;
   align-items: center;
   width: 100%;
+  min-width: 0;
 }
 
 .board-search-input {
@@ -743,9 +756,7 @@ body.board-page:not(.public-board-page) .board-search-control {
   z-index: 1005;
 }
 
-.board-search-input:hover ~ .board-search-tooltip,
-.board-search-input:focus ~ .board-search-tooltip,
-.board-search-input:focus-visible ~ .board-search-tooltip {
+.board-search-tooltip-wrap:hover .board-search-tooltip {
   opacity: 1;
   transform: translateY(0);
   transition-delay: 0.5s;
@@ -1061,6 +1072,16 @@ body.board-page:not(.public-board-page) .board-search-control {
     position: relative;
   }
 
+  .header-left {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .header-logo-link {
+    gap: 10px;
+    min-width: 0;
+  }
+
   .header-left h2,
   .header-nav,
   .views-dropdown,
@@ -1077,21 +1098,85 @@ body.board-page:not(.public-board-page) .board-search-control {
 
   .header-left h1 {
     font-size: 18px;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .header-title-wrapper {
     gap: 2px;
+    min-width: 4ch;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  body.board-page .header-instance-name {
+    display: none;
+  }
+
+  body.board-page .header-mobile-board-name {
+    display: block;
+    min-width: 4ch;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .header-right {
-    margin-left: auto;
+    margin-left: 0;
     gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-end;
   }
 
   body.board-page:not(.public-board-page) .board-search-control {
-    width: min(62vw, 260px);
-    min-width: 140px;
     display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    width: auto;
+    max-width: none;
+    min-width: 0;
+  }
+
+  body.board-page:not(.public-board-page) .board-search-control.is-collapsed {
+    flex: 0 0 auto;
+    width: 34px;
+    min-width: 34px;
+  }
+
+  body.board-page:not(.public-board-page) .board-search-control.is-collapsed .board-search-input-wrap {
+    display: none;
+  }
+
+  body.board-page:not(.public-board-page) .board-search-control.is-collapsed .board-search-toggle-btn {
+    display: inline-flex;
+  }
+
+  body.board-page:not(.public-board-page) .board-search-control:not(.is-collapsed) .board-search-toggle-btn {
+    display: none;
+  }
+
+  .board-search-toggle-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--header-button-background);
+    color: var(--header-text-color);
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .board-search-toggle-btn:hover,
+  .board-search-toggle-btn:focus-visible {
+    background: var(--header-button-hover);
   }
 
   .board-search-input {
@@ -1151,6 +1236,7 @@ body.board-page:not(.public-board-page) .board-search-control {
     display: inline-flex;
     width: 42px;
     height: 42px;
+    flex: 0 0 42px;
     border: 1px solid var(--border-color);
     border-radius: 10px;
     background: var(--header-button-background);

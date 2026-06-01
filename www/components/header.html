@@ -4,7 +4,10 @@
       <a href="/" class="header-logo-link">
         <img src="/images/AFT_logo.webp" alt="AFT Logo" class="header-logo">
         <div class="header-title-wrapper">
-          <h1>AFT</h1>
+          <h1 class="header-brand-title">
+            <span class="header-instance-name">AFT</span>
+            <span class="header-mobile-board-name" id="header-mobile-board-name" aria-live="polite"></span>
+          </h1>
           <h2>Aim, Focus, Track</h2>
         </div>
       </a>
@@ -27,6 +30,19 @@
     </nav>
     <div class="header-right">
       <div class="board-search-control" id="board-header-search-control">
+        <button
+          type="button"
+          id="board-header-search-toggle-btn"
+          class="board-search-toggle-btn"
+          aria-label="Expand board search"
+          title="Search"
+          aria-expanded="false"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle>
+            <line x1="16.65" y1="16.65" x2="21" y2="21"></line>
+          </svg>
+        </button>
         <label class="visually-hidden" for="board-header-search-input">Search board cards</label>
         <div class="board-search-input-wrap board-search-tooltip-wrap">
           <input

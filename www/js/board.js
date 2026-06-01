@@ -886,6 +886,8 @@ class BoardManager {
     this.searchFocusRestoreTargetId = null;
     this.searchFocusRestoreEnabled = false;
     this.searchTooltipText = null;
+    this.mobileHeaderBreakpoint = 900;
+    this.headerSearchCollapsed = true;
     this.boardFiltersToggleRequestHandler = this.handleBoardFiltersToggleRequest.bind(this);
     this.boardFiltersStateRequestHandler = this.handleBoardFiltersStateRequest.bind(this);
     this.boardFiltersClearRequestHandler = this.handleBoardFiltersClearRequest.bind(this);
@@ -1111,6 +1113,38 @@ class BoardManager {
     }
   }
 
+  isCollapsibleHeaderSearchViewport() {
+    return document.body.classList.contains('board-page') &&
+      !document.body.classList.contains('public-board-page') &&
+      window.innerWidth <= this.mobileHeaderBreakpoint;
+  }
+
+  applyHeaderSearchCollapsedState(options = {}) {
+    const { focusInput = false } = options;
+    const headerSearchControl = document.getElementById('board-header-search-control');
+    const headerSearchInput = document.getElementById('board-header-search-input');
+    const headerSearchToggle = document.getElementById('board-header-search-toggle-btn');
+    if (!headerSearchControl) {
+      return;
+    }
+
+    const shouldCollapse = this.isCollapsibleHeaderSearchViewport() &&
+      this.headerSearchCollapsed &&
+      this.searchQueryRaw.length === 0;
+
+    headerSearchControl.classList.toggle('is-collapsed', shouldCollapse);
+
+    if (headerSearchToggle) {
+      headerSearchToggle.setAttribute('aria-expanded', shouldCollapse ? 'false' : 'true');
+      headerSearchToggle.setAttribute('aria-label', shouldCollapse ? 'Expand board search' : 'Board search expanded');
+      headerSearchToggle.setAttribute('title', shouldCollapse ? 'Search' : 'Search expanded');
+    }
+
+    if (!shouldCollapse && focusInput && headerSearchInput && document.activeElement !== headerSearchInput) {
+      headerSearchInput.focus({ preventScroll: true });
+    }
+  }
+
   updateSearchControlState() {
     const selectors = [
       '#board-header-search-input',
@@ -1146,6 +1180,12 @@ class BoardManager {
       button.style.display = showClearButton ? 'inline-flex' : 'none';
       button.setAttribute('aria-hidden', showClearButton ? 'false' : 'true');
     });
+
+    if (this.searchQueryRaw.length > 0) {
+      this.headerSearchCollapsed = false;
+    }
+
+    this.applyHeaderSearchCollapsedState();
   }
 
   setSearchQueryFromInput(rawValue, sourceInputId = null) {
@@ -1200,6 +1240,7 @@ class BoardManager {
     const hadActiveSearch = !!this.searchQueryDebounced;
     this.searchQueryRaw = '';
     this.searchQueryDebounced = '';
+    this.headerSearchCollapsed = true;
     this.updateSearchControlState();
     this.notifyBoardFilterActiveStateChanged();
 
@@ -1225,6 +1266,11 @@ class BoardManager {
       input.addEventListener('focus', () => {
         this.searchFocusRestoreEnabled = true;
         this.searchFocusRestoreTargetId = input.id;
+
+        if (input.id === 'board-header-search-input') {
+          this.headerSearchCollapsed = false;
+          this.applyHeaderSearchCollapsedState();
+        }
       });
       input.addEventListener('blur', () => {
         window.setTimeout(() => {
@@ -1240,6 +1286,11 @@ class BoardManager {
 
           this.searchFocusRestoreEnabled = false;
           this.searchFocusRestoreTargetId = null;
+
+          if (input.id === 'board-header-search-input' && this.searchQueryRaw.length === 0) {
+            this.headerSearchCollapsed = true;
+            this.applyHeaderSearchCollapsedState();
+          }
         }, 0);
       });
       input.dataset.boundSearchInput = 'true';
@@ -1256,10 +1307,20 @@ class BoardManager {
       }
 
       button.addEventListener('click', async () => {
+        this.headerSearchCollapsed = true;
         await this.clearSearchQuery();
       });
       button.dataset.boundSearchClear = 'true';
     });
+
+    const headerSearchToggle = document.getElementById('board-header-search-toggle-btn');
+    if (headerSearchToggle && headerSearchToggle.dataset.boundSearchToggle !== 'true') {
+      headerSearchToggle.addEventListener('click', () => {
+        this.headerSearchCollapsed = false;
+        this.applyHeaderSearchCollapsedState({ focusInput: true });
+      });
+      headerSearchToggle.dataset.boundSearchToggle = 'true';
+    }
 
     const openFiltersButton = document.getElementById('board-header-search-filters-btn');
     if (openFiltersButton && openFiltersButton.dataset.boundSearchFilters !== 'true') {
@@ -1317,6 +1378,7 @@ class BoardManager {
     this.assigneeFilterIncludeSecondaryAssignees = false;
     this.searchQueryRaw = '';
     this.searchQueryDebounced = '';
+    this.headerSearchCollapsed = true;
     this.updateSearchControlState();
     this.notifyBoardFilterActiveStateChanged();
     this.loadBoard();
@@ -2113,6 +2175,8 @@ class BoardManager {
     if (!document.body.classList.contains('board-page')) {
       return;
     }
+
+    this.applyHeaderSearchCollapsedState();
 
     const columnsContainer = this.container?.querySelector('.columns-container');
     if (!columnsContainer) {
