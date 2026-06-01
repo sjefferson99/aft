@@ -709,8 +709,12 @@ class Header {
     const mobileBoardNameText = document.getElementById('header-mobile-board-name');
 
     if (mobileBoardNameText) {
-      mobileBoardNameText.textContent = boardName || 'Board';
-      mobileBoardNameText.setAttribute('title', boardName || 'Board');
+      mobileBoardNameText.textContent = boardName || '';
+      if (boardName) {
+        mobileBoardNameText.setAttribute('title', boardName);
+      } else {
+        mobileBoardNameText.removeAttribute('title');
+      }
     }
 
     if (navBoardNameText) {
