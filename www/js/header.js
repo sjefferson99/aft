@@ -3652,7 +3652,7 @@ class Header {
   // Load boards for dropdown menu
   async loadBoardsDropdown() {
     try {
-      const response = await fetch('/api/boards');
+      const response = await fetch('/api/boards?archived=false');
       const data = await response.json();
       
       const dropdown = document.getElementById('boards-dropdown-menu');
