@@ -7,7 +7,7 @@ python-socketio==5.16.2
 redis==8.0.0
 alembic==1.18.4
 pymysql==1.2.0
-cryptography==48.0.0
+cryptography==49.0.0
 gunicorn==26.0.0
 flask-swagger-ui==5.32.6
 flasgger==0.9.7.1
