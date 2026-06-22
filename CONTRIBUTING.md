@@ -9,6 +9,7 @@ Before submitting any code contribution, **verify ALL items** are complete:
 - [ ] **Authentication Setup** - If developing/testing features requiring authentication, ensure fresh database or test admin exists (see [Authentication for Development](#authentication-for-development))
 - [ ] **Tests Created** - All new features and bug fixes MUST include tests (see [Testing Requirements](#testing-requirements))
 - [ ] **API-Only Tests** - Tests use ONLY API endpoints, never direct database/filesystem access (see [SERVER_TESTING.md](server/docs/SERVER_TESTING.md))
+- [ ] **UI Tests** - Changes to `www/` (HTML/CSS/JS) include a Playwright test covering the change (see [UI_TESTING.md](ui-tests/docs/UI_TESTING.md))
 - [ ] **Code Standards** - Code follows all style guidelines in [Coding Standards](#coding-standards)
 - [ ] **Frontend Error Handling** - All API calls follow error handling patterns (see [FRONTEND_ERROR_HANDLING.md](docs/FRONTEND_ERROR_HANDLING.md))
 - [ ] **Swagger Documentation** - Every new Flask route has a Flasgger YAML docstring so it appears in `/api/docs` (see [API Documentation](#api-documentation))
@@ -30,6 +31,7 @@ Before submitting any code contribution, **verify ALL items** are complete:
 - [Coding Standards](#coding-standards)
 - [API Documentation](#api-documentation)
 - [Testing Requirements](#testing-requirements)
+- [UI/E2E Testing Requirements](#uie2e-testing-requirements)
 - [Accessibility Requirements](#accessibility-requirements)
 - [Security Guidelines](#security-guidelines)
 - [Pull Request Process](#pull-request-process)
@@ -249,7 +251,7 @@ See the [Migration Guide](server/docs/MIGRATION_GUIDE.md) for detailed instructi
 ### 5. Test Your Changes
 
 ```bash
-# Run all tests
+# Run all backend tests
 cd server
 pytest -v
 
@@ -259,6 +261,16 @@ pytest --cov=. --cov-report=html
 # Run specific test file
 pytest tests/test_api_boards.py -v
 ```
+
+If your change touches `www/` (HTML/CSS/JS), also run the UI suite:
+
+```bash
+cd ui-tests
+pytest -v
+```
+
+See [UI_TESTING.md](ui-tests/docs/UI_TESTING.md) for one-time setup
+(`pip install -r requirements-dev.txt && playwright install chromium`).
 
 ### 6. Commit Your Changes
 
@@ -633,7 +645,7 @@ class TestNewFeatureAPI:
 ### Running Tests Before PR
 
 ```bash
-# Run all tests
+# Run all backend tests
 pytest -v
 
 # Check coverage
@@ -642,6 +654,29 @@ pytest --cov=. --cov-report=term-missing
 # Run only your new tests
 pytest tests/test_your_feature.py -v
 ```
+
+```bash
+# Run UI/E2E tests (if your change touches www/)
+cd ui-tests
+pytest -v
+```
+
+## UI/E2E Testing Requirements
+
+Changes that touch `www/` (HTML/CSS/JS) must include a Playwright UI test
+covering the change, in addition to any backend API tests. See
+[UI_TESTING.md](ui-tests/docs/UI_TESTING.md) for setup, conventions, and the
+`logged_in_page` fixture.
+
+```bash
+cd ui-tests
+pytest -v
+```
+
+UI tests interact with the app the same way a user would (clicking,
+filling forms, asserting on visible DOM), never by reaching into the
+database or importing frontend JS directly - the same API-only-equivalent
+discipline as the backend suite, applied to the browser.
 
 ## Accessibility Requirements
 

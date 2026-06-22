@@ -17,6 +17,10 @@ htmlcov/
 *.cover
 .hypothesis/
 
+# Playwright UI/E2E test artifacts
+ui-tests/test-results/
+ui-tests/playwright-report/
+
 # IDE
 .idea/
 *.swp

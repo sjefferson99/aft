@@ -1,0 +1,12 @@
+# UI/E2E (Playwright) test dependencies
+# Install with:
+#   pip install -r requirements-dev.txt
+#   playwright install chromium
+#
+# Note: tests drive a real browser against the running Docker stack
+# (http://localhost via nginx), so production dependencies are NOT needed here.
+
+pytest==9.1.1
+pytest-playwright==0.8.0
+playwright==1.60.0
+requests==2.34.2
