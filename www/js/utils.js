@@ -330,8 +330,9 @@ function diffToDuration(startLocalValue, endLocalValue) {
 
   const diffMs = end.getTime() - start.getTime();
   if (diffMs < 0) return null;
+  if (diffMs % 3600000 !== 0) return null;
 
-  const totalHours = Math.floor(diffMs / 3600000);
+  const totalHours = diffMs / 3600000;
   return { days: Math.floor(totalHours / 24), hours: totalHours % 24 };
 }
 
