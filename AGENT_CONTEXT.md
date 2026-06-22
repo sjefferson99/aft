@@ -34,6 +34,7 @@ Current high-value context
 - Internal notification creators (backup, scheduler, housekeeping) create notifications for all admins by default.
 - POST /api/notifications supports for_all_users flag (admin only) to broadcast notifications to all users.
 - Frontend modal changes should reuse existing modal structure/styles and CSS variables for theme support; avoid hardcoded colors and only use danger styling for destructive actions.
+- UI/E2E tests for `www/` live in `ui-tests/` (pytest-playwright, no Node toolchain), separate from `server/tests`: run via `cd ui-tests && pytest -v`. Requires the full docker compose stack up at `http://localhost` and, for login-dependent tests, a fresh database (see `ui-tests/docs/UI_TESTING.md`). Use the `logged_in_page` fixture for authenticated tests rather than reimplementing login.
 
 Security workflow
 - Run Snyk Code after modifying first-party code in supported languages.
@@ -49,6 +50,7 @@ Useful commands
   - Follow logs: docker compose logs -f server nginx db redis
   - Rebuild a single service: docker compose up -d --build server
   - Run backend tests: cd server && ..\\.venv\\Scripts\\python.exe -m pytest -v
+  - Run UI/E2E tests: cd ui-tests && pytest -v (one-time setup: pip install -r requirements-dev.txt && playwright install chromium)
 - Focused notification tests:
   - from server/: ..\\.venv\\Scripts\\python.exe -m pytest tests/test_api_notifications.py -k "attribute_breakout or relative_url or https_url or javascript_protocol" -q
 - Focused Snyk scan:

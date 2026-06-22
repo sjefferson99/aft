@@ -476,6 +476,17 @@ pytest
 
 **Note:** Tests automatically handle authentication by creating a test admin user. For detailed testing instructions including fresh database setup, see [server/docs/SERVER_TESTING.md](server/docs/SERVER_TESTING.md).
 
+For browser-driven UI tests (Playwright, via pytest):
+
+```bash
+cd ui-tests
+pip install -r requirements-dev.txt
+playwright install chromium
+pytest
+```
+
+See [ui-tests/docs/UI_TESTING.md](ui-tests/docs/UI_TESTING.md) for details.
+
 ## Contributing and Agent Context
 
 If you are contributing code (human or AI-assisted), start with [CONTRIBUTING.md](CONTRIBUTING.md).

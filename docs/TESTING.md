@@ -26,6 +26,37 @@ server/tests/
 - **Test Classes**: `Test<FeatureName>` (e.g., `TestBackupAPI`)
 - **Test Methods**: `test_<action>_<expected_result>` (e.g., `test_create_backup_success`)
 
+## UI/E2E Tests
+
+Browser-driven tests for `www/` live in a separate suite at the repo root,
+not under `server/tests`:
+
+```
+ui-tests/
+├── conftest.py              # base_url, ensure_test_admin, logged_in_page, api_session, board, column fixtures
+├── pytest.ini
+├── requirements-dev.txt     # pytest, pytest-playwright, playwright, requests
+├── docs/UI_TESTING.md       # Full guide: setup, auth, fixtures, troubleshooting
+└── tests/
+    ├── test_login.py            # Login flow (valid/invalid credentials)
+    ├── test_boards.py           # Create/delete a board from the boards list
+    └── test_board_workflow.py   # Add a column, add a card to a column
+```
+
+It uses [pytest-playwright](https://playwright.dev/python/docs/test-runners)
+so it's still a normal `pytest` suite (no Node.js toolchain), run on demand:
+
+```bash
+cd ui-tests
+pytest -v
+```
+
+It is kept separate from `server/tests` because it needs the full stack
+(nginx + server + db) and browser binaries, and is slower than API tests.
+See [ui-tests/docs/UI_TESTING.md](../ui-tests/docs/UI_TESTING.md) for full
+setup and conventions, including the `logged_in_page` fixture for
+authenticated tests.
+
 ## Test Structure
 
 ### Standard Test Pattern
