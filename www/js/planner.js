@@ -11,6 +11,7 @@ const PLANNER_MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 const PLANNER_WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const PLANNER_WEEKDAY_INITIALS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const PLANNER_MAX_CHIPS_PER_DAY = 3;
 
 // Monday-start week matrix covering a calendar month, including the leading/
@@ -68,10 +69,15 @@ class PlannerView {
           <button type="button" class="btn btn-secondary" id="planner-prev-year-btn">‹</button>
           <span class="planner-year-label">${this.currentYear}</span>
           <button type="button" class="btn btn-secondary" id="planner-next-year-btn">›</button>
-        ` : `<span class="planner-month-label">${PLANNER_MONTH_NAMES[this.currentMonth - 1]} ${this.currentYear}</span>`}
+        ` : `
+          <button type="button" class="btn btn-secondary" id="planner-prev-month-btn">‹</button>
+          <span class="planner-month-label">${PLANNER_MONTH_NAMES[this.currentMonth - 1]} ${this.currentYear}</span>
+          <button type="button" class="btn btn-secondary" id="planner-next-month-btn">›</button>
+        `}
         <label class="planner-toggle">
           <input type="checkbox" id="planner-include-scheduled-toggle" ${this.includeScheduled ? 'checked' : ''}>
           Show scheduled tasks
+          <span class="planner-legend-dot" title="Scheduled tasks render in this colour"></span>
         </label>
         ${this.placement ? `
           <div class="planner-placement-banner">
@@ -95,6 +101,28 @@ class PlannerView {
     const nextYearBtn = document.getElementById('planner-next-year-btn');
     if (nextYearBtn) {
       nextYearBtn.addEventListener('click', () => this.renderYear(this.currentYear + 1));
+    }
+    const prevMonthBtn = document.getElementById('planner-prev-month-btn');
+    if (prevMonthBtn) {
+      prevMonthBtn.addEventListener('click', () => {
+        const month = this.currentMonth - 1;
+        if (month < 1) {
+          this.renderMonth(this.currentYear - 1, 12);
+        } else {
+          this.renderMonth(this.currentYear, month);
+        }
+      });
+    }
+    const nextMonthBtn = document.getElementById('planner-next-month-btn');
+    if (nextMonthBtn) {
+      nextMonthBtn.addEventListener('click', () => {
+        const month = this.currentMonth + 1;
+        if (month > 12) {
+          this.renderMonth(this.currentYear + 1, 1);
+        } else {
+          this.renderMonth(this.currentYear, month);
+        }
+      });
     }
     const toggle = document.getElementById('planner-include-scheduled-toggle');
     if (toggle) {
@@ -170,9 +198,12 @@ class PlannerView {
         </div>
       `).join('');
 
+      const weekdayHeaderHtml = PLANNER_WEEKDAY_INITIALS.map((initial) => `<span class="planner-mini-weekday-label">${initial}</span>`).join('');
+
       return `
         <div class="planner-month-block" data-month="${month}">
           <div class="planner-month-block-header">${name}</div>
+          <div class="planner-mini-week planner-mini-weekday-row">${weekdayHeaderHtml}</div>
           <div class="planner-mini-grid">${dotsHtml}</div>
         </div>
       `;

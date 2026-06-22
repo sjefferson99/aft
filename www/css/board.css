@@ -2371,6 +2371,14 @@ button.readonly-disabled,
   cursor: pointer;
 }
 
+.planner-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--warning-color);
+}
+
 .planner-placement-banner {
   display: flex;
   align-items: center;
@@ -2420,6 +2428,17 @@ button.readonly-disabled,
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 3px;
+}
+
+.planner-mini-weekday-row {
+  margin-bottom: 4px;
+}
+
+.planner-mini-weekday-label {
+  font-size: 9px;
+  line-height: 1;
+  text-align: center;
+  color: var(--text-muted);
 }
 
 .planner-day-dot {
@@ -2510,10 +2529,8 @@ button.readonly-disabled,
 }
 
 .planner-card-chip.virtual {
-  border-left-style: dashed;
-  border-style: dashed;
-  opacity: 0.75;
-  background: var(--background-light);
+  border-left-color: var(--warning-color);
+  font-weight: 600;
 }
 
 .planner-card-chip.preview {
