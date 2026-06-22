@@ -4,6 +4,8 @@ from typing import List, Optional
 
 from datetime_helpers import utc_now
 
+DEFAULT_OCCURRENCE_DURATION = timedelta(hours=1)
+
 
 def _add_months(dt: datetime, months: int) -> datetime:
     """Add months to a datetime (simple implementation)."""
@@ -67,6 +69,75 @@ def calculate_next_runs(
         current = _add_interval(current, run_every, unit)
         
     return next_runs
+
+
+def get_template_duration(template_card) -> timedelta:
+    """Duration implied by a schedule's template card.
+
+    Args:
+        template_card: The Card a ScheduledCard is linked to (may be None)
+
+    Returns:
+        end_date - start_date if both are set on the template, otherwise a
+        1-hour default (templates commonly only carry a start time).
+    """
+    if template_card and template_card.start_date and template_card.end_date:
+        duration = template_card.end_date - template_card.start_date
+        if duration > timedelta(0):
+            return duration
+    return DEFAULT_OCCURRENCE_DURATION
+
+
+def calculate_occurrences_in_range(
+    run_every: int,
+    unit: str,
+    start_datetime: datetime,
+    end_datetime: Optional[datetime],
+    range_start: datetime,
+    range_end: datetime,
+    duration: timedelta,
+    max_results: int = 2000
+) -> List[dict]:
+    """Calculate scheduled occurrences whose start falls within a date range.
+
+    Unlike calculate_next_runs (bounded by a result count), this is bounded by
+    a date window, which is what the planner views need to project a schedule
+    across a visible month/year. Only occurrences at or after "now" are
+    included, mirroring calculate_next_runs' future-only behaviour. max_results
+    is a hard safety cap (e.g. for minute/hour schedules over a year-long
+    window) rather than the primary stop condition.
+
+    Args:
+        run_every: Interval value
+        unit: Unit of time ('minute', 'hour', 'day', 'week', 'month', 'year')
+        start_datetime: Schedule start datetime
+        end_datetime: Optional schedule end datetime
+        range_start: Start of the window to project occurrences into
+        range_end: End of the window to project occurrences into
+        duration: Duration to attach to each occurrence's "end"
+        max_results: Safety cap on number of occurrences returned
+
+    Returns:
+        List of {"start": datetime, "end": datetime} dicts, start ascending
+    """
+    now = utc_now()
+    window_start = max(range_start, now)
+
+    current = start_datetime
+    if current < window_start:
+        current = _calculate_next_occurrence_after(current, run_every, unit, window_start)
+
+    occurrences = []
+    for _ in range(max_results):
+        if current > range_end:
+            break
+        if end_datetime and current > end_datetime:
+            break
+
+        occurrences.append({"start": current, "end": current + duration})
+        current = _add_interval(current, run_every, unit)
+
+    return occurrences
 
 
 def get_next_run(start: datetime, after: datetime, run_every: int, unit: str) -> Optional[datetime]:

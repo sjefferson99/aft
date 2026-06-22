@@ -77,6 +77,15 @@ class BoardsManager {
       mobileDone.style.display = 'none';
     }
 
+    const desktopPlanner = document.querySelector('.views-dropdown-item[data-view="planner"]');
+    if (desktopPlanner) {
+      desktopPlanner.style.display = 'none';
+    }
+    const mobilePlanner = document.querySelector('.mobile-view-item[data-view="planner"]');
+    if (mobilePlanner) {
+      mobilePlanner.style.display = 'none';
+    }
+
     window.header.showViewsDropdown(true);
     window.header.setView(this.showArchivedBoards ? 'archived' : 'task');
   }

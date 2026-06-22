@@ -169,6 +169,13 @@
   transition: all 0.3s;
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 .btn-primary {
   background-color: var(--primary-color);
   color: white;
@@ -1347,6 +1354,7 @@
   width: 100%;
   justify-content: flex-end;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .modal-header-actions .btn {
@@ -2333,4 +2341,211 @@ button.readonly-disabled,
   #new-comment-input {
     font-size: 16px;
   }
+}
+
+/* Planner view (year/month) */
+.planner-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0;
+  margin-bottom: 12px;
+}
+
+.planner-year-label,
+.planner-month-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-color);
+  min-width: 80px;
+  text-align: center;
+}
+
+.planner-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.planner-placement-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: var(--background-light);
+  border: 1px dashed var(--primary-color);
+  border-radius: 5px;
+  color: var(--text-color);
+}
+
+/* Year grid: 4 columns x 3 rows of month blocks */
+.planner-year-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.planner-month-block {
+  background: var(--card-bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.planner-month-block:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.planner-month-block-header {
+  font-weight: 600;
+  color: var(--text-color);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.planner-mini-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.planner-mini-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+
+.planner-day-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin: 0 auto;
+}
+
+.planner-day-dot.free {
+  background: var(--success-color);
+}
+
+.planner-day-dot.busy {
+  background: var(--error-color);
+}
+
+.planner-day-dot.scheduled {
+  background: var(--warning-color);
+}
+
+.planner-day-dot-empty {
+  background: transparent;
+}
+
+/* Month grid: 7-column calendar with full weeks */
+.planner-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.planner-weekday-label {
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-muted);
+  padding-bottom: 4px;
+}
+
+.planner-day-cell {
+  background: var(--card-bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  min-height: 110px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.planner-day-cell.outside-month {
+  opacity: 0.5;
+}
+
+.planner-day-number {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.planner-day-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.planner-card-chip {
+  background: var(--card-bg-color);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--primary-color);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-card-chip:hover {
+  border-color: var(--primary-color);
+}
+
+.planner-card-chip.done {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.planner-card-chip.virtual {
+  border-left-style: dashed;
+  border-style: dashed;
+  opacity: 0.75;
+  background: var(--background-light);
+}
+
+.planner-card-chip.preview {
+  border-style: dashed;
+  border-color: var(--primary-color);
+  background: var(--background-light);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.planner-card-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.planner-day-more {
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.planner-day-empty-space {
+  flex: 1 1 auto;
+  min-height: 24px;
+  cursor: pointer;
+}
+
+.planner-column-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
 }
