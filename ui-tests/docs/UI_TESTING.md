@@ -24,7 +24,9 @@ ui-tests/
 │   └── UI_TESTING.md        # This file
 └── tests/
     ├── __init__.py
-    └── test_login.py        # Example: login flow smoke tests
+    ├── test_login.py            # Login flow (valid/invalid credentials)
+    ├── test_boards.py           # Create/delete a board from the boards list
+    └── test_board_workflow.py   # Add a column, add a card to a column
 ```
 
 ## Prerequisites
@@ -72,6 +74,16 @@ docker compose up -d --build
 
 Tests that need an authenticated session should use the `logged_in_page`
 fixture rather than re-implementing the login flow.
+
+## Available Fixtures
+
+Defined in `conftest.py`:
+
+- `logged_in_page` - a Playwright `page` already logged in as test-admin via the real login form
+- `api_session` - a `requests.Session` logged in as test-admin, for fast setup/teardown via the API (separate cookies from the browser)
+- `board` - creates a board via the API, yields it, deletes it afterwards. Use this when the test is about something *inside* a board, not board creation itself
+- `column` - creates a column on `board` via the API, yields it, deletes it afterwards
+- `ui_base_url` - the base URL of the stack under test, for tests that need to call the API directly
 
 ## Running Tests
 

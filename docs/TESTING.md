@@ -33,12 +33,14 @@ not under `server/tests`:
 
 ```
 ui-tests/
-├── conftest.py              # base_url, ensure_test_admin, logged_in_page fixtures
+├── conftest.py              # base_url, ensure_test_admin, logged_in_page, api_session, board, column fixtures
 ├── pytest.ini
 ├── requirements-dev.txt     # pytest, pytest-playwright, playwright, requests
-├── docs/UI_TESTING.md       # Full guide: setup, auth, troubleshooting
+├── docs/UI_TESTING.md       # Full guide: setup, auth, fixtures, troubleshooting
 └── tests/
-    └── test_login.py
+    ├── test_login.py            # Login flow (valid/invalid credentials)
+    ├── test_boards.py           # Create/delete a board from the boards list
+    └── test_board_workflow.py   # Add a column, add a card to a column
 ```
 
 It uses [pytest-playwright](https://playwright.dev/python/docs/test-runners)
