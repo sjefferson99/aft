@@ -6463,7 +6463,23 @@ class BoardManager {
     // Store original values for change detection
     const originalTitle = cardData.title;
     const originalDescription = cardData.description || '';
-    
+
+    // Datetime-local controls expect local wall time strings (no timezone suffix).
+    const toDatetimeLocalValue = (value) => {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+
+      const pad = (num) => String(num).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    };
+
+    const defaultStartDate = toDatetimeLocalValue(cardData.start_date);
+    const defaultEndDate = toDatetimeLocalValue(cardData.end_date);
+    const initialDuration = diffToDuration(defaultStartDate, defaultEndDate);
+    const defaultDurationDays = initialDuration ? initialDuration.days : '';
+    const defaultDurationHours = initialDuration ? initialDuration.hours : '';
+
     // Check if this is a scheduled template card
     const isTemplate = cardData.scheduled === true;
     const cardHasSchedule = !!cardData.schedule;
@@ -6535,6 +6551,24 @@ class BoardManager {
             <div class="form-group">
               <label for="edit-card-description">Description:</label>
               <textarea id="edit-card-description" name="edit-card-description" rows="4" ${readonlyAttr}>${this.escapeHtml(cardData.description || '')}</textarea>
+            </div>
+            <div class="form-group">
+              <label for="edit-card-start-date">Start Date:</label>
+              <input type="datetime-local" id="edit-card-start-date" name="edit-card-start-date" value="${defaultStartDate}" ${disabledAttr}>
+            </div>
+            <div class="form-group">
+              <label for="edit-card-end-date">End Date:</label>
+              <input type="datetime-local" id="edit-card-end-date" name="edit-card-end-date" value="${defaultEndDate}" ${disabledAttr}>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="edit-card-duration-days">Duration (days):</label>
+                <input type="number" id="edit-card-duration-days" name="edit-card-duration-days" min="0" value="${defaultDurationDays}" ${disabledAttr}>
+              </div>
+              <div class="form-group">
+                <label for="edit-card-duration-hours">Duration (hours):</label>
+                <input type="number" id="edit-card-duration-hours" name="edit-card-duration-hours" min="0" max="23" value="${defaultDurationHours}" ${disabledAttr}>
+              </div>
             </div>
             
             ${!isTemplate && canOpenScheduleEditor ? `
@@ -6656,6 +6690,88 @@ class BoardManager {
     const descriptionInput = document.getElementById('edit-card-description');
     descriptionInput.addEventListener('input', () => {
       hasUnsavedChanges = hasUnsavedChanges || descriptionInput.value.trim() !== originalDescription;
+    });
+
+    // Keep start date, end date, and duration in sync. Whichever field was
+    // just edited recalculates the missing one of the other two; if both
+    // others already hold a genuine value, start date acts as the anchor
+    // (start changed -> recalc end, duration changed -> recalc end,
+    // end changed -> recalc duration). Clearing a field never cascades.
+    //
+    // Each field tracks an "isReal" flag (true only when the user directly
+    // edited that field, false when we last derived it programmatically).
+    // This matters because duration is split across two physical inputs
+    // (days, hours): without the flag, editing days could derive a start
+    // date as a side effect, and the very next edit to hours would then
+    // misread that derived start as a genuine anchor instead of continuing
+    // to derive it from end + duration.
+    const startDateInput = document.getElementById('edit-card-start-date');
+    const endDateInput = document.getElementById('edit-card-end-date');
+    const durationDaysInput = document.getElementById('edit-card-duration-days');
+    const durationHoursInput = document.getElementById('edit-card-duration-hours');
+
+    let startIsReal = !!defaultStartDate;
+    let endIsReal = !!defaultEndDate;
+    let durationIsReal = !!initialDuration;
+
+    const hasDurationValue = () => durationDaysInput.value !== '' || durationHoursInput.value !== '';
+    const getDurationValues = () => ({
+      days: parseInt(durationDaysInput.value, 10) || 0,
+      hours: parseInt(durationHoursInput.value, 10) || 0
+    });
+    const setDerivedStart = (value) => {
+      startDateInput.value = value;
+      startIsReal = false;
+    };
+    const setDerivedEnd = (value) => {
+      endDateInput.value = value;
+      endIsReal = false;
+    };
+    const setDerivedDuration = (duration) => {
+      durationDaysInput.value = duration ? duration.days : '';
+      durationHoursInput.value = duration ? duration.hours : '';
+      durationIsReal = !!duration;
+    };
+
+    startDateInput.addEventListener('input', () => {
+      hasUnsavedChanges = true;
+      if (!startDateInput.value) { startIsReal = false; return; }
+      startIsReal = true;
+
+      if (durationIsReal) {
+        const { days, hours } = getDurationValues();
+        setDerivedEnd(addDurationToLocalValue(startDateInput.value, days, hours));
+      } else if (endIsReal) {
+        setDerivedDuration(diffToDuration(startDateInput.value, endDateInput.value));
+      }
+    });
+
+    const recalcFromDuration = () => {
+      hasUnsavedChanges = true;
+      if (!hasDurationValue()) { durationIsReal = false; return; }
+      durationIsReal = true;
+
+      const { days, hours } = getDurationValues();
+      if (startIsReal) {
+        setDerivedEnd(addDurationToLocalValue(startDateInput.value, days, hours));
+      } else if (endIsReal) {
+        setDerivedStart(addDurationToLocalValue(endDateInput.value, -days, -hours));
+      }
+    };
+    durationDaysInput.addEventListener('input', recalcFromDuration);
+    durationHoursInput.addEventListener('input', recalcFromDuration);
+
+    endDateInput.addEventListener('input', () => {
+      hasUnsavedChanges = true;
+      if (!endDateInput.value) { endIsReal = false; return; }
+      endIsReal = true;
+
+      if (startIsReal) {
+        setDerivedDuration(diffToDuration(startDateInput.value, endDateInput.value));
+      } else if (durationIsReal) {
+        const { days, hours } = getDurationValues();
+        setDerivedStart(addDurationToLocalValue(endDateInput.value, -days, -hours));
+      }
     });
 
     // Helper to check for unposted comment
@@ -7218,9 +7334,16 @@ class BoardManager {
       
       const title = titleInput.value.trim();
       const description = document.getElementById('edit-card-description').value.trim();
+      const startDateValue = startDateInput.value;
+      const endDateValue = endDateInput.value;
       // Save button is in modal header, not in form
       const saveBtn = modal.querySelector('button[type="submit"]');
-      
+
+      if (startDateValue && endDateValue && new Date(endDateValue) < new Date(startDateValue)) {
+        this.showErrorToast('End date cannot be before start date');
+        return;
+      }
+
       if (title) {
         // Validate that template cards have a schedule
         if (isTemplate && !cardData.schedule) {
@@ -7234,7 +7357,7 @@ class BoardManager {
             saveBtn.disabled = true;
             saveBtn.textContent = 'Saving...';
             
-            const success = await this.updateCard(cardId, title, description);
+            const success = await this.updateCard(cardId, title, description, startDateValue, endDateValue);
             
             saveBtn.disabled = false;
             saveBtn.textContent = 'Save';
@@ -7280,7 +7403,7 @@ class BoardManager {
         // Current implementation: N sequential API calls (can be slow for cards with many checklist items)
         
         // 1. Update the card
-        const cardUpdateSuccess = await this.updateCard(cardId, title, description);
+        const cardUpdateSuccess = await this.updateCard(cardId, title, description, startDateValue, endDateValue);
         if (!cardUpdateSuccess) {
           allSuccessful = false;
         }
@@ -7620,17 +7743,22 @@ class BoardManager {
     }
   }
 
-  async updateCard(cardId, title, description) {
+  async updateCard(cardId, title, description, startDate = undefined, endDate = undefined) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
+
     try {
       const response = await fetch(`/api/cards/${cardId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ title, description }),
+        body: JSON.stringify({
+          title,
+          description,
+          start_date: startDate ? new Date(startDate).toISOString() : null,
+          end_date: endDate ? new Date(endDate).toISOString() : null
+        }),
         signal: controller.signal
       });
 
