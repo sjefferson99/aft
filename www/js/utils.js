@@ -312,6 +312,53 @@ function formatTimeAgoLong(date) {
 }
 
 /**
+ * Calculate the whole-day/hour duration between two datetime-local value
+ * strings (e.g. "2026-06-20T09:00"). Used to keep a card's duration fields
+ * in sync with its start/end date pickers.
+ *
+ * @param {string} startLocalValue - datetime-local value string
+ * @param {string} endLocalValue - datetime-local value string
+ * @returns {{days: number, hours: number}|null} Duration, or null if either
+ *   input is empty/invalid or end is before start.
+ */
+function diffToDuration(startLocalValue, endLocalValue) {
+  if (!startLocalValue || !endLocalValue) return null;
+
+  const start = new Date(startLocalValue);
+  const end = new Date(endLocalValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+  const diffMs = end.getTime() - start.getTime();
+  if (diffMs < 0) return null;
+  if (diffMs % 3600000 !== 0) return null;
+
+  const totalHours = diffMs / 3600000;
+  return { days: Math.floor(totalHours / 24), hours: totalHours % 24 };
+}
+
+/**
+ * Add a days/hours duration to a datetime-local value string, returning a
+ * new datetime-local value string for the resulting end date.
+ *
+ * @param {string} startLocalValue - datetime-local value string
+ * @param {number} days
+ * @param {number} hours
+ * @returns {string} datetime-local value string, or '' if start is invalid
+ */
+function addDurationToLocalValue(startLocalValue, days, hours) {
+  if (!startLocalValue) return '';
+
+  const start = new Date(startLocalValue);
+  if (Number.isNaN(start.getTime())) return '';
+
+  const totalMs = ((days || 0) * 24 + (hours || 0)) * 3600000;
+  const end = new Date(start.getTime() + totalMs);
+
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}T${pad(end.getHours())}:${pad(end.getMinutes())}`;
+}
+
+/**
  * Modal Dialog System
  * Replaces browser alert(), confirm(), and prompt() with styled modals
  */

@@ -20,7 +20,7 @@ from datetime import timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from database import SessionLocal
-from datetime_helpers import serialize_datetime, utc_now
+from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
 from models import Board, BoardColumn, Card, CardSecondaryAssignee, User
 from settings_schema import WORKING_STYLE_AGILE, get_board_working_style
 from utils import (
@@ -1024,6 +1024,14 @@ def get_card(card_id):
                   type: integer
                 order:
                   type: integer
+                start_date:
+                  type: string
+                  format: date-time
+                  example: "2026-06-20T09:00:00Z"
+                end_date:
+                  type: string
+                  format: date-time
+                  example: "2026-06-21T17:00:00Z"
                 checklist_items:
                   type: array
                   items:
@@ -1054,6 +1062,8 @@ def get_card(card_id):
             "done_datetime": serialize_datetime(card.done_datetime),
             "scheduled": card.scheduled,
             "schedule": card.schedule,
+            "start_date": serialize_datetime(card.start_date),
+            "end_date": serialize_datetime(card.end_date),
             "created_at": serialize_datetime(card.created_at),
             "updated_at": serialize_datetime(card.updated_at),
             "checklist_items": [
@@ -1122,6 +1132,16 @@ def update_card(card_id):
               type: integer
               example: 1
               description: The new order position (cards >= this order will be incremented)
+            start_date:
+              type: string
+              format: date-time
+              example: "2026-06-20T09:00:00Z"
+              description: ISO-8601 UTC start date/time, or null to clear it
+            end_date:
+              type: string
+              format: date-time
+              example: "2026-06-21T17:00:00Z"
+              description: ISO-8601 UTC end date/time, or null to clear it. Must not be before start_date.
     responses:
       200:
         description: Card updated successfully
@@ -1149,6 +1169,24 @@ def update_card(card_id):
                 order:
                   type: integer
                   example: 0
+                start_date:
+                  type: string
+                  format: date-time
+                  example: "2026-06-20T09:00:00Z"
+                end_date:
+                  type: string
+                  format: date-time
+                  example: "2026-06-21T17:00:00Z"
+      400:
+        description: Invalid date format or end_date before start_date
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: false
+            message:
+              type: string
       404:
         description: Card not found
         schema:
@@ -1237,6 +1275,34 @@ def update_card(card_id):
                 return create_error_response("Archived must be a boolean", 400)
             card.archived = archived
             user_content_changed = True
+
+        # Update and validate start_date/end_date if provided
+        new_start_date = card.start_date
+        new_end_date = card.end_date
+
+        if "start_date" in data:
+            if data["start_date"] is None:
+                new_start_date = None
+            else:
+                new_start_date = parse_iso_datetime(data["start_date"])
+                if new_start_date is None:
+                    return create_error_response("Start date must be a valid ISO-8601 datetime", 400)
+            user_content_changed = True
+
+        if "end_date" in data:
+            if data["end_date"] is None:
+                new_end_date = None
+            else:
+                new_end_date = parse_iso_datetime(data["end_date"])
+                if new_end_date is None:
+                    return create_error_response("End date must be a valid ISO-8601 datetime", 400)
+            user_content_changed = True
+
+        if new_start_date and new_end_date and new_end_date < new_start_date:
+            return create_error_response("End date cannot be before start date", 400)
+
+        card.start_date = new_start_date
+        card.end_date = new_end_date
 
         # Handle column and order changes
         target_column = None
@@ -1329,6 +1395,8 @@ def update_card(card_id):
             "done": card.done,
             "done_datetime": serialize_datetime(card.done_datetime),
             "archived": card.archived,
+            "start_date": serialize_datetime(card.start_date),
+            "end_date": serialize_datetime(card.end_date),
             "created_at": serialize_datetime(card.created_at),
             "updated_at": serialize_datetime(card.updated_at)
         }

@@ -897,7 +897,79 @@ class TestCardsAPI:
             'title': 'Updated'
         })
         assert response.status_code == 404
-    
+
+    def test_update_card_sets_start_and_end_date(self, api_client, authenticated_session, sample_card):
+        """Test setting start_date and end_date on a card."""
+        response = authenticated_session.patch(f'{api_client}/api/cards/{sample_card["id"]}', json={
+            'start_date': '2026-06-20T09:00:00Z',
+            'end_date': '2026-06-21T17:00:00Z'
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert data['card']['start_date'] == '2026-06-20T09:00:00Z'
+        assert data['card']['end_date'] == '2026-06-21T17:00:00Z'
+
+        # Verify via GET
+        get_response = authenticated_session.get(f'{api_client}/api/cards/{sample_card["id"]}')
+        assert get_response.status_code == 200
+        get_data = get_response.json()
+        assert get_data['card']['start_date'] == '2026-06-20T09:00:00Z'
+        assert get_data['card']['end_date'] == '2026-06-21T17:00:00Z'
+
+    def test_update_card_rejects_end_before_start(self, api_client, authenticated_session, sample_card):
+        """Test that end_date before start_date is rejected."""
+        response = authenticated_session.patch(f'{api_client}/api/cards/{sample_card["id"]}', json={
+            'start_date': '2026-06-21T17:00:00Z',
+            'end_date': '2026-06-20T09:00:00Z'
+        })
+        assert response.status_code == 400
+        assert response.json()['success'] is False
+
+    def test_update_card_rejects_invalid_date_format(self, api_client, authenticated_session, sample_card):
+        """Test that a malformed start_date string is rejected."""
+        response = authenticated_session.patch(f'{api_client}/api/cards/{sample_card["id"]}', json={
+            'start_date': 'not-a-date'
+        })
+        assert response.status_code == 400
+        assert response.json()['success'] is False
+
+    def test_update_card_clears_dates_with_null(self, api_client, authenticated_session, sample_card):
+        """Test that start_date/end_date can be cleared by sending null."""
+        set_response = authenticated_session.patch(f'{api_client}/api/cards/{sample_card["id"]}', json={
+            'start_date': '2026-06-20T09:00:00Z',
+            'end_date': '2026-06-21T17:00:00Z'
+        })
+        assert set_response.status_code == 200
+
+        clear_response = authenticated_session.patch(f'{api_client}/api/cards/{sample_card["id"]}', json={
+            'start_date': None,
+            'end_date': None
+        })
+        assert clear_response.status_code == 200
+        data = clear_response.json()
+        assert data['card']['start_date'] is None
+        assert data['card']['end_date'] is None
+
+    def test_update_card_dates_denied_for_board_viewer(
+        self, api_client, authenticated_session, second_user_session, sample_card, sample_board
+    ):
+        """Test that a board_viewer (lacking card.update) cannot set card dates."""
+        second_user_me = second_user_session.get(f'{api_client}/api/auth/me')
+        assert second_user_me.status_code == 200
+        second_user_id = second_user_me.json()['user']['id']
+
+        assign_role_response = authenticated_session.post(
+            f'{api_client}/api/users/{second_user_id}/roles',
+            json={'role_name': 'board_viewer', 'board_id': sample_board['id']}
+        )
+        assert assign_role_response.status_code == 200, assign_role_response.text
+
+        response = second_user_session.patch(f'{api_client}/api/cards/{sample_card["id"]}', json={
+            'start_date': '2026-06-20T09:00:00Z'
+        })
+        assert response.status_code == 403
+
     def test_move_card_within_column(self, api_client, authenticated_session, sample_column):
         """Test moving a card to a different position within the same column."""
         # Create multiple cards
