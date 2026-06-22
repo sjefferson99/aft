@@ -8,7 +8,10 @@ def test_login_with_valid_credentials_loads_boards_page(logged_in_page):
     page = logged_in_page
 
     assert "login.html" not in page.url
-    assert page.locator("#boards-container").is_visible()
+
+    boards_container = page.locator("#boards-container")
+    boards_container.wait_for(state="visible", timeout=5000)
+    assert boards_container.is_visible()
 
 
 @pytest.mark.ui

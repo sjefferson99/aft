@@ -12,7 +12,10 @@ import requests
 UI_BASE_URL = os.getenv("PYTEST_UI_BASE_URL", "http://localhost")
 UI_HOST = urlparse(UI_BASE_URL).hostname or "localhost"
 READY_ENDPOINT = "/api/auth/setup/status"
-WAIT_TIMEOUT_SECONDS = float(os.getenv("PYTEST_UI_WAIT_TIMEOUT_SECONDS", "8"))
+try:
+    WAIT_TIMEOUT_SECONDS = float(os.getenv("PYTEST_UI_WAIT_TIMEOUT_SECONDS", "8"))
+except ValueError:
+    WAIT_TIMEOUT_SECONDS = 8.0
 WAIT_INTERVAL_SECONDS = 0.5
 
 TEST_ADMIN_EMAIL = "test-admin@localhost"
@@ -75,9 +78,16 @@ def ensure_test_admin():
             "(docker compose up -d --build) or increase PYTEST_UI_WAIT_TIMEOUT_SECONDS."
         )
 
-    setup_status = requests.get(f"{UI_BASE_URL}{READY_ENDPOINT}", timeout=2).json()
+    status_response = requests.get(f"{UI_BASE_URL}{READY_ENDPOINT}", timeout=2)
+    if status_response.status_code != 200:
+        raise Exception(
+            "UI under test returned an unexpected setup status response. "
+            f"Got HTTP {status_response.status_code} from {UI_BASE_URL}{READY_ENDPOINT}: {status_response.text}"
+        )
+
+    setup_status = status_response.json()
     if not setup_status.get("setup_complete", False):
-        requests.post(
+        admin_response = requests.post(
             f"{UI_BASE_URL}/api/auth/setup/admin",
             json={
                 "email": TEST_ADMIN_EMAIL,
@@ -87,7 +97,23 @@ def ensure_test_admin():
             },
             timeout=5,
         )
-
+        assert admin_response.status_code in (200, 201), (
+            f"Failed to create test-admin via setup endpoint: {admin_response.status_code} {admin_response.text}"
+        )
+    else:
+        # If setup is already complete, verify the canonical test-admin credentials work;
+        # otherwise tests will fail later in logged_in_page / api_session.
+        login_response = requests.post(
+            f"{UI_BASE_URL}/api/auth/login",
+            json={"email": TEST_ADMIN_EMAIL, "password": TEST_ADMIN_PASSWORD},
+            timeout=5,
+        )
+        if login_response.status_code != 200:
+            raise Exception(
+                "Test-admin login failed but setup is already complete. "
+                "Reset to a fresh database (see ui-tests/docs/UI_TESTING.md). "
+                f"HTTP {login_response.status_code}: {login_response.text}"
+            )
 
 @pytest.fixture
 def logged_in_page(page):
