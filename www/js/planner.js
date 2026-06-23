@@ -56,7 +56,7 @@ class PlannerView {
 
   async _fetchJson(url) {
     const response = await fetch(url);
-    const data = await response.json();
+    const data = await this.boardManager.parseResponse(response);
     if (!data.success) {
       throw new Error(data.message || 'Request failed');
     }
@@ -478,10 +478,14 @@ class PlannerView {
       document.body.insertAdjacentHTML('beforeend', modalHtml);
       const modal = document.getElementById('planner-card-action-modal');
 
+      let removeEscapeClose = () => {};
       const cleanup = (result) => {
+        removeEscapeClose();
         modal.remove();
         resolve(result);
       };
+
+      removeEscapeClose = setupModalEscapeClose(modal, () => cleanup(null));
 
       document.getElementById('planner-action-edit').addEventListener('click', () => cleanup('edit'));
       document.getElementById('planner-action-move').addEventListener('click', () => cleanup('move'));
@@ -567,10 +571,14 @@ class PlannerView {
       document.body.insertAdjacentHTML('beforeend', modalHtml);
       const modal = document.getElementById('planner-column-picker-modal');
 
+      let removeEscapeClose = () => {};
       const cleanup = (result) => {
+        removeEscapeClose();
         modal.remove();
         resolve(result);
       };
+
+      removeEscapeClose = setupModalEscapeClose(modal, () => cleanup(null));
 
       modal.querySelectorAll('.planner-column-picker-item').forEach((btn) => {
         btn.addEventListener('click', () => cleanup(parseInt(btn.dataset.columnId, 10)));

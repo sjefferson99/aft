@@ -43,8 +43,11 @@ def _busy_dates_from_cards(rows, range_start: date, range_end: date) -> set:
 
 
 def _enabled_schedules_for_board(db, board_id):
+    from sqlalchemy.orm import selectinload
+
     return (
         db.query(ScheduledCard)
+        .options(selectinload(ScheduledCard.template_card))
         .join(Card, ScheduledCard.card_id == Card.id)
         .join(BoardColumn, Card.column_id == BoardColumn.id)
         .filter(
