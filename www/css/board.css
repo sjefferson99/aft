@@ -2344,6 +2344,12 @@ button.readonly-disabled,
 }
 
 /* Planner view (year/month) */
+#planner-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .planner-toolbar {
   display: flex;
   align-items: center;
@@ -2583,4 +2589,48 @@ button.readonly-disabled,
   flex-direction: column;
   gap: 8px;
   margin: 12px 0;
+}
+
+@media (max-width: 900px) {
+  .planner-toolbar {
+    padding: 6px 0;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+
+  .planner-toggle-group {
+    width: 100%;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 600px) {
+  .planner-year-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+
+  .planner-month-grid {
+    gap: 3px;
+  }
+
+  .planner-day-cell {
+    min-height: 70px;
+    padding: 4px;
+  }
+
+  .planner-weekday-label {
+    font-size: 10px;
+    padding-bottom: 2px;
+  }
+
+  .planner-day-number {
+    font-size: 11px;
+    margin-bottom: 2px;
+  }
+
+  .planner-card-chip {
+    font-size: 10px;
+    padding: 1px 4px;
+  }
 }
