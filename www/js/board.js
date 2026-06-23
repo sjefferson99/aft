@@ -848,6 +848,7 @@ class BoardManager {
     this.showArchived = false; // Track whether to show archived or active cards
     this.showDone = false; // Track whether to show done cards (for agile style)
     this.currentView = 'task'; // Track current view: 'task', 'scheduled', or 'archived'
+    this._pendingPlannerRender = null; // What to render once the 'viewChanged' switch to planner lands
     this.workingStyle = 'kanban'; // Track working style: 'kanban' or 'agile'
     this.canEdit = true; // Track if user has edit permissions for this board
     this.keyboardHandler = this.handleKeydown.bind(this);
@@ -2657,7 +2658,9 @@ class BoardManager {
       }
 
       if (newView === 'planner') {
-        this.showPlannerView();
+        const initialRender = this._pendingPlannerRender;
+        this._pendingPlannerRender = null;
+        this.showPlannerView(initialRender);
         return;
       }
 
@@ -2688,7 +2691,12 @@ class BoardManager {
     });
   }
 
-  showPlannerView() {
+  // `initialRender(plannerView)`, when given, replaces the default "open on
+  // the current year" landing render - e.g. jumping straight to a specific
+  // month, or entering placement mode. Without it, two renders (the default
+  // here and a caller's follow-up one) would both fire their own fetches
+  // and race to paint the container last.
+  showPlannerView(initialRender) {
     if (!this.plannerContainer) {
       this.plannerContainer = document.getElementById('planner-container');
     }
@@ -2700,7 +2708,12 @@ class BoardManager {
 
     this.container.style.display = 'none';
     this.plannerContainer.style.display = 'block';
-    this.plannerView.renderYear(new Date().getFullYear());
+
+    if (initialRender) {
+      initialRender(this.plannerView);
+    } else {
+      this.plannerView.renderYear(new Date().getFullYear());
+    }
   }
 
   hidePlannerView() {
@@ -6561,8 +6574,13 @@ class BoardManager {
     const canOpenScheduleEditor = cardHasSchedule
       ? (canEditSchedule || canDeleteSchedule)
       : canCreateSchedule;
-    const canViewPlanner = !!cardData.start_date && !!cardData.end_date;
-    const viewPlannerTooltip = canViewPlanner ? '' : 'Set a duration (dates, or just a duration) to use the planner view';
+    // "View in Planner" jumps straight to the month containing an existing
+    // anchor date; "Place in Planner" (no start/end set yet) instead drops
+    // the card into placement mode so the user can click a day to schedule
+    // it. Both are always available - placing with no duration entered
+    // falls back to a 1 hour task.
+    const hasInitialAnchorDate = !!cardData.start_date || !!cardData.end_date;
+    const plannerBtnLabel = hasInitialAnchorDate ? '📅 View in Planner' : '📅 Place in Planner';
     
     // Track changes
     let hasUnsavedChanges = false;
@@ -6594,7 +6612,7 @@ class BoardManager {
                   ${canArchiveCard && this.workingStyle !== 'agile' ? '<button type="button" class="btn btn-secondary" id="archive-card-detail-btn" data-card-id="' + cardData.id + '">🗄️ Archive</button>' : ''}` : ''
               }
               ${!isReadOnly && canManageAssignees ? `<button type="button" class="btn btn-secondary" id="assign-assignees-btn" data-card-id="${cardData.id}">👤 Assignees</button>` : ''}
-              ${!isReadOnly ? `<button type="button" class="btn btn-secondary" id="view-planner-btn" data-card-id="${cardData.id}" ${canViewPlanner ? '' : 'disabled'} title="${this.escapeHtml(viewPlannerTooltip)}">📅 View in Planner</button>` : ''}
+              ${!isReadOnly ? `<button type="button" class="btn btn-secondary" id="view-planner-btn" data-card-id="${cardData.id}">${plannerBtnLabel}</button>` : ''}
               ${!isReadOnly && canDeleteCard ? `<button type="button" class="btn btn-danger" id="delete-card-detail-btn" data-card-id="${cardData.id}">Delete</button>` : ''}
               <button type="button" class="btn btn-secondary" id="cancel-edit-card-btn">${isReadOnly ? 'Close' : 'Cancel'}</button>
               ${!isReadOnly ? '<button type="submit" form="edit-card-form" class="btn btn-primary">Save</button>' : ''}
@@ -6796,23 +6814,37 @@ class BoardManager {
       return null;
     };
 
-    const refreshViewPlannerButtonState = () => {
-      if (!viewPlannerBtn) return;
-      const durationMs = getCurrentDurationMs();
-      const enabled = durationMs !== null && durationMs > 0;
-      viewPlannerBtn.disabled = !enabled;
-      viewPlannerBtn.title = enabled ? '' : viewPlannerTooltip;
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+
+    // An anchor date (start and/or end) switches the button to "View in
+    // Planner" (jump to that month); with neither set, it stays "Place in
+    // Planner" (placement mode), always available.
+    const hasAnchorDate = () => !!startDateInput.value || !!endDateInput.value;
+
+    // When only one of start/end is set, assume a 1 hour span so there's
+    // still a date to jump to (start forward, or back from end).
+    const getPlannerViewAnchorDate = () => {
+      if (startDateInput.value) return new Date(startDateInput.value);
+      if (endDateInput.value) return new Date(new Date(endDateInput.value).getTime() - ONE_HOUR_MS);
+      return null;
     };
 
-    // Auto-save start/end date once both resolve to real values (dates are
-    // the first field migrated to save-on-update; title/description still
-    // require the Save button for now).
+    const refreshViewPlannerButtonState = () => {
+      if (!viewPlannerBtn) return;
+      viewPlannerBtn.textContent = hasAnchorDate() ? '📅 View in Planner' : '📅 Place in Planner';
+    };
+
+    // Auto-save start/end date once at least one resolves to a real value
+    // (dates are the first field migrated to save-on-update; title/
+    // description still require the Save button for now). A duration typed
+    // in with no anchor date yet has nothing to save - the planner
+    // click-to-place flow supplies the missing start date instead.
     const autoSaveDates = async () => {
-      if (!startDateInput.value || !endDateInput.value) return;
+      if (!startDateInput.value && !endDateInput.value) return;
       const success = await this.updateCardDates(cardId, startDateInput.value, endDateInput.value);
       if (success) {
-        cardData.start_date = new Date(startDateInput.value).toISOString();
-        cardData.end_date = new Date(endDateInput.value).toISOString();
+        cardData.start_date = startDateInput.value ? new Date(startDateInput.value).toISOString() : null;
+        cardData.end_date = endDateInput.value ? new Date(endDateInput.value).toISOString() : null;
       }
     };
     const setDerivedStart = (value) => {
@@ -6894,15 +6926,25 @@ class BoardManager {
 
     if (viewPlannerBtn) {
       viewPlannerBtn.addEventListener('click', () => {
-        const durationMs = getCurrentDurationMs();
-        if (durationMs === null || durationMs <= 0) return;
-        const anchorDate = startDateInput.value ? new Date(startDateInput.value) : new Date();
-        modal.remove();
-        if (window.header && typeof window.header.setView === 'function') {
-          window.header.setView('planner');
+        let render;
+        if (hasAnchorDate()) {
+          const anchorDate = getPlannerViewAnchorDate();
+          render = (plannerView) => plannerView.renderMonth(anchorDate.getFullYear(), anchorDate.getMonth() + 1);
+        } else {
+          const rawDurationMs = getCurrentDurationMs();
+          const durationMs = (rawDurationMs !== null && rawDurationMs > 0) ? rawDurationMs : ONE_HOUR_MS;
+          render = (plannerView) => plannerView.enterPlacementMode(cardId, cardData.title, durationMs, new Date());
         }
-        if (this.plannerView) {
-          this.plannerView.enterPlacementMode(cardId, cardData.title, durationMs, anchorDate);
+
+        modal.remove();
+        // Routed through the 'viewChanged' switch (rather than calling
+        // plannerView directly here) so there's only ever one render firing
+        // when the planner view appears - see showPlannerView().
+        if (window.header && typeof window.header.setView === 'function') {
+          this._pendingPlannerRender = render;
+          window.header.setView('planner');
+        } else {
+          this.showPlannerView(render);
         }
       });
     }

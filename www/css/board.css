@@ -2362,11 +2362,18 @@ button.readonly-disabled,
   text-align: center;
 }
 
+.planner-toggle-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
 .planner-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
   color: var(--text-color);
   cursor: pointer;
 }
@@ -2539,6 +2546,17 @@ button.readonly-disabled,
   background: var(--background-light);
   opacity: 0.6;
   pointer-events: none;
+}
+
+.planner-card-chip-column {
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.planner-card-chip-time {
+  color: var(--text-muted);
+  margin-left: 4px;
+  font-size: 11px;
 }
 
 .planner-card-action-list {

@@ -46,6 +46,8 @@ class PlannerView {
     this.container = container;
     this.boardManager = boardManager;
     this.includeScheduled = false;
+    this.showColumns = false;
+    this.showTimes = false;
     this.mode = 'year';
     this.currentYear = new Date().getFullYear();
     this.currentMonth = new Date().getMonth() + 1;
@@ -74,11 +76,23 @@ class PlannerView {
           <span class="planner-month-label">${PLANNER_MONTH_NAMES[this.currentMonth - 1]} ${this.currentYear}</span>
           <button type="button" class="btn btn-secondary" id="planner-next-month-btn">›</button>
         `}
-        <label class="planner-toggle">
-          <input type="checkbox" id="planner-include-scheduled-toggle" ${this.includeScheduled ? 'checked' : ''}>
-          Show scheduled tasks
-          <span class="planner-legend-dot" title="Scheduled tasks render in this colour"></span>
-        </label>
+        <div class="planner-toggle-group">
+          <label class="planner-toggle">
+            <input type="checkbox" id="planner-include-scheduled-toggle" ${this.includeScheduled ? 'checked' : ''}>
+            Show scheduled tasks
+            <span class="planner-legend-dot" title="Scheduled tasks render in this colour"></span>
+          </label>
+          ${this.mode === 'month' ? `
+            <label class="planner-toggle">
+              <input type="checkbox" id="planner-show-columns-toggle" ${this.showColumns ? 'checked' : ''}>
+              Show columns
+            </label>
+            <label class="planner-toggle">
+              <input type="checkbox" id="planner-show-times-toggle" ${this.showTimes ? 'checked' : ''}>
+              Show times
+            </label>
+          ` : ''}
+        </div>
         ${this.placement ? `
           <div class="planner-placement-banner">
             Placing: <strong>${escapeHtml(this.placement.cardTitle)}</strong> &mdash; click a day to move it
@@ -128,6 +142,14 @@ class PlannerView {
     if (toggle) {
       toggle.addEventListener('change', () => this.setIncludeScheduled(toggle.checked));
     }
+    const showColumnsToggle = document.getElementById('planner-show-columns-toggle');
+    if (showColumnsToggle) {
+      showColumnsToggle.addEventListener('change', () => this.setShowColumns(showColumnsToggle.checked));
+    }
+    const showTimesToggle = document.getElementById('planner-show-times-toggle');
+    if (showTimesToggle) {
+      showTimesToggle.addEventListener('change', () => this.setShowTimes(showTimesToggle.checked));
+    }
     const cancelPlacementBtn = document.getElementById('planner-cancel-placement-btn');
     if (cancelPlacementBtn) {
       cancelPlacementBtn.addEventListener('click', () => this.exitPlacementMode());
@@ -141,6 +163,16 @@ class PlannerView {
     } else {
       await this.renderMonth(this.currentYear, this.currentMonth);
     }
+  }
+
+  async setShowColumns(checked) {
+    this.showColumns = checked;
+    await this.renderMonth(this.currentYear, this.currentMonth);
+  }
+
+  async setShowTimes(checked) {
+    this.showTimes = checked;
+    await this.renderMonth(this.currentYear, this.currentMonth);
   }
 
   enterPlacementMode(cardId, cardTitle, durationMs, startDate) {
@@ -264,12 +296,18 @@ class PlannerView {
       const visibleEntries = dayEntries.slice(0, PLANNER_MAX_CHIPS_PER_DAY);
       const overflowCount = dayEntries.length - visibleEntries.length;
 
-      const chipsHtml = visibleEntries.map((entry) => `
+      const chipsHtml = visibleEntries.map((entry) => {
+        const columnName = (this.showColumns && !entry.is_virtual) ? this._getColumnName(entry.column_id) : '';
+        const timeLabel = this.showTimes ? this._formatChipTimeForDay(entry, cell.date) : '';
+        return `
         <div class="planner-card-chip ${entry.is_virtual ? 'virtual' : ''} ${entry.done ? 'done' : ''}"
              data-card-id="${entry.is_virtual ? entry.template_card_id : entry.id}">
-          ${escapeHtml(entry.title)}
+          ${columnName ? `<span class="planner-card-chip-column">${escapeHtml(columnName)}</span>` : ''}
+          <span class="planner-card-chip-title">${escapeHtml(entry.title)}</span>
+          ${timeLabel ? `<span class="planner-card-chip-time">${escapeHtml(timeLabel)}</span>` : ''}
         </div>
-      `).join('');
+      `;
+      }).join('');
 
       return `
         <div class="planner-day-cell ${cell.inMonth ? '' : 'outside-month'}" data-date="${dateKey}">
@@ -305,7 +343,8 @@ class PlannerView {
           this._openCard(cardId);
           return;
         }
-        const action = await this._promptCardAction(chip.textContent.trim());
+        const chipTitle = chip.querySelector('.planner-card-chip-title');
+        const action = await this._promptCardAction(chipTitle ? chipTitle.textContent.trim() : chip.textContent.trim());
         if (action === 'edit') {
           this._openCard(cardId);
         } else if (action === 'move') {
@@ -386,6 +425,31 @@ class PlannerView {
 
       cell.addEventListener('mouseleave', clearPreview);
     });
+  }
+
+  _getColumnName(columnId) {
+    const columns = this.boardManager.columns || [];
+    const column = columns.find((c) => c.id === columnId);
+    return column ? column.name : '';
+  }
+
+  // Multi-day entries only show a time on the day(s) it's actually
+  // anchored to - the start day, the end day, or both when they coincide.
+  // Days the entry merely spans through show no time.
+  _formatChipTimeForDay(entry, cellDate) {
+    if (!entry.start_date) return '';
+    const start = new Date(entry.start_date);
+    const end = entry.end_date ? new Date(entry.end_date) : start;
+    const fmt = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+    const cellKey = plannerDateKey(cellDate);
+    const isStartDay = cellKey === plannerDateKey(start);
+    const isEndDay = cellKey === plannerDateKey(end);
+
+    if (isStartDay && isEndDay) return `${fmt(start)}–${fmt(end)}`;
+    if (isStartDay) return `from ${fmt(start)}`;
+    if (isEndDay) return `until ${fmt(end)}`;
+    return '';
   }
 
   async _openCard(cardId) {

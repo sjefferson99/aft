@@ -123,6 +123,21 @@ class TestMonthPlannerEndpoint:
         response = authenticated_session.get(f'{api_client}/api/boards/{sample_column["board_id"]}/planner/month/2026/13')
         assert response.status_code == 400
 
+    def test_card_includes_column_id(self, api_client, authenticated_session, sample_column):
+        """The planner's "show columns" display relies on each card carrying
+        its column_id so the frontend can resolve it to a column name."""
+        year = datetime.now().year
+        card = _create_card(
+            api_client, authenticated_session, sample_column['id'],
+            start_date=f'{year}-05-05T09:00:00Z',
+            end_date=f'{year}-05-05T10:00:00Z',
+        )
+
+        response = authenticated_session.get(f'{api_client}/api/boards/{sample_column["board_id"]}/planner/month/{year}/5')
+        assert response.status_code == 200
+        returned_card = next(c for c in response.json()['cards'] if c['id'] == card['id'])
+        assert returned_card['column_id'] == sample_column['id']
+
 
 @pytest.mark.api
 class TestPlannerScheduledOccurrenceProjection:
