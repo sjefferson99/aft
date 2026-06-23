@@ -280,6 +280,8 @@ class PlannerView {
       entries = entries.filter((e) => !(e.id === this.placement.cardId && !e.is_virtual));
     }
 
+    this._overflowEntries = new Map();
+
     const weeks = buildPlannerMonthMatrix(year, month);
     const weekdayHeader = PLANNER_WEEKDAY_LABELS.map((label) => `<div class="planner-weekday-label">${label}</div>`).join('');
 
@@ -293,21 +295,14 @@ class PlannerView {
           cell.date <= new Date(end.getFullYear(), end.getMonth(), end.getDate());
       });
 
-      const overflowCount = Math.max(0, dayEntries.length - PLANNER_MAX_CHIPS_PER_DAY);
+      const visibleEntries = dayEntries.slice(0, PLANNER_MAX_CHIPS_PER_DAY);
+      const overflowEntries = dayEntries.slice(PLANNER_MAX_CHIPS_PER_DAY);
+      if (overflowEntries.length > 0) {
+        this._overflowEntries.set(dateKey, { entries: overflowEntries, cellDate: cell.date });
+      }
+      const overflowCount = overflowEntries.length;
 
-      const chipsHtml = dayEntries.map((entry, index) => {
-        const isOverflow = index >= PLANNER_MAX_CHIPS_PER_DAY;
-        const columnName = (this.showColumns && !entry.is_virtual) ? this._getColumnName(entry.column_id) : '';
-        const timeLabel = this.showTimes ? this._formatChipTimeForDay(entry, cell.date) : '';
-        return `
-        <div class="planner-card-chip ${entry.is_virtual ? 'virtual' : ''} ${entry.done ? 'done' : ''}${isOverflow ? ' planner-chip-overflow' : ''}"
-             data-card-id="${entry.is_virtual ? entry.template_card_id : entry.id}">
-          ${columnName ? `<span class="planner-card-chip-column">${escapeHtml(columnName)}</span>` : ''}
-          <span class="planner-card-chip-title">${escapeHtml(entry.title)}</span>
-          ${timeLabel ? `<span class="planner-card-chip-time">${escapeHtml(timeLabel)}</span>` : ''}
-        </div>
-      `;
-      }).join('');
+      const chipsHtml = visibleEntries.map((entry) => this._chipHtml(entry, cell.date)).join('');
 
       return `
         <div class="planner-day-cell ${cell.inMonth ? '' : 'outside-month'}" data-date="${dateKey}">
@@ -332,25 +327,42 @@ class PlannerView {
     this._attachMonthCellHandlers();
   }
 
+  _chipHtml(entry, cellDate) {
+    const columnName = (this.showColumns && !entry.is_virtual) ? this._getColumnName(entry.column_id) : '';
+    const timeLabel = this.showTimes ? this._formatChipTimeForDay(entry, cellDate) : '';
+    return `
+      <div class="planner-card-chip ${entry.is_virtual ? 'virtual' : ''} ${entry.done ? 'done' : ''}"
+           data-card-id="${entry.is_virtual ? entry.template_card_id : entry.id}">
+        ${columnName ? `<span class="planner-card-chip-column">${escapeHtml(columnName)}</span>` : ''}
+        <span class="planner-card-chip-title">${escapeHtml(entry.title)}</span>
+        ${timeLabel ? `<span class="planner-card-chip-time">${escapeHtml(timeLabel)}</span>` : ''}
+      </div>
+    `;
+  }
+
+  _attachChipHandler(chip) {
+    chip.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const cardId = parseInt(chip.dataset.cardId, 10);
+      if (chip.classList.contains('virtual')) {
+        // Scheduled-preview chips aren't a real placed card - open the
+        // template card (and its schedule) directly.
+        this._openCard(cardId);
+        return;
+      }
+      const chipTitle = chip.querySelector('.planner-card-chip-title');
+      const action = await this._promptCardAction(chipTitle ? chipTitle.textContent.trim() : chip.textContent.trim());
+      if (action === 'edit') {
+        this._openCard(cardId);
+      } else if (action === 'move') {
+        await this._startMovingCard(cardId);
+      }
+    });
+  }
+
   _attachMonthCellHandlers() {
     this.container.querySelectorAll('.planner-card-chip').forEach((chip) => {
-      chip.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const cardId = parseInt(chip.dataset.cardId, 10);
-        if (chip.classList.contains('virtual')) {
-          // Scheduled-preview chips aren't a real placed card - open the
-          // template card (and its schedule) directly.
-          this._openCard(cardId);
-          return;
-        }
-        const chipTitle = chip.querySelector('.planner-card-chip-title');
-        const action = await this._promptCardAction(chipTitle ? chipTitle.textContent.trim() : chip.textContent.trim());
-        if (action === 'edit') {
-          this._openCard(cardId);
-        } else if (action === 'move') {
-          await this._startMovingCard(cardId);
-        }
-      });
+      this._attachChipHandler(chip);
     });
 
     this.container.querySelectorAll('.planner-day-more').forEach((btn) => {
@@ -358,10 +370,30 @@ class PlannerView {
         e.stopPropagation();
         const cell = btn.closest('.planner-day-cell');
         if (!cell) return;
-        const expanded = cell.classList.toggle('expanded');
-        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         const overflowCount = parseInt(btn.dataset.overflow, 10);
-        btn.textContent = expanded ? 'Show less' : `+${overflowCount} more`;
+
+        if (cell.classList.contains('expanded')) {
+          cell.querySelectorAll('.planner-chip-overflow').forEach((c) => c.remove());
+          cell.classList.remove('expanded');
+          btn.setAttribute('aria-expanded', 'false');
+          btn.textContent = `+${overflowCount} more`;
+        } else {
+          const overflow = this._overflowEntries.get(cell.dataset.date);
+          if (overflow) {
+            const chipsContainer = cell.querySelector('.planner-day-chips');
+            overflow.entries.forEach((entry) => {
+              const tempDiv = document.createElement('div');
+              tempDiv.innerHTML = this._chipHtml(entry, overflow.cellDate).trim();
+              const chip = tempDiv.firstElementChild;
+              chip.classList.add('planner-chip-overflow');
+              chipsContainer.insertBefore(chip, btn);
+              this._attachChipHandler(chip);
+            });
+          }
+          cell.classList.add('expanded');
+          btn.setAttribute('aria-expanded', 'true');
+          btn.textContent = 'Show less';
+        }
       });
     });
 

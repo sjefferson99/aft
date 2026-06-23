@@ -2572,14 +2572,6 @@ button.readonly-disabled,
   margin: 12px 0;
 }
 
-.planner-chip-overflow {
-  display: none;
-}
-
-.planner-day-cell.expanded .planner-chip-overflow {
-  display: block;
-}
-
 .planner-day-more {
   font-size: 11px;
   color: var(--primary-color);

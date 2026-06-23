@@ -127,6 +127,55 @@ def test_typing_start_date_then_view_in_planner_saves_and_jumps_to_month(logged_
 
 
 @pytest.mark.ui
+def test_overflow_expand_collapse(logged_in_page, api_session, ui_base_url, column):
+    """Creating more than PLANNER_MAX_CHIPS_PER_DAY (3) cards on the same day
+    shows a '+N more' button. Clicking it reveals the hidden chips and changes
+    the button text to 'Show less'. Clicking again collapses back."""
+    target = _future_month_date(months_ahead=1, day=15)
+    date_str = target.strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+
+    cards = []
+    for i in range(4):
+        cards.append(_create_card(
+            api_session, ui_base_url, column['id'],
+            title=f'Overflow card {i + 1}',
+            start_date=date_str,
+        ))
+
+    page = logged_in_page
+    page.goto(f"/board.html?id={column['board_id']}")
+    page.locator(f'.card[data-card-id="{cards[0]["id"]}"]').click()
+    page.locator('#view-planner-btn').click()
+    page.locator('.planner-month-label').wait_for(state='visible', timeout=5000)
+
+    more_btn = page.locator('.planner-day-more')
+    more_btn.wait_for(state='visible', timeout=5000)
+    assert '+1 more' in more_btn.inner_text()
+
+    # Exactly 3 of the 4 chips should be in the DOM before expanding
+    def chip_dom_count():
+        return sum(
+            page.locator(f'.planner-card-chip[data-card-id="{c["id"]}"]').count()
+            for c in cards
+        )
+
+    assert chip_dom_count() == 3
+
+    more_btn.click()
+
+    # All 4 chips now in DOM; button text flipped
+    page.locator(f'.planner-day-more:text("Show less")').wait_for(state='visible', timeout=3000)
+    assert chip_dom_count() == 4
+
+    more_btn.click()
+
+    # Overflow chip removed from DOM on collapse; button reverts
+    page.locator(f'.planner-day-more:text("more")').wait_for(state='visible', timeout=3000)
+    assert chip_dom_count() == 3
+    assert '+1 more' in more_btn.inner_text()
+
+
+@pytest.mark.ui
 def test_show_columns_and_show_times_toggles_render_on_chip(logged_in_page, api_session, ui_base_url, column):
     """The month view's "Show columns"/"Show times" checkboxes add the
     card's column name and start/end time to its chip when checked."""
