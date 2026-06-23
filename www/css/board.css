@@ -2572,10 +2572,23 @@ button.readonly-disabled,
   margin: 12px 0;
 }
 
+.planner-chip-overflow {
+  display: none;
+}
+
+.planner-day-cell.expanded .planner-chip-overflow {
+  display: block;
+}
+
 .planner-day-more {
   font-size: 11px;
-  color: var(--text-muted);
-  cursor: default;
+  color: var(--primary-color);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline;
 }
 
 .planner-day-empty-space {

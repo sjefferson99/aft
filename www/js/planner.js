@@ -293,14 +293,14 @@ class PlannerView {
           cell.date <= new Date(end.getFullYear(), end.getMonth(), end.getDate());
       });
 
-      const visibleEntries = dayEntries.slice(0, PLANNER_MAX_CHIPS_PER_DAY);
-      const overflowCount = dayEntries.length - visibleEntries.length;
+      const overflowCount = Math.max(0, dayEntries.length - PLANNER_MAX_CHIPS_PER_DAY);
 
-      const chipsHtml = visibleEntries.map((entry) => {
+      const chipsHtml = dayEntries.map((entry, index) => {
+        const isOverflow = index >= PLANNER_MAX_CHIPS_PER_DAY;
         const columnName = (this.showColumns && !entry.is_virtual) ? this._getColumnName(entry.column_id) : '';
         const timeLabel = this.showTimes ? this._formatChipTimeForDay(entry, cell.date) : '';
         return `
-        <div class="planner-card-chip ${entry.is_virtual ? 'virtual' : ''} ${entry.done ? 'done' : ''}"
+        <div class="planner-card-chip ${entry.is_virtual ? 'virtual' : ''} ${entry.done ? 'done' : ''}${isOverflow ? ' planner-chip-overflow' : ''}"
              data-card-id="${entry.is_virtual ? entry.template_card_id : entry.id}">
           ${columnName ? `<span class="planner-card-chip-column">${escapeHtml(columnName)}</span>` : ''}
           <span class="planner-card-chip-title">${escapeHtml(entry.title)}</span>
@@ -314,7 +314,7 @@ class PlannerView {
           <div class="planner-day-number">${cell.date.getDate()}</div>
           <div class="planner-day-chips">
             ${chipsHtml}
-            ${overflowCount > 0 ? `<div class="planner-day-more">+${overflowCount} more</div>` : ''}
+            ${overflowCount > 0 ? `<button class="planner-day-more" data-overflow="${overflowCount}">+${overflowCount} more</button>` : ''}
           </div>
           <div class="planner-day-empty-space"></div>
         </div>
@@ -350,6 +350,16 @@ class PlannerView {
         } else if (action === 'move') {
           await this._startMovingCard(cardId);
         }
+      });
+    });
+
+    this.container.querySelectorAll('.planner-day-more').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const cell = btn.closest('.planner-day-cell');
+        const expanded = cell.classList.toggle('expanded');
+        const overflowCount = parseInt(btn.dataset.overflow, 10);
+        btn.textContent = expanded ? 'show less' : `+${overflowCount} more`;
       });
     });
 
