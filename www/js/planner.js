@@ -314,7 +314,7 @@ class PlannerView {
           <div class="planner-day-number">${cell.date.getDate()}</div>
           <div class="planner-day-chips">
             ${chipsHtml}
-            ${overflowCount > 0 ? `<button class="planner-day-more" data-overflow="${overflowCount}">+${overflowCount} more</button>` : ''}
+            ${overflowCount > 0 ? `<button type="button" class="planner-day-more" data-overflow="${overflowCount}" aria-expanded="false">+${overflowCount} more</button>` : ''}
           </div>
           <div class="planner-day-empty-space"></div>
         </div>
@@ -357,9 +357,11 @@ class PlannerView {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const cell = btn.closest('.planner-day-cell');
+        if (!cell) return;
         const expanded = cell.classList.toggle('expanded');
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         const overflowCount = parseInt(btn.dataset.overflow, 10);
-        btn.textContent = expanded ? 'show less' : `+${overflowCount} more`;
+        btn.textContent = expanded ? 'Show less' : `+${overflowCount} more`;
       });
     });
 
