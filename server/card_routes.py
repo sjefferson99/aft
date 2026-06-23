@@ -521,6 +521,14 @@ def create_card(column_id):
               type: boolean
               example: false
               description: Whether this is a template card (optional, defaults to false)
+            start_date:
+              type: string
+              example: "2026-06-20T09:00:00Z"
+              description: ISO-8601 start datetime (optional)
+            end_date:
+              type: string
+              example: "2026-06-20T10:00:00Z"
+              description: ISO-8601 end datetime (optional)
     responses:
       201:
         description: Card created successfully
@@ -655,6 +663,23 @@ def create_card(column_id):
             if not isinstance(schedule, int):
                 return create_error_response("Schedule must be an integer", 400)
 
+        # Validate start_date/end_date if provided (e.g. the planner month view
+        # pre-dating a new card from a clicked day)
+        start_date = None
+        if "start_date" in data and data["start_date"] is not None:
+            start_date = parse_iso_datetime(data["start_date"])
+            if start_date is None:
+                return create_error_response("Start date must be a valid ISO-8601 datetime", 400)
+
+        end_date = None
+        if "end_date" in data and data["end_date"] is not None:
+            end_date = parse_iso_datetime(data["end_date"])
+            if end_date is None:
+                return create_error_response("End date must be a valid ISO-8601 datetime", 400)
+
+        if start_date and end_date and end_date < start_date:
+            return create_error_response("End date cannot be before start date", 400)
+
         # Create card
         now = utc_now()
         card = Card(
@@ -664,6 +689,8 @@ def create_card(column_id):
             order=order,
             scheduled=scheduled,
             schedule=schedule,
+            start_date=start_date,
+            end_date=end_date,
             updated_at=now,
             created_by_id=g.user.id,
             assigned_to_id=None,
@@ -683,6 +710,8 @@ def create_card(column_id):
             "archived": card.archived,
             "done": card.done,
             "done_datetime": serialize_datetime(card.done_datetime),
+            "start_date": serialize_datetime(card.start_date),
+            "end_date": serialize_datetime(card.end_date),
             "created_at": serialize_datetime(card.created_at),
             "updated_at": serialize_datetime(card.updated_at)
         }

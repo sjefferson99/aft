@@ -3296,7 +3296,8 @@ class Header {
             'task': 'Task View',
             'scheduled': 'Scheduled View',
             'archived': 'Archived View',
-            'done': 'Done View'
+            'done': 'Done View',
+            'planner': 'Planner View'
           };
       label.textContent = viewNames[view] || (isBoardsPage ? 'Active Boards' : 'Task View');
     }
