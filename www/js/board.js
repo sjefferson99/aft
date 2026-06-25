@@ -4485,9 +4485,9 @@ class BoardManager {
     return draggedIndex;
   }
 
-  async updateCardPosition(cardId, columnId, order, originalPosition = null) {
+  async updateCardPosition(cardId, columnId, order, originalPosition = null, position = null) {
     const cardElement = document.querySelector(`[data-card-id="${cardId}"]`);
-    
+
     // Add loading state with 500ms delay to avoid flashing on fast connections
     const loadingTimeout = setTimeout(() => {
       if (cardElement) {
@@ -4496,21 +4496,24 @@ class BoardManager {
         cardElement.style.pointerEvents = 'none';
       }
     }, 500);
-    
+
     // Set 5 second timeout for the request
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
+
     try {
+      const body = { column_id: columnId };
+      if (position !== null) {
+        body.position = position;
+      } else {
+        body.order = order;
+      }
       const response = await fetch(`/api/cards/${cardId}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          column_id: columnId,
-          order: order
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal
       });
       
@@ -5771,60 +5774,76 @@ class BoardManager {
   }
 
   async openMoveAllCardsModal(sourceColumnId) {
-    // Check database connection
     if (window.header && !window.header.dbConnected) {
       this.showErrorToast('Cannot move cards: Database is not connected. Please wait for the connection to be restored.');
       return;
     }
-    
-    // Get source column and its cards
+
     const sourceColumn = this.columns.find(c => c.id === sourceColumnId);
     if (!sourceColumn || !sourceColumn.cards || sourceColumn.cards.length === 0) {
       await showAlert('No cards to move in this column', 'Warning');
       return;
     }
 
-    // Get target columns (exclude source column)
-    const targetColumns = this.columns.filter(c => c.id !== sourceColumnId);
-    if (targetColumns.length === 0) {
-      await showAlert('No other columns available to move cards to', 'Warning');
-      return;
-    }
-
-    // Count active cards (excluding archived) for display
     const activeCardCount = sourceColumn.cards.filter(c => !c.archived).length;
     const archivedCardCount = sourceColumn.cards.filter(c => c.archived).length;
-    
-    // Build card count message
-    let cardCountMessage;
+
+    let cardCountMessage = `${activeCardCount} active card(s)`;
     if (archivedCardCount > 0) {
-      cardCountMessage = `${activeCardCount} active card(s)`;
-      if (archivedCardCount > 0) {
-        cardCountMessage += ` (${archivedCardCount} archived)`;
-      }
-    } else {
-      cardCountMessage = `${activeCardCount} card(s)`;
+      cardCountMessage += ` (${archivedCardCount} archived)`;
     }
 
-    // Create modal HTML
+    // Fetch accessible boards
+    let boards = [];
+    try {
+      const boardsController = new AbortController();
+      const boardsTimeout = setTimeout(() => boardsController.abort(), 5000);
+      const boardsResponse = await fetch('/api/boards?archived=false', { signal: boardsController.signal });
+      clearTimeout(boardsTimeout);
+      const boardsData = await this.parseResponse(boardsResponse);
+      if (boardsData.success) {
+        boards = boardsData.boards;
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        this.showErrorToast('Timed out loading boards. Showing current board only.');
+      } else {
+        console.error('Failed to fetch boards:', err);
+      }
+    }
+    if (boards.length === 0) {
+      boards = [{ id: this.boardId, name: this.boardName }];
+    }
+
+    const currentBoardColumns = this.columns.filter(c => c.id !== sourceColumnId);
+
+    const buildColumnOptions = (columns) =>
+      columns.length === 0
+        ? '<option value="">-- No columns available --</option>'
+        : '<option value="">-- Select Column --</option>' +
+          columns.map(col => `<option value="${col.id}">${this.escapeHtml(col.name)}</option>`).join('');
+
     const modalHtml = `
-      <div class="modal" id="move-all-cards-modal">
+      <div class="modal" id="move-all-cards-modal" role="dialog" aria-modal="true" aria-labelledby="move-all-cards-modal-title" aria-describedby="move-all-cards-modal-desc">
         <div class="modal-content">
-          <h2>Move All Cards</h2>
-          <p>Move ${cardCountMessage} from <strong>${this.escapeHtml(sourceColumn.name)}</strong> to:</p>
+          <h2 id="move-all-cards-modal-title">Move All Cards</h2>
+          <p id="move-all-cards-modal-desc">Move ${cardCountMessage} from <strong>${this.escapeHtml(sourceColumn.name)}</strong> to:</p>
           <form id="move-all-cards-form">
             <div class="form-group">
+              <label for="move-all-target-board">Target Board:</label>
+              <select id="move-all-target-board" name="target-board">
+                ${boards.map(b => `<option value="${b.id}" ${b.id === this.boardId ? 'selected' : ''}>${this.escapeHtml(b.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
               <label for="target-column-select">Target Column:</label>
-              <select id="target-column-select" name="target-column" required>
-                <option value="">-- Select Column --</option>
-                ${targetColumns.map(col => `
-                  <option value="${col.id}">${this.escapeHtml(col.name)}</option>
-                `).join('')}
+              <select id="target-column-select" name="target-column" required aria-required="true">
+                ${buildColumnOptions(currentBoardColumns)}
               </select>
             </div>
             <div class="form-group">
               <label for="position-select">Position:</label>
-              <select id="position-select" name="position" required>
+              <select id="position-select" name="position" required aria-required="true">
                 <option value="top">Top of column</option>
                 <option value="bottom">Bottom of column</option>
               </select>
@@ -5844,39 +5863,71 @@ class BoardManager {
       </div>
     `;
 
-    // Add modal to page
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
-    // Get modal elements
     const modal = document.getElementById('move-all-cards-modal');
     const form = document.getElementById('move-all-cards-form');
     const cancelBtn = document.getElementById('cancel-move-all-btn');
+    const boardSelect = document.getElementById('move-all-target-board');
     const targetSelect = document.getElementById('target-column-select');
     const positionSelect = document.getElementById('position-select');
     const includeArchivedCheckbox = document.getElementById('include-archived-checkbox');
 
-    // Focus on select
-    targetSelect.focus();
+    boardSelect.focus();
 
-    // Handle cancel
+    const loadColumnsForBoard = async (boardId) => {
+      if (boardId === this.boardId) {
+        targetSelect.innerHTML = buildColumnOptions(currentBoardColumns);
+        return;
+      }
+      targetSelect.innerHTML = '<option value="">Loading...</option>';
+      targetSelect.disabled = true;
+      try {
+        const colController = new AbortController();
+        const colTimeout = setTimeout(() => colController.abort(), 5000);
+        const response = await fetch(`/api/boards/${boardId}/columns`, { signal: colController.signal });
+        clearTimeout(colTimeout);
+        const data = await this.parseResponse(response);
+        if (data.success && data.columns) {
+          targetSelect.innerHTML = buildColumnOptions(data.columns);
+        } else {
+          targetSelect.innerHTML = '<option value="">-- No columns available --</option>';
+          this.showErrorToast(data.message || 'Failed to load columns');
+        }
+      } catch (err) {
+        targetSelect.innerHTML = '<option value="">-- Error loading columns --</option>';
+        if (err.name === 'AbortError') {
+          this.showErrorToast('Timed out loading columns');
+        } else {
+          console.error('Failed to fetch columns:', err);
+          this.showErrorToast('Failed to load columns');
+        }
+      } finally {
+        targetSelect.disabled = false;
+      }
+    };
+
+    boardSelect.addEventListener('change', () => {
+      loadColumnsForBoard(parseInt(boardSelect.value));
+    });
+
     cancelBtn.addEventListener('click', () => {
       modal.remove();
     });
 
-    // Handle form submit
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const targetColumnId = parseInt(targetSelect.value);
       const position = positionSelect.value;
       const includeArchived = includeArchivedCheckbox.checked;
-      
+      const targetBoardId = parseInt(boardSelect.value);
+
       if (targetColumnId && position) {
         modal.remove();
-        await this.moveAllCards(sourceColumnId, targetColumnId, position, includeArchived);
+        await this.moveAllCards(sourceColumnId, targetColumnId, position, includeArchived, targetBoardId);
       }
     });
 
-    // Close modal on background click (ignore text selection drags)
     setupModalBackgroundClose(modal, () => modal.remove());
   }
 
@@ -6072,18 +6123,20 @@ class BoardManager {
     }
   }
 
-  async moveAllCards(sourceColumnId, targetColumnId, position, includeArchived = false) {
-    // Get source column's cards
+  async moveAllCards(sourceColumnId, targetColumnId, position, includeArchived = false, targetBoardId = null) {
     const sourceColumn = this.columns.find(c => c.id === sourceColumnId);
     if (!sourceColumn || !sourceColumn.cards || sourceColumn.cards.length === 0) {
       return;
     }
 
-    // Get target column to determine starting order for bottom position
-    const targetColumn = this.columns.find(c => c.id === targetColumnId);
-    if (!targetColumn) {
-      await showAlert('Target column not found', 'Error');
-      return;
+    // For same-board moves, validate target column exists locally
+    const isCrossBoard = targetBoardId !== null && targetBoardId !== this.boardId;
+    if (!isCrossBoard) {
+      const targetColumn = this.columns.find(c => c.id === targetColumnId);
+      if (!targetColumn) {
+        await showAlert('Target column not found', 'Error');
+        return;
+      }
     }
 
     try {
@@ -8842,28 +8895,57 @@ class BoardManager {
       return;
     }
 
-    const targetColumns = sourceColumns.filter(c => c.id !== sourceColumn.id);
-    if (targetColumns.length === 0) {
-      await showAlert('No other columns available to move this card to', 'Warning');
-      return;
+    // Fetch accessible boards
+    let boards = [];
+    try {
+      const boardsController = new AbortController();
+      const boardsTimeout = setTimeout(() => boardsController.abort(), 5000);
+      const boardsResponse = await fetch('/api/boards?archived=false', { signal: boardsController.signal });
+      clearTimeout(boardsTimeout);
+      const boardsData = await this.parseResponse(boardsResponse);
+      if (boardsData.success) {
+        boards = boardsData.boards;
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        this.showErrorToast('Timed out loading boards. Showing current board only.');
+      } else {
+        console.error('Failed to fetch boards:', err);
+      }
+    }
+    if (boards.length === 0) {
+      boards = [{ id: this.boardId, name: this.boardName }];
     }
 
+    const currentBoardColumns = sourceColumns.filter(c => c.id !== sourceColumn.id);
+
+    const buildColumnOptions = (columns) =>
+      columns.length === 0
+        ? '<option value="">-- No columns available --</option>'
+        : '<option value="">-- Select Column --</option>' +
+          columns.map(col => `<option value="${col.id}">${this.escapeHtml(col.name)}</option>`).join('');
+
     const modalHtml = `
-      <div class="modal" id="move-card-modal">
+      <div class="modal" id="move-card-modal" role="dialog" aria-modal="true" aria-labelledby="move-card-modal-title" aria-describedby="move-card-modal-desc">
         <div class="modal-content">
-          <h2>Move Card</h2>
-          <p>Move <strong>${this.escapeHtml(sourceCard.title || 'Untitled card')}</strong> from <strong>${this.escapeHtml(sourceColumn.name)}</strong> to:</p>
+          <h2 id="move-card-modal-title">Move Card</h2>
+          <p id="move-card-modal-desc">Move <strong>${this.escapeHtml(sourceCard.title || 'Untitled card')}</strong> from <strong>${this.escapeHtml(sourceColumn.name)}</strong> to:</p>
           <form id="move-card-form">
             <div class="form-group">
+              <label for="move-card-target-board">Target Board:</label>
+              <select id="move-card-target-board" name="target-board">
+                ${boards.map(b => `<option value="${b.id}" ${b.id === this.boardId ? 'selected' : ''}>${this.escapeHtml(b.name)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
               <label for="move-card-target-column">Target Column:</label>
-              <select id="move-card-target-column" name="target-column" required>
-                <option value="">-- Select Column --</option>
-                ${targetColumns.map(col => `<option value="${col.id}">${this.escapeHtml(col.name)}</option>`).join('')}
+              <select id="move-card-target-column" name="target-column" required aria-required="true">
+                ${buildColumnOptions(currentBoardColumns)}
               </select>
             </div>
             <div class="form-group">
               <label for="move-card-position">Position:</label>
-              <select id="move-card-position" name="position" required>
+              <select id="move-card-position" name="position" required aria-required="true">
                 <option value="top">Top of column</option>
                 <option value="bottom">Bottom of column</option>
               </select>
@@ -8882,10 +8964,47 @@ class BoardManager {
     const modal = document.getElementById('move-card-modal');
     const form = document.getElementById('move-card-form');
     const cancelBtn = document.getElementById('cancel-move-card-btn');
-    const targetSelect = document.getElementById('move-card-target-column');
+    const boardSelect = document.getElementById('move-card-target-board');
+    const columnSelect = document.getElementById('move-card-target-column');
     const positionSelect = document.getElementById('move-card-position');
 
-    targetSelect.focus();
+    boardSelect.focus();
+
+    const loadColumnsForBoard = async (boardId) => {
+      if (boardId === this.boardId) {
+        columnSelect.innerHTML = buildColumnOptions(currentBoardColumns);
+        return;
+      }
+      columnSelect.innerHTML = '<option value="">Loading...</option>';
+      columnSelect.disabled = true;
+      try {
+        const colController = new AbortController();
+        const colTimeout = setTimeout(() => colController.abort(), 5000);
+        const response = await fetch(`/api/boards/${boardId}/columns`, { signal: colController.signal });
+        clearTimeout(colTimeout);
+        const data = await this.parseResponse(response);
+        if (data.success && data.columns) {
+          columnSelect.innerHTML = buildColumnOptions(data.columns);
+        } else {
+          columnSelect.innerHTML = '<option value="">-- No columns available --</option>';
+          this.showErrorToast(data.message || 'Failed to load columns');
+        }
+      } catch (err) {
+        columnSelect.innerHTML = '<option value="">-- Error loading columns --</option>';
+        if (err.name === 'AbortError') {
+          this.showErrorToast('Timed out loading columns');
+        } else {
+          console.error('Failed to fetch columns:', err);
+          this.showErrorToast('Failed to load columns');
+        }
+      } finally {
+        columnSelect.disabled = false;
+      }
+    };
+
+    boardSelect.addEventListener('change', () => {
+      loadColumnsForBoard(parseInt(boardSelect.value));
+    });
 
     cancelBtn.addEventListener('click', () => {
       modal.remove();
@@ -8893,18 +9012,26 @@ class BoardManager {
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const targetColumnId = parseInt(targetSelect.value);
+      const targetColumnId = parseInt(columnSelect.value);
       const position = positionSelect.value;
+      const targetBoardId = parseInt(boardSelect.value);
 
       if (!targetColumnId || !position) {
         return;
       }
 
-      const newOrder = this.computeMoveCardOrder(targetColumnId, position, cardId);
-      const originalPosition = this.getCardOriginalPosition(cardId);
-
       modal.remove();
-      await this.updateCardPosition(cardId, targetColumnId, newOrder, originalPosition);
+
+      if (targetBoardId === this.boardId) {
+        // Same board: compute order locally and use existing update path
+        const newOrder = this.computeMoveCardOrder(targetColumnId, position, cardId);
+        const originalPosition = this.getCardOriginalPosition(cardId);
+        await this.updateCardPosition(cardId, targetColumnId, newOrder, originalPosition);
+      } else {
+        // Cross-board: let backend compute order from position
+        const originalPosition = this.getCardOriginalPosition(cardId);
+        await this.updateCardPosition(cardId, targetColumnId, null, originalPosition, position);
+      }
     });
 
     setupModalBackgroundClose(modal, () => modal.remove());

@@ -1905,4 +1905,198 @@ class TestCardsAPI:
             assert len(orders) == len(set(orders)), f"Found duplicate order values in {col['name']}"
 
 
+@pytest.mark.api
+class TestCrossBoardCardMove:
+    """Tests for cross-board card move and the position parameter on PATCH /api/cards/<id>."""
+
+    def _create_board_with_column_and_card(self, api_client, session, board_name, column_name, card_title):
+        """Helper: create board → column → card, return (board, column, card) dicts."""
+        board = session.post(f'{api_client}/api/boards', json={'name': board_name}).json()['board']
+        column = session.post(
+            f'{api_client}/api/boards/{board["id"]}/columns', json={'name': column_name}
+        ).json()['column']
+        card = session.post(
+            f'{api_client}/api/columns/{column["id"]}/cards', json={'title': card_title}
+        ).json()['card']
+        return board, column, card
+
+    def test_position_bottom_places_card_at_end_of_same_board_column(
+        self, api_client, authenticated_session, sample_board
+    ):
+        """position=bottom moves card to end of target column on the same board."""
+        col_a = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns', json={'name': 'Col A'}
+        ).json()['column']
+        col_b = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns', json={'name': 'Col B'}
+        ).json()['column']
+
+        # Put two cards in col_b so there is something to go below
+        existing1 = authenticated_session.post(
+            f'{api_client}/api/columns/{col_b["id"]}/cards', json={'title': 'Existing 1'}
+        ).json()['card']
+        existing2 = authenticated_session.post(
+            f'{api_client}/api/columns/{col_b["id"]}/cards', json={'title': 'Existing 2'}
+        ).json()['card']
+
+        card = authenticated_session.post(
+            f'{api_client}/api/columns/{col_a["id"]}/cards', json={'title': 'Mover'}
+        ).json()['card']
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/cards/{card["id"]}',
+            json={'column_id': col_b['id'], 'position': 'bottom'}
+        )
+        assert response.status_code == 200
+        assert response.json()['success'] is True
+
+        cards_response = authenticated_session.get(
+            f'{api_client}/api/columns/{col_b["id"]}/cards?archived=false'
+        )
+        cards = sorted(cards_response.json()['cards'], key=lambda c: c['order'])
+        card_titles = [c['title'] for c in cards]
+        assert card_titles[-1] == 'Mover', f"Expected Mover at end, got: {card_titles}"
+
+    def test_position_top_places_card_at_start_of_same_board_column(
+        self, api_client, authenticated_session, sample_board
+    ):
+        """position=top moves card to front of target column on the same board."""
+        col_a = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns', json={'name': 'Src'}
+        ).json()['column']
+        col_b = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns', json={'name': 'Dst'}
+        ).json()['column']
+
+        authenticated_session.post(
+            f'{api_client}/api/columns/{col_b["id"]}/cards', json={'title': 'Already Here'}
+        )
+        card = authenticated_session.post(
+            f'{api_client}/api/columns/{col_a["id"]}/cards', json={'title': 'TopMover'}
+        ).json()['card']
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/cards/{card["id"]}',
+            json={'column_id': col_b['id'], 'position': 'top'}
+        )
+        assert response.status_code == 200
+
+        cards_response = authenticated_session.get(
+            f'{api_client}/api/columns/{col_b["id"]}/cards?archived=false'
+        )
+        cards = sorted(cards_response.json()['cards'], key=lambda c: c['order'])
+        assert cards[0]['title'] == 'TopMover', f"Expected TopMover first, got: {[c['title'] for c in cards]}"
+
+    def test_cross_board_move_with_position_bottom(self, api_client, authenticated_session):
+        """Card can be moved to a column on a different board using position=bottom."""
+        _, src_col, card = self._create_board_with_column_and_card(
+            api_client, authenticated_session, 'Source Board CB', 'Src Col', 'Cross Card'
+        )
+        _, dst_col, _ = self._create_board_with_column_and_card(
+            api_client, authenticated_session, 'Dest Board CB', 'Dst Col', 'Existing'
+        )
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/cards/{card["id"]}',
+            json={'column_id': dst_col['id'], 'position': 'bottom'}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert data['card']['column_id'] == dst_col['id']
+
+        # Card should no longer appear in source column
+        src_cards = authenticated_session.get(
+            f'{api_client}/api/columns/{src_col["id"]}/cards'
+        ).json().get('cards', [])
+        assert not any(c['id'] == card['id'] for c in src_cards)
+
+        # Card should appear in destination column
+        dst_cards = authenticated_session.get(
+            f'{api_client}/api/columns/{dst_col["id"]}/cards'
+        ).json().get('cards', [])
+        assert any(c['id'] == card['id'] for c in dst_cards)
+
+    def test_cross_board_move_with_position_top(self, api_client, authenticated_session):
+        """Card moved cross-board with position=top lands before existing cards."""
+        _, src_col, card = self._create_board_with_column_and_card(
+            api_client, authenticated_session, 'Source Board Top', 'Src', 'Mover'
+        )
+        _, dst_col, existing = self._create_board_with_column_and_card(
+            api_client, authenticated_session, 'Dest Board Top', 'Dst', 'Incumbent'
+        )
+
+        authenticated_session.patch(
+            f'{api_client}/api/cards/{card["id"]}',
+            json={'column_id': dst_col['id'], 'position': 'top'}
+        )
+
+        dst_cards_resp = authenticated_session.get(
+            f'{api_client}/api/columns/{dst_col["id"]}/cards?archived=false'
+        )
+        cards = sorted(dst_cards_resp.json()['cards'], key=lambda c: c['order'])
+        assert cards[0]['id'] == card['id'], "Moved card should be first"
+
+    def test_cross_board_move_denied_when_no_access_to_target_board(
+        self, api_client, authenticated_session, second_user_session
+    ):
+        """User cannot move a card to a column on a board they do not have access to."""
+        # Admin creates a private board with a column; second user has no access to it
+        private_board = authenticated_session.post(
+            f'{api_client}/api/boards', json={'name': 'Private Board'}
+        ).json()['board']
+        private_col = authenticated_session.post(
+            f'{api_client}/api/boards/{private_board["id"]}/columns', json={'name': 'Private Col'}
+        ).json()['column']
+
+        # Second user creates their own board and card
+        second_user_board = second_user_session.post(
+            f'{api_client}/api/boards', json={'name': 'Second User Board'}
+        )
+        # If second user cannot create boards, skip gracefully
+        if second_user_board.status_code != 201:
+            pytest.skip('Second user lacks board.create permission')
+        second_user_board_id = second_user_board.json()['board']['id']
+        second_user_col = second_user_session.post(
+            f'{api_client}/api/boards/{second_user_board_id}/columns', json={'name': 'My Col'}
+        ).json()['column']
+        second_user_card = second_user_session.post(
+            f'{api_client}/api/columns/{second_user_col["id"]}/cards', json={'title': 'My Card'}
+        ).json()['card']
+
+        response = second_user_session.patch(
+            f'{api_client}/api/cards/{second_user_card["id"]}',
+            json={'column_id': private_col['id'], 'position': 'bottom'}
+        )
+        assert response.status_code == 403
+        assert response.json()['success'] is False
+
+    def test_invalid_position_value_returns_400(self, api_client, authenticated_session, sample_board):
+        """position must be 'top' or 'bottom'; other values return 400."""
+        col_a = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns', json={'name': 'A'}
+        ).json()['column']
+        col_b = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns', json={'name': 'B'}
+        ).json()['column']
+        card = authenticated_session.post(
+            f'{api_client}/api/columns/{col_a["id"]}/cards', json={'title': 'Card'}
+        ).json()['card']
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/cards/{card["id"]}',
+            json={'column_id': col_b['id'], 'position': 'middle'}
+        )
+        assert response.status_code == 400
+        assert response.json()['success'] is False
+
+    def test_position_ignored_when_no_column_change(self, api_client, authenticated_session, sample_card):
+        """Providing position without column_id is accepted without error."""
+        response = authenticated_session.patch(
+            f'{api_client}/api/cards/{sample_card["id"]}',
+            json={'title': 'Updated Title', 'position': 'top'}
+        )
+        # position is only meaningful when column_id is also changing; otherwise ignored
+        assert response.status_code == 200
+        assert response.json()['success'] is True
 
