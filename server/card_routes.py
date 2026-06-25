@@ -1133,6 +1133,8 @@ def update_card(card_id):
     ---
     tags:
       - Cards
+    security:
+      - session: []
     parameters:
       - name: card_id
         in: path
@@ -1156,11 +1158,16 @@ def update_card(card_id):
             column_id:
               type: integer
               example: 2
-              description: The new column ID if moving the card
+              description: The new column ID if moving the card. May target a column on a different board provided the user has access to that board.
             order:
               type: integer
               example: 1
-              description: The new order position (cards >= this order will be incremented)
+              description: The new order position (cards >= this order will be incremented). Use instead of position for same-board moves where the order is known.
+            position:
+              type: string
+              enum: [top, bottom]
+              example: "bottom"
+              description: Place the card at the top or bottom of the target column. Computed server-side from the target column's existing cards. Use instead of order when moving to a different board.
             start_date:
               type: string
               format: date-time
@@ -1216,8 +1223,19 @@ def update_card(card_id):
               example: false
             message:
               type: string
+      403:
+        description: Access denied to target board
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: false
+            message:
+              type: string
+              example: "Access denied to target board"
       404:
-        description: Card not found
+        description: Card or target column not found
         schema:
           type: object
           properties:
@@ -1362,6 +1380,36 @@ def update_card(card_id):
                 )
                 if not target_column:
                     return create_error_response("Target column not found", 404)
+
+                # Verify user has access to target board when moving cross-board
+                source_board_id = db.query(BoardColumn.board_id).filter(
+                    BoardColumn.id == old_column_id
+                ).scalar()
+                if source_board_id and target_column.board_id != source_board_id:
+                    target_board = get_user_scoped_query(db, Board, user_id).filter(
+                        Board.id == target_column.board_id
+                    ).first()
+                    if not target_board:
+                        return create_error_response("Access denied to target board", 403)
+
+                # Support position parameter as alternative to explicit order
+                if "position" in data:
+                    position_val = data["position"]
+                    if position_val not in ["top", "bottom"]:
+                        return create_error_response("Position must be 'top' or 'bottom'", 400)
+                    min_order, max_order = db.query(
+                        func.min(Card.order),
+                        func.max(Card.order),
+                    ).filter(
+                        Card.column_id == new_column_id,
+                        Card.archived.is_(False),
+                    ).one()
+                    if min_order is None:
+                        new_order = 0
+                    elif position_val == "top":
+                        new_order = int(min_order)
+                    else:
+                        new_order = int(max_order) + 1
 
                 # Moving to different column is a state change - update timestamp
                 user_content_changed = True
