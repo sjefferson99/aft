@@ -6620,6 +6620,7 @@ class BoardManager {
     const canUnarchiveCard = this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/unarchive');
     const canDeleteCard = this.canCallPermissionEndpoint('DELETE', '/api/cards/:id');
     const canToggleDone = this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/done');
+    const canMoveCard = this.canEdit || this.canCallPermissionEndpoint('PATCH', '/api/cards/:id');
     const canManageAssignees = this.canCallPermissionEndpoint('PUT', '/api/cards/:id/assignees');
     const canCreateSchedule = this.canCallPermissionEndpoint('POST', '/api/schedules');
     const canEditSchedule = this.canCallPermissionEndpoint('PUT', '/api/schedules/:id');
@@ -6665,6 +6666,7 @@ class BoardManager {
                   ${canArchiveCard && this.workingStyle !== 'agile' ? '<button type="button" class="btn btn-secondary" id="archive-card-detail-btn" data-card-id="' + cardData.id + '">🗄️ Archive</button>' : ''}` : ''
               }
               ${!isReadOnly && canManageAssignees ? `<button type="button" class="btn btn-secondary" id="assign-assignees-btn" data-card-id="${cardData.id}">👤 Assignees</button>` : ''}
+              ${!isReadOnly && canMoveCard && !cardData.archived ? `<button type="button" class="btn btn-secondary" id="move-card-detail-btn" data-card-id="${cardData.id}">Move</button>` : ''}
               ${!isReadOnly ? `<button type="button" class="btn btn-secondary" id="view-planner-btn" data-card-id="${cardData.id}">${plannerBtnLabel}</button>` : ''}
               ${!isReadOnly && canDeleteCard ? `<button type="button" class="btn btn-danger" id="delete-card-detail-btn" data-card-id="${cardData.id}">Delete</button>` : ''}
               <button type="button" class="btn btn-secondary" id="cancel-edit-card-btn">${isReadOnly ? 'Close' : 'Cancel'}</button>
@@ -6804,6 +6806,7 @@ class BoardManager {
     const archiveBtn = document.getElementById('archive-card-detail-btn');
     const unarchiveBtn = document.getElementById('unarchive-card-detail-btn');
     const assignAssigneesBtn = document.getElementById('assign-assignees-btn');
+    const moveCardDetailBtn = document.getElementById('move-card-detail-btn');
     const viewPlannerBtn = document.getElementById('view-planner-btn');
     const titleInput = document.getElementById('edit-card-title');
 
@@ -6974,6 +6977,13 @@ class BoardManager {
     if (assignAssigneesBtn) {
       assignAssigneesBtn.addEventListener('click', async () => {
         await this.openAssigneeModal(cardId);
+      });
+    }
+
+    if (moveCardDetailBtn) {
+      moveCardDetailBtn.addEventListener('click', async () => {
+        modal.remove();
+        await this.openMoveCardModal(cardId);
       });
     }
 

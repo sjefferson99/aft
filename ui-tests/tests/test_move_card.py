@@ -37,9 +37,17 @@ def board_with_two_columns(api_session, ui_base_url):
     api_session.delete(f"{base}/api/boards/{board['id']}")
 
 
+def _open_move_card_modal_via_edit_modal(page, card_id):
+    """On desktop, open the move card modal via the edit card modal's Move button."""
+    page.locator(f'.card[data-card-id="{card_id}"]').click()
+    edit_modal = page.locator("#edit-card-modal")
+    edit_modal.wait_for(state="visible", timeout=5000)
+    edit_modal.locator("#move-card-detail-btn").click()
+
+
 @pytest.mark.ui
-def test_move_card_button_visible_on_desktop(logged_in_page, board_with_two_columns):
-    """The move-card button must be visible on desktop (viewport > 900 px)."""
+def test_move_card_button_not_on_card_on_desktop(logged_in_page, board_with_two_columns):
+    """The card-level move button must be hidden on desktop (viewport > 900 px)."""
     page = logged_in_page
     data = board_with_two_columns
     page.set_viewport_size({"width": 1280, "height": 800})
@@ -47,13 +55,31 @@ def test_move_card_button_visible_on_desktop(logged_in_page, board_with_two_colu
 
     card_id = data["card"]["id"]
     move_btn = page.locator(f'.card[data-card-id="{card_id}"] .card-move-btn')
-    move_btn.wait_for(state="visible", timeout=5000)
-    assert move_btn.is_visible(), "card-move-btn should be visible on desktop"
+    move_btn.wait_for(state="attached", timeout=5000)
+    assert not move_btn.is_visible(), "card-move-btn should be hidden on desktop"
+
+
+@pytest.mark.ui
+def test_move_button_in_edit_modal_on_desktop(logged_in_page, board_with_two_columns):
+    """The Move button must be present in the edit card modal on desktop."""
+    page = logged_in_page
+    data = board_with_two_columns
+    page.set_viewport_size({"width": 1280, "height": 800})
+    page.goto(f"/board.html?id={data['board']['id']}")
+
+    card_id = data["card"]["id"]
+    page.locator(f'.card[data-card-id="{card_id}"]').click()
+    edit_modal = page.locator("#edit-card-modal")
+    edit_modal.wait_for(state="visible", timeout=5000)
+
+    move_btn = edit_modal.locator("#move-card-detail-btn")
+    assert move_btn.is_visible(), "Move button should be visible in edit card modal on desktop"
+    assert move_btn.text_content().strip() == "Move", "Move button label should be 'Move'"
 
 
 @pytest.mark.ui
 def test_move_card_button_visible_on_mobile(logged_in_page, board_with_two_columns):
-    """The move-card button must also be visible on mobile (viewport <= 900 px)."""
+    """The move-card button must be visible on the card itself on mobile (viewport <= 900 px)."""
     page = logged_in_page
     data = board_with_two_columns
     page.set_viewport_size({"width": 390, "height": 844})
@@ -67,14 +93,13 @@ def test_move_card_button_visible_on_mobile(logged_in_page, board_with_two_colum
 
 @pytest.mark.ui
 def test_move_card_modal_shows_board_picker(logged_in_page, board_with_two_columns):
-    """Clicking the move button opens a modal that contains a board selector."""
+    """Clicking Move in the edit modal opens a move modal that contains a board selector."""
     page = logged_in_page
     data = board_with_two_columns
     page.set_viewport_size({"width": 1280, "height": 800})
     page.goto(f"/board.html?id={data['board']['id']}")
 
-    card_id = data["card"]["id"]
-    page.locator(f'.card[data-card-id="{card_id}"] .card-move-btn').click()
+    _open_move_card_modal_via_edit_modal(page, data["card"]["id"])
 
     modal = page.locator("#move-card-modal")
     modal.wait_for(state="visible", timeout=5000)
@@ -94,8 +119,7 @@ def test_move_card_modal_has_correct_aria_attributes(logged_in_page, board_with_
     page.set_viewport_size({"width": 1280, "height": 800})
     page.goto(f"/board.html?id={data['board']['id']}")
 
-    card_id = data["card"]["id"]
-    page.locator(f'.card[data-card-id="{card_id}"] .card-move-btn').click()
+    _open_move_card_modal_via_edit_modal(page, data["card"]["id"])
 
     modal = page.locator("#move-card-modal")
     modal.wait_for(state="visible", timeout=5000)
@@ -114,8 +138,7 @@ def test_move_card_modal_defaults_to_current_board(logged_in_page, board_with_tw
     page.set_viewport_size({"width": 1280, "height": 800})
     page.goto(f"/board.html?id={data['board']['id']}")
 
-    card_id = data["card"]["id"]
-    page.locator(f'.card[data-card-id="{card_id}"] .card-move-btn').click()
+    _open_move_card_modal_via_edit_modal(page, data["card"]["id"])
 
     modal = page.locator("#move-card-modal")
     modal.wait_for(state="visible", timeout=5000)
@@ -138,7 +161,7 @@ def test_move_card_same_board_via_modal(logged_in_page, board_with_two_columns):
     card_id = data["card"]["id"]
     col_b_id = data["col_b"]["id"]
 
-    page.locator(f'.card[data-card-id="{card_id}"] .card-move-btn').click()
+    _open_move_card_modal_via_edit_modal(page, card_id)
 
     modal = page.locator("#move-card-modal")
     modal.wait_for(state="visible", timeout=5000)

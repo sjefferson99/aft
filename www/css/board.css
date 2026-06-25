@@ -976,7 +976,7 @@
 }
 
 .card-move-btn {
-  display: flex;
+  display: none;
   color: var(--secondary-color);
   font-size: 18px;
   font-weight: 700;
@@ -2135,6 +2135,7 @@ button.readonly-disabled,
   }
 
   .card-move-btn {
+    display: flex;
     font-size: 17px;
   }
 
