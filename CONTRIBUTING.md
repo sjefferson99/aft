@@ -419,6 +419,7 @@ Use consistent tags so related endpoints are grouped together in the UI:
 | `Roles` | Role and permission management |
 | `Backups` | Backup management |
 | `Schedules` | Scheduled card management |
+| `Planner` | Year/month planner view endpoints |
 
 ### Security Declaration
 

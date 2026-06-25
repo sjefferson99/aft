@@ -150,7 +150,7 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Delete Cards** - Remove completed or cancelled tasks
 - **Archive Cards** - Archive completed cards to declutter your board while preserving history
 - **Unarchive Cards** - Restore archived cards back to active view when needed
-- **View Switching** - Switch between Task, Scheduled, and Archived views using the header dropdown
+- **View Switching** - Switch between Task, Scheduled, Archived, and Planner views using the header dropdown
 - **Batch Operations** - Archive or unarchive multiple cards at once via column menu
 - **Timestamps** - Track creation and last update times for all cards, columns, boards, and checklist items
   - Cards display "Updated X ago" on the board view
@@ -196,6 +196,17 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 
 ![Scheduled Cards](images/scheduled_cards.png)
 ![Schedule Modal](images/schedule_modal.png)
+
+### 📅 Planner View
+- **Year Overview** - See a full calendar year as 12 mini month grids, with coloured dots indicating days that are free, busy (have real cards), or scheduled (have projected recurring-schedule occurrences)
+- **Month Detail** - Drill into any month to see a full calendar grid with cards displayed as chips on the days they span; click a month block in the year view to open it, or use the Back button to return
+- **Year/Month Navigation** - Previous/next arrows navigate between years or months
+- **Card Interaction** - Click a card chip to edit it or enter placement mode to move it to a new start date by clicking any day in the year view
+- **Add Card** - Click an empty day cell in month view to create a new card pre-dated to that day
+- **Overflow Expand/Collapse** - Days with more than three cards show a "+N more" button; click to expand all cards for that day inline
+- **Show Scheduled Toggle** - Overlay projected future occurrences of recurring schedules (shown in a distinct colour) across both year and month views
+- **Show Columns Toggle** (month view only) - Display the board column name on each card chip
+- **Show Times Toggle** (month view only) - Display card start/end times on each card chip
 
 ### ⚙️ Settings & Configuration
 - **Customisable Settings** - Configure application preferences including default board
