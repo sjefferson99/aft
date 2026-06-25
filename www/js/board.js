@@ -9032,6 +9032,7 @@ class BoardManager {
         const originalPosition = this.getCardOriginalPosition(cardId);
         const fallbackOrder = Number.isFinite(originalPosition?.order) ? originalPosition.order : 0;
         await this.updateCardPosition(cardId, targetColumnId, fallbackOrder, originalPosition, position);
+      }
     });
 
     setupModalBackgroundClose(modal, () => modal.remove());
