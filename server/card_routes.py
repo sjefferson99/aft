@@ -1397,18 +1397,19 @@ def update_card(card_id):
                     position_val = data["position"]
                     if position_val not in ["top", "bottom"]:
                         return create_error_response("Position must be 'top' or 'bottom'", 400)
-                    target_orders = [
-                        c.order for c in db.query(Card).filter(
-                            Card.column_id == new_column_id,
-                            Card.archived.is_(False)
-                        ).all()
-                    ]
-                    if not target_orders:
+                    min_order, max_order = db.query(
+                        func.min(Card.order),
+                        func.max(Card.order),
+                    ).filter(
+                        Card.column_id == new_column_id,
+                        Card.archived.is_(False),
+                    ).one()
+                    if min_order is None:
                         new_order = 0
                     elif position_val == "top":
-                        new_order = min(target_orders) - 1
+                        new_order = int(min_order)
                     else:
-                        new_order = max(target_orders) + 1
+                        new_order = int(max_order) + 1
 
                 # Moving to different column is a state change - update timestamp
                 user_content_changed = True

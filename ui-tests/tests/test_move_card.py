@@ -4,9 +4,9 @@ import pytest
 
 
 @pytest.fixture
-def board_with_two_columns(api_session):
+def board_with_two_columns(api_session, ui_base_url):
     """Create a board with two columns and one card in the first column."""
-    base = f"http://localhost"
+    base = ui_base_url
     board_resp = api_session.post(
         f"{base}/api/boards",
         json={"name": f"Move Test Board {uuid.uuid4().hex[:8]}"},

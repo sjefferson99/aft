@@ -9030,8 +9030,8 @@ class BoardManager {
       } else {
         // Cross-board: let backend compute order from position
         const originalPosition = this.getCardOriginalPosition(cardId);
-        await this.updateCardPosition(cardId, targetColumnId, null, originalPosition, position);
-      }
+        const fallbackOrder = Number.isFinite(originalPosition?.order) ? originalPosition.order : 0;
+        await this.updateCardPosition(cardId, targetColumnId, fallbackOrder, originalPosition, position);
     });
 
     setupModalBackgroundClose(modal, () => modal.remove());
