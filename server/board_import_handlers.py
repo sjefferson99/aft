@@ -4,6 +4,9 @@ This module provides an extensible handler framework so new import formats
 can be added without changing endpoint logic.
 """
 
+import csv as _csv
+import io as _io
+import re as _re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
@@ -472,6 +475,185 @@ class TrelloBoardImportHandler(BoardImportHandler):
         }
 
 
+class CSVBoardImportHandler(BoardImportHandler):
+    """Import handler for CSV board files.
+
+    Expected columns (case-insensitive, order flexible):
+        title*, column*, assignee, description, checklist_items, start_date, end_date
+    Checklist items are pipe-separated; append [done] to mark an item checked.
+    Dates must be YYYY-MM-DD.
+    """
+
+    FORMAT = "csv"
+    REQUIRED_HEADERS = {"title", "column"}
+    _DATE_RE = _re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+    def _parse_rows(self, payload):
+        """Return (header_map, rows). header_map: {lowercase_field: actual_csv_key}."""
+        text = payload.lstrip("﻿")  # strip UTF-8 BOM if present
+        reader = _csv.DictReader(_io.StringIO(text))
+        _ = reader.fieldnames  # trigger header read
+        header_map = {
+            h.strip().lower(): h
+            for h in (reader.fieldnames or [])
+            if isinstance(h, str) and h.strip()
+        }
+        return header_map, list(reader)
+
+    def _get(self, row, field, header_map):
+        key = header_map.get(field)
+        return (row.get(key) or "").strip() if key else ""
+
+    def validate(self, payload) -> ImportValidationResult:
+        errors = []
+
+        if not isinstance(payload, str):
+            return ImportValidationResult(False, ["CSV payload must be a string"])
+
+        try:
+            header_map, rows = self._parse_rows(payload)
+        except Exception as exc:
+            return ImportValidationResult(False, [f"Failed to parse CSV: {exc}"])
+
+        if not header_map:
+            return ImportValidationResult(False, ["CSV file has no headers"])
+
+        for req in self.REQUIRED_HEADERS:
+            if req not in header_map:
+                errors.append(f"Missing required CSV column: '{req}'")
+
+        if errors:
+            return ImportValidationResult(False, errors)
+
+        if not rows:
+            return ImportValidationResult(False, ["CSV file contains no data rows"])
+
+        date_fields = [f for f in ("start_date", "end_date") if f in header_map]
+
+        for index, row in enumerate(rows):
+            row_num = index + 2
+            title = self._get(row, "title", header_map)
+            column = self._get(row, "column", header_map)
+
+            if not title:
+                errors.append(f"Row {row_num}: 'title' is required")
+            if not column:
+                errors.append(f"Row {row_num}: 'column' is required")
+
+            for field in date_fields:
+                val = self._get(row, field, header_map)
+                if val and not self._DATE_RE.match(val):
+                    errors.append(f"Row {row_num}: '{field}' must be in YYYY-MM-DD format")
+
+            if len(errors) > 20:
+                errors.append("Too many validation errors — remaining rows not checked")
+                break
+
+        return ImportValidationResult(len(errors) == 0, errors)
+
+    def parse(self, payload, options=None) -> dict:
+        """Parse CSV into normalised AFT import schema."""
+        options = options or {}
+        board_name = (options.get("board_name") or "Imported Board").strip() or "Imported Board"
+        username_to_user_id = options.get("username_to_user_id") or {}
+        warnings = []
+
+        header_map, rows = self._parse_rows(payload)
+
+        # Build columns in first-appearance order, deduplicated case-insensitively
+        seen_cols = {}  # lowercase → (seq_id, original_name)
+        for row in rows:
+            col_name = self._get(row, "column", header_map)
+            if col_name and col_name.lower() not in seen_cols:
+                seen_cols[col_name.lower()] = (len(seen_cols) + 1, col_name)
+
+        columns = [
+            {"id": seq_id, "name": name, "order": seq_id - 1}
+            for seq_id, name in seen_cols.values()
+        ]
+
+        cards = []
+        checklists = []
+        card_seq = 1
+        checklist_seq = 1
+        card_order_by_col_id = {}
+        for row in rows:
+            title = self._get(row, "title", header_map)
+            col_name = self._get(row, "column", header_map)
+            if not title or not col_name:
+                continue
+
+            column_entry = seen_cols.get(col_name.lower())
+            if column_entry is None:
+                continue
+            column_id = column_entry[0]
+
+            description = self._get(row, "description", header_map) or None
+            if description and len(description) > _MAX_DESCRIPTION_LENGTH:
+                description = description[:_MAX_DESCRIPTION_LENGTH]
+
+            assignee_raw = self._get(row, "assignee", header_map)
+            assigned_to_id = None
+            if assignee_raw:
+                assigned_to_id = username_to_user_id.get(assignee_raw.lower())
+                if assigned_to_id is None:
+                    warnings.append(f"Assignee '{assignee_raw}' not found — will be skipped")
+
+            start_date = self._get(row, "start_date", header_map) or None
+            end_date = self._get(row, "end_date", header_map) or None
+
+            order_in_col = card_order_by_col_id.get(column_id, 0)
+            card_order_by_col_id[column_id] = order_in_col + 1
+
+            cards.append({
+                "id": card_seq,
+                "column_id": column_id,
+                "title": title[:255],
+                "description": description,
+                "order": order_in_col,
+                "archived": False,
+                "scheduled": False,
+                "schedule": None,
+                "done": False,
+                "start_date": start_date,
+                "end_date": end_date,
+                "assigned_to_id": assigned_to_id,
+            })
+
+            checklist_raw = self._get(row, "checklist_items", header_map)
+            if checklist_raw:
+                item_order = 0
+                for item_raw in (s.strip() for s in checklist_raw.split("|") if s.strip()):
+                    checked = item_raw.lower().endswith("[done]")
+                    item_name = item_raw[:-6].strip() if checked else item_raw
+                    if item_name:
+                        checklists.append({
+                            "id": checklist_seq,
+                            "card_id": card_seq,
+                            "name": item_name[:500],
+                            "checked": checked,
+                            "order": item_order,
+                        })
+                        checklist_seq += 1
+                        item_order += 1
+
+            card_seq += 1
+
+        return {
+            "import_format": self.FORMAT,
+            "import_format_version": "1.0",
+            "board": {"name": board_name, "description": None, "archived": False},
+            "board_settings": [],
+            "columns": columns,
+            "cards": cards,
+            "card_secondary_assignees": [],
+            "checklists": checklists,
+            "comments": [],
+            "scheduled_cards": [],
+            "warnings": warnings,
+        }
+
+
 class ImportHandlerFactory:
     """Factory for obtaining import handlers by payload metadata."""
 
@@ -496,3 +678,8 @@ class ImportHandlerFactory:
             return TrelloBoardImportHandler()
 
         return None
+
+    @staticmethod
+    def get_csv_handler():
+        """Return a handler for CSV imports (detected by file extension, not content)."""
+        return CSVBoardImportHandler()

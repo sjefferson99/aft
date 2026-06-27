@@ -555,6 +555,130 @@
   justify-content: flex-end;
 }
 
+.import-csv-options {
+  margin-bottom: 16px;
+  background: var(--surface-color, rgba(0, 0, 0, 0.03));
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.import-csv-board-name-group {
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+
+.import-csv-board-name-group label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  display: block;
+}
+
+.import-csv-board-name-group input,
+.import-csv-board-name-group select {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--background-light);
+  color: var(--text-color);
+  font-size: 13px;
+}
+
+.import-target-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.import-target-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.import-target-buttons {
+  display: flex;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.import-target-btn {
+  background: var(--background-light);
+  border: none;
+  border-right: 1px solid var(--border-color);
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-color);
+  line-height: 1.4;
+}
+
+.import-target-btn:last-child {
+  border-right: none;
+}
+
+.import-target-btn.active {
+  background: var(--primary-color);
+  color: #fff;
+}
+
+.import-conflict-strategy {
+  margin-top: 10px;
+}
+
+.import-conflict-strategy-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 6px;
+}
+
+.import-overwrite-warning {
+  margin: 8px 0;
+  padding: 7px 10px;
+  background: rgba(220, 53, 69, 0.07);
+  border: 1px solid rgba(220, 53, 69, 0.35);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-color);
+  line-height: 1.4;
+}
+
+.import-affected-cards-heading {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 8px 0 4px;
+  line-height: 1.4;
+}
+
+.import-affected-cards-list {
+  margin: 0 0 4px;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text-color);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.import-affected-cards-list li {
+  margin-bottom: 3px;
+  line-height: 1.4;
+}
+
+.import-csv-template-inline {
+  color: var(--primary-color);
+  text-decoration: none;
+  margin-left: 6px;
+}
+
+.import-csv-template-inline:hover {
+  text-decoration: underline;
+}
+
 .loading {
   text-align: center;
   padding: 40px;

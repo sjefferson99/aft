@@ -28,8 +28,10 @@ Current high-value context
   - Stop: docker compose down
   - Reset DB data dir: docker compose down; remove ./data contents; docker compose up -d --build
 - Use compose.example.yml as the GHCR deployment template.
-- Board import API at /api/boards/import enforces JSON size caps, strict format/schema validation, and relationship integrity checks before writes.
-- Imported card assignees are intentionally not mapped by user id across instances; imported cards are created by the importing user and left unassigned.
+- Board import API at /api/boards/import supports three formats: AFT native JSON, Trello JSON, and CSV (detected by file extension).
+- AFT JSON imports do not map assignees across instances (cross-instance ID collisions risk). Trello imports use an explicit member_map. CSV imports resolve assignees by username against active+approved users; unresolved usernames are skipped with a warning.
+- CSV import supports two target modes: new_board (creates a new board) and existing_board (requires target_board_id and conflict_strategy: duplicate or overwrite). A preview endpoint at POST /api/boards/import/preview shows impact without writing.
+- GET /api/boards/import/csv-template returns a downloadable template CSV; no auth required.
 - Notifications are user-scoped: each notification has a user_id, and users can only see/modify their own notifications.
 - Internal notification creators (backup, scheduler, housekeeping) create notifications for all admins by default.
 - POST /api/notifications supports for_all_users flag (admin only) to broadcast notifications to all users.

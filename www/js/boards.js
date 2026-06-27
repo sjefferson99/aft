@@ -204,12 +204,55 @@ class BoardsManager {
             <h3 id="import-board-modal-title">Import Board</h3>
             <button class="modal-close" id="import-modal-close">&times;</button>
           </div>
-          <p id="import-board-modal-description" class="visually-hidden">Import a board from an AFT or Trello JSON file. This action validates file structure before importing.</p>
+          <p id="import-board-modal-description" class="visually-hidden">Import a board from an AFT or Trello JSON file, or a CSV file. This action validates file structure before importing.</p>
           <form id="import-board-form">
             <div class="form-group">
               <label for="import-board-file">Source File</label>
-              <input type="file" id="import-board-file" name="file" accept=".json,application/json" required aria-describedby="import-format-hint">
-              <small id="import-format-hint" class="form-hint">AFT and Trello JSON exports are supported.</small>
+              <input type="file" id="import-board-file" name="file" accept=".json,.csv,application/json,text/csv" required aria-describedby="import-format-hint">
+              <small id="import-format-hint" class="form-hint">AFT and Trello JSON exports, and CSV files are supported. CSV dates must be YYYY-MM-DD. <a href="/api/boards/import/csv-template" download class="import-csv-template-inline">Download CSV template</a></small>
+            </div>
+            <div id="import-csv-options" class="import-csv-options" hidden>
+              <div class="import-format-badge">CSV Import</div>
+              <div id="import-csv-new-board-section">
+                <div class="form-group import-csv-board-name-group">
+                  <label for="import-csv-board-name">Board Name</label>
+                  <input type="text" id="import-csv-board-name" maxlength="255" placeholder="Board name" autocomplete="off">
+                </div>
+              </div>
+              <div class="import-target-toggle">
+                <span class="import-target-label">Import to:</span>
+                <div class="import-target-buttons" role="group" aria-label="Import target">
+                  <button type="button" class="import-target-btn active" id="import-target-new">New board</button>
+                  <button type="button" class="import-target-btn" id="import-target-existing">Existing board</button>
+                </div>
+              </div>
+              <div id="import-existing-board-section" hidden>
+                <div class="form-group import-csv-board-name-group">
+                  <label for="import-target-board-select">Target Board</label>
+                  <select id="import-target-board-select" aria-label="Select target board">
+                    <option value="">— select a board —</option>
+                  </select>
+                </div>
+                <div class="import-conflict-strategy" role="group" aria-labelledby="import-conflict-strategy-label">
+                  <p id="import-conflict-strategy-label" class="import-conflict-strategy-label">If an imported card matches an existing card (same column + title):</p>
+                  <div class="form-check">
+                    <input type="radio" id="import-strategy-duplicate" name="conflict_strategy" value="duplicate">
+                    <label for="import-strategy-duplicate">Duplicate — add as a new card with a numeric suffix</label>
+                  </div>
+                  <div class="form-check">
+                    <input type="radio" id="import-strategy-overwrite" name="conflict_strategy" value="overwrite">
+                    <label for="import-strategy-overwrite">Overwrite — replace the existing card's content</label>
+                  </div>
+                </div>
+                <div id="import-affected-cards-panel" hidden>
+                  <div id="import-affected-cards-warning" class="import-overwrite-warning" hidden>
+                    <strong>Matching cards will be permanently overwritten, not appended to.</strong>
+                  </div>
+                  <p id="import-affected-cards-heading" class="import-affected-cards-heading"></p>
+                  <ul id="import-affected-cards-list" class="import-affected-cards-list"></ul>
+                  <p id="import-no-affected-cards" class="import-affected-cards-heading" hidden>No existing cards match — all imported cards will be added as new.</p>
+                </div>
+              </div>
             </div>
             <div id="import-trello-options" class="import-trello-options" hidden>
               <div class="import-format-badge">Trello Export Detected</div>
@@ -284,6 +327,21 @@ class BoardsManager {
       this._pendingTrelloPayload && this.renderImportWarnings(
         this.getTrelloImportWarnings(this._pendingTrelloPayload)
       );
+    });
+
+    // CSV import option listeners
+    document.getElementById('import-target-new').addEventListener('click', () => {
+      this._setCsvTargetMode('new_board');
+    });
+    document.getElementById('import-target-existing').addEventListener('click', async () => {
+      this._setCsvTargetMode('existing_board');
+      await this._loadBoardsForCsvDropdown();
+    });
+    document.getElementById('import-target-board-select').addEventListener('change', () => {
+      this._fetchImportPreview();
+    });
+    document.querySelectorAll('input[name="conflict_strategy"]').forEach(radio => {
+      radio.addEventListener('change', () => this._fetchImportPreview());
     });
 
     // Import conflict modal handlers
@@ -827,6 +885,18 @@ class BoardsManager {
     if (memberRows) memberRows.innerHTML = '';
     const warningsPanel = document.getElementById('import-warnings-panel');
     if (warningsPanel) warningsPanel.hidden = true;
+
+    // Reset CSV-specific UI
+    const csvOptions = document.getElementById('import-csv-options');
+    if (csvOptions) csvOptions.hidden = true;
+    const boardNameInput = document.getElementById('import-csv-board-name');
+    if (boardNameInput) boardNameInput.value = '';
+    this._setCsvTargetMode('new_board');
+    const boardSelect = document.getElementById('import-target-board-select');
+    if (boardSelect) { boardSelect.innerHTML = '<option value="">— select a board —</option>'; }
+    document.querySelectorAll('input[name="conflict_strategy"]').forEach(r => { r.checked = false; });
+    const affectedPanel = document.getElementById('import-affected-cards-panel');
+    if (affectedPanel) affectedPanel.hidden = true;
   }
 
   openImportConflictModal(message) {
@@ -1069,13 +1139,31 @@ class BoardsManager {
 
   async handleImportFileChange(file) {
     const trelloOptions = document.getElementById('import-trello-options');
+    const csvOptions = document.getElementById('import-csv-options');
     const warningsPanel = document.getElementById('import-warnings-panel');
+
+    // Reset all format-specific sections
+    if (trelloOptions) trelloOptions.hidden = true;
+    if (csvOptions) csvOptions.hidden = true;
+    if (warningsPanel) warningsPanel.hidden = true;
+    const memberMapping = document.getElementById('import-member-mapping');
+    if (memberMapping) memberMapping.hidden = true;
 
     if (!file) {
       this.importFormat = null;
       this._pendingTrelloPayload = null;
-      if (trelloOptions) trelloOptions.hidden = true;
-      if (warningsPanel) warningsPanel.hidden = true;
+      return;
+    }
+
+    // Detect CSV by extension — no JSON parse needed
+    if (file.name.toLowerCase().endsWith('.csv')) {
+      this.importFormat = 'csv';
+      this._pendingTrelloPayload = null;
+      if (csvOptions) csvOptions.hidden = false;
+      const boardNameInput = document.getElementById('import-csv-board-name');
+      if (boardNameInput) {
+        boardNameInput.value = file.name.replace(/\.csv$/i, '').replace(/[_-]+/g, ' ').trim();
+      }
       return;
     }
 
@@ -1212,43 +1300,63 @@ class BoardsManager {
     const file = fileInput?.files?.[0];
 
     if (!file) {
-      this.showErrorToast('Please choose a JSON export file to import');
+      this.showErrorToast('Please choose a file to import');
       return;
     }
 
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Validating...';
 
     try {
-      const fileText = await file.text();
-      let parsedPayload = null;
-      try {
-        parsedPayload = JSON.parse(fileText);
-      } catch (error) {
-        this.showErrorToast('Import file is not valid JSON');
-        return;
-      }
-
-      const format = this.detectImportFormat(parsedPayload);
-      if (format === 'aft') {
-        const integrityError = this.validateAftImportStructure(parsedPayload);
-        if (integrityError) {
-          this.showErrorToast(`Import integrity check failed: ${integrityError}`);
-          return;
+      if (this.importFormat === 'csv') {
+        // CSV: validate form fields then submit directly (server validates content)
+        const targetMode = this._getCsvTargetMode();
+        if (targetMode === 'existing_board') {
+          const boardId = document.getElementById('import-target-board-select')?.value;
+          if (!boardId) {
+            this.showErrorToast('Please select a target board');
+            return;
+          }
+          const conflictStrategy = document.querySelector('input[name="conflict_strategy"]:checked')?.value;
+          if (!conflictStrategy) {
+            this.showErrorToast('Please choose whether to duplicate or overwrite matching cards');
+            return;
+          }
         }
-      } else if (format === 'trello') {
-        const integrityError = this.validateTrelloImportStructure(parsedPayload);
-        if (integrityError) {
-          this.showErrorToast(`Import integrity check failed: ${integrityError}`);
-          return;
-        }
+        submitBtn.textContent = 'Importing...';
+        await this.submitImportFile(file, 'append_suffix');
       } else {
-        this.showErrorToast('Unsupported file format. Please provide an AFT or Trello JSON export.');
-        return;
-      }
+        // JSON: client-side structural check before submit
+        submitBtn.textContent = 'Validating...';
+        const fileText = await file.text();
+        let parsedPayload = null;
+        try {
+          parsedPayload = JSON.parse(fileText);
+        } catch (error) {
+          this.showErrorToast('Import file is not valid JSON');
+          return;
+        }
 
-      submitBtn.textContent = 'Importing...';
-      await this.submitImportFile(file, 'cancel');
+        const format = this.detectImportFormat(parsedPayload);
+        if (format === 'aft') {
+          const integrityError = this.validateAftImportStructure(parsedPayload);
+          if (integrityError) {
+            this.showErrorToast(`Import integrity check failed: ${integrityError}`);
+            return;
+          }
+        } else if (format === 'trello') {
+          const integrityError = this.validateTrelloImportStructure(parsedPayload);
+          if (integrityError) {
+            this.showErrorToast(`Import integrity check failed: ${integrityError}`);
+            return;
+          }
+        } else {
+          this.showErrorToast('Unsupported file format. Please provide an AFT or Trello JSON export.');
+          return;
+        }
+
+        submitBtn.textContent = 'Importing...';
+        await this.submitImportFile(file, 'cancel');
+      }
     } finally {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Import Board';
@@ -1275,6 +1383,21 @@ class BoardsManager {
         }
       });
       formData.append('member_map', JSON.stringify(memberMap));
+    }
+
+    if (this.importFormat === 'csv') {
+      const targetMode = this._getCsvTargetMode();
+      formData.append('target_mode', targetMode);
+
+      if (targetMode === 'new_board') {
+        const boardName = document.getElementById('import-csv-board-name')?.value?.trim();
+        if (boardName) formData.append('board_name', boardName);
+      } else {
+        const boardId = document.getElementById('import-target-board-select')?.value;
+        if (boardId) formData.append('target_board_id', boardId);
+        const conflictStrategy = document.querySelector('input[name="conflict_strategy"]:checked')?.value;
+        if (conflictStrategy) formData.append('conflict_strategy', conflictStrategy);
+      }
     }
 
     const controller = new AbortController();
@@ -1310,8 +1433,10 @@ class BoardsManager {
     }
 
     if (!response.ok || !data?.success) {
-      const message = data?.message || `Import failed with status ${response.status}`;
-      this.showErrorToast(message);
+      const errors = Array.isArray(data?.errors) && data.errors.length > 0
+        ? data.errors
+        : [data?.message || `Import failed with status ${response.status}`];
+      this.showErrorToast(errors.join('\n'));
       return;
     }
 
@@ -1324,7 +1449,135 @@ class BoardsManager {
       window.header.loadBoardsDropdown();
     }
 
-    this.showSuccessToast(`Board imported successfully: ${data.board?.name || 'Imported board'}`, 4000);
+    if (data.import_meta?.target_mode === 'existing_board') {
+      const u = data.import_meta.updated_count ?? 0;
+      const c = data.import_meta.created_count ?? 0;
+      this.showSuccessToast(`Import complete: ${u} card(s) updated, ${c} card(s) added`, 4000);
+    } else {
+      this.showSuccessToast(`Board imported successfully: ${data.board?.name || 'Imported board'}`, 4000);
+    }
+  }
+
+  _getCsvTargetMode() {
+    const existingBtn = document.getElementById('import-target-existing');
+    return existingBtn?.classList.contains('active') ? 'existing_board' : 'new_board';
+  }
+
+  _setCsvTargetMode(mode) {
+    const newBtn = document.getElementById('import-target-new');
+    const existingBtn = document.getElementById('import-target-existing');
+    const newSection = document.getElementById('import-csv-new-board-section');
+    const existingSection = document.getElementById('import-existing-board-section');
+    const affectedPanel = document.getElementById('import-affected-cards-panel');
+
+    if (mode === 'existing_board') {
+      newBtn?.classList.remove('active');
+      existingBtn?.classList.add('active');
+      if (newSection) newSection.hidden = true;
+      if (existingSection) existingSection.hidden = false;
+    } else {
+      newBtn?.classList.add('active');
+      existingBtn?.classList.remove('active');
+      if (newSection) newSection.hidden = false;
+      if (existingSection) existingSection.hidden = true;
+      if (affectedPanel) affectedPanel.hidden = true;
+    }
+  }
+
+  async _loadBoardsForCsvDropdown() {
+    const select = document.getElementById('import-target-board-select');
+    if (!select) return;
+
+    try {
+      const response = await fetch('/api/boards?archived=false');
+      const data = response.ok ? await response.json() : null;
+      const boards = data?.boards || [];
+
+      select.innerHTML = '<option value="">— select a board —</option>';
+      for (const board of boards) {
+        const opt = document.createElement('option');
+        opt.value = String(board.id);
+        opt.textContent = String(board.name || 'Untitled Board');
+        select.appendChild(opt);
+      }
+    } catch (error) {
+      this.showErrorToast('Failed to load boards for CSV import. Please try again.');
+    }
+  }
+
+  async _fetchImportPreview() {
+    const boardId = document.getElementById('import-target-board-select')?.value;
+    const conflictStrategy = document.querySelector('input[name="conflict_strategy"]:checked')?.value;
+    const affectedPanel = document.getElementById('import-affected-cards-panel');
+    const file = document.getElementById('import-board-file')?.files?.[0];
+
+    if (!boardId || !conflictStrategy || !file) {
+      if (affectedPanel) affectedPanel.hidden = true;
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file, file.name);
+      formData.append('target_board_id', boardId);
+
+      const response = await fetch('/api/boards/import/preview', { method: 'POST', body: formData });
+      const data = await response.json();
+
+      if (!response.ok) {
+        const errors = Array.isArray(data.errors) && data.errors.length > 0
+          ? data.errors.map(e => ({ message: e }))
+          : [{ message: data.message || 'Preview failed' }];
+        this.renderImportWarnings(errors);
+        if (affectedPanel) affectedPanel.hidden = true;
+        return;
+      }
+
+      this._renderAffectedCardsPanel(data, conflictStrategy);
+
+      const warnings = (data.warnings || []).map(w => ({ message: w }));
+      this.renderImportWarnings(warnings);
+    } catch (_) {
+      if (affectedPanel) affectedPanel.hidden = true;
+    }
+  }
+
+  _renderAffectedCardsPanel(previewData, conflictStrategy) {
+    const panel = document.getElementById('import-affected-cards-panel');
+    const warning = document.getElementById('import-affected-cards-warning');
+    const heading = document.getElementById('import-affected-cards-heading');
+    const list = document.getElementById('import-affected-cards-list');
+    const noMatch = document.getElementById('import-no-affected-cards');
+    if (!panel) return;
+
+    const matched = previewData.matched_cards || [];
+
+    if (warning) warning.hidden = conflictStrategy !== 'overwrite';
+    if (list) list.innerHTML = '';
+
+    if (matched.length === 0) {
+      if (heading) heading.textContent = '';
+      if (noMatch) noMatch.hidden = false;
+    } else {
+      if (noMatch) noMatch.hidden = true;
+      if (heading) {
+        heading.textContent = conflictStrategy === 'overwrite'
+          ? `${matched.length} card(s) will be overwritten:`
+          : `${matched.length} card(s) will be duplicated with a suffix:`;
+      }
+      if (list) {
+        matched.forEach(card => {
+          const li = document.createElement('li');
+          const title = this.escapeHtml(String(card.title || ''));
+          const column = this.escapeHtml(String(card.column || ''));
+          li.innerHTML = conflictStrategy === 'overwrite'
+            ? `<strong>${title}</strong> in ${column}`
+            : `<strong>${title}</strong> → <strong>${title} (n)</strong> in ${column}`;
+          list.appendChild(li);
+        });
+      }
+    }
+    panel.hidden = false;
   }
 
   async parseJsonResponse(response) {
