@@ -1135,7 +1135,16 @@ def export_board(board_id):
 
 @board_bp.route("/api/boards/import/csv-template", methods=["GET"])
 def download_csv_import_template():
-    """Download a CSV template for board import."""
+    """Download a CSV template for board import.
+    ---
+    tags:
+      - Boards
+    produces:
+      - text/csv
+    responses:
+      200:
+        description: CSV template file download
+    """
     template = (
         "title,column,assignee,description,checklist_items,start_date,end_date\r\n"
         '"Fix login bug","In Progress","alice","Steps to reproduce here",'
@@ -1153,10 +1162,36 @@ def download_csv_import_template():
 @board_bp.route("/api/boards/import/preview", methods=["POST"])
 @require_authentication
 def preview_csv_import():
-    """Preview cards that will be affected when importing a CSV into an existing board.
-
-    Returns matched_cards (will be affected by conflict_strategy), new_cards,
-    new_columns, and warnings. No data is written.
+    """Preview cards affected by importing a CSV into an existing board.
+    ---
+    tags:
+      - Boards
+    security:
+      - session: []
+    consumes:
+      - multipart/form-data
+    parameters:
+      - name: file
+        in: formData
+        required: true
+        type: file
+        description: CSV file to preview
+      - name: target_board_id
+        in: formData
+        required: true
+        type: integer
+        description: ID of the existing board to preview against
+    responses:
+      200:
+        description: Preview result with matched_cards, new_cards, new_columns and warnings
+      400:
+        description: Invalid file, missing parameters or CSV validation failure
+      403:
+        description: Permission denied — board editor access required
+      404:
+        description: Target board not found
+      500:
+        description: Server error
     """
     db = SessionLocal()
     try:

@@ -106,6 +106,19 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Boards View Switching** - Toggle between Active Boards and Archived Boards from the header view menu
 - **Default Board Setting** - Set a default board to load on startup
 - **Board Statistics** - View counts of boards, columns, and cards
+- **Import Boards** - Import boards from AFT JSON exports, Trello JSON exports, or CSV files via the Import Board button on the boards list
+
+### 📥 Board Import
+- **AFT JSON** - Re-import any board exported from AFT, including columns, cards, checklists, comments, scheduled cards, and assignees
+- **Trello JSON** - Import Trello board exports; labels are prepended to descriptions, URL attachments are appended, checklists and dates are mapped, member mapping is supported
+- **CSV Import** - Import cards from a spreadsheet-style CSV with columns: `title`, `column`, `assignee`, `description`, `checklist_items` (pipe-separated; append `[done]` to mark checked), `start_date`, `end_date` (YYYY-MM-DD)
+  - **Download Template** - A template CSV is available from the import modal hint text before selecting a file
+  - **New Board** - Create a new board from the CSV (name defaults to the filename stem)
+  - **Existing Board** - Import into an existing board with a choice of conflict strategy:
+    - **Duplicate** - All CSV cards are added as new; cards matching an existing column + title receive a numeric suffix (e.g. `Card (2)`)
+    - **Overwrite** - Cards matching an existing column + title are replaced in place; new cards are added
+  - **Preview** - The import modal shows which cards will be affected before you confirm
+  - **Unknown assignees** - Cards with unrecognised usernames are imported without an assignee; a warning is shown
 
 ### 🌐 Public Board Sharing (Read-Only)
 - **Public Visibility Toggle** - Board owners/editors can switch a board between private and public from the board settings menu.
