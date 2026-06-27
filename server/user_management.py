@@ -119,7 +119,58 @@ def list_users():
             })
         
         return create_success_response(data={'users': users_data})
-        
+
+    finally:
+        db.close()
+
+
+@user_mgmt_bp.route('/assignable', methods=['GET'])
+def list_assignable_users():
+    """Return active approved users available for card assignment.
+
+    Requires authentication only — no admin permission needed.
+    Used by the Trello import member-mapping UI.
+    ---
+    tags:
+      - Users
+    responses:
+      200:
+        description: List of assignable users
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            users:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  username:
+                    type: string
+                  display_name:
+                    type: string
+      401:
+        description: Not authenticated
+    """
+    if not g.get('user'):
+        return create_error_response("Not authenticated", 401)
+
+    db = SessionLocal()
+    try:
+        users = (
+            db.query(User)
+            .filter(User.is_active.is_(True), User.is_approved.is_(True))
+            .order_by(User.display_name, User.username)
+            .all()
+        )
+        users_data = [
+            {"id": u.id, "username": u.username, "display_name": u.display_name or u.username}
+            for u in users
+        ]
+        return create_success_response(data={'users': users_data})
     finally:
         db.close()
 

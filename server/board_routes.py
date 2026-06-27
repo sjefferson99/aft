@@ -1200,7 +1200,7 @@ def import_board_from_export():
         handler = ImportHandlerFactory.get_handler(payload)
         if not handler:
             return create_error_response(
-                "Unsupported import format. Only AFT-formatted JSON exports are currently supported.",
+                "Unsupported import format. AFT-formatted JSON exports and Trello JSON exports are supported.",
                 400,
             )
 
@@ -1217,7 +1217,40 @@ def import_board_from_export():
                 400,
             )
 
-        import_data = handler.parse(payload)
+        include_archived_cards = (
+            request.form.get("include_archived_cards", "false").lower() == "true"
+        )
+        include_archived_lists = (
+            request.form.get("include_archived_lists", "false").lower() == "true"
+        )
+
+        # Member mapping: JSON object {trelloMemberId: aftUserId}
+        try:
+            raw_member_map = json.loads(request.form.get("member_map", "{}") or "{}")
+            if not isinstance(raw_member_map, dict):
+                raw_member_map = {}
+        except (json.JSONDecodeError, ValueError):
+            raw_member_map = {}
+        candidate_user_ids = [v for v in raw_member_map.values() if isinstance(v, int) and v > 0]
+        if candidate_user_ids:
+            valid_ids = {
+                row[0] for row in db.query(User.id)
+                .filter(User.id.in_(candidate_user_ids), User.is_active.is_(True))
+                .all()
+            }
+        else:
+            valid_ids = set()
+        member_map = {
+            k: v for k, v in raw_member_map.items()
+            if isinstance(k, str) and isinstance(v, int) and v in valid_ids
+        }
+
+        parse_options = {
+            "include_archived_cards": include_archived_cards,
+            "include_archived_lists": include_archived_lists,
+            "member_map": member_map,
+        }
+        import_data = handler.parse(payload, parse_options)
         board_data = import_data["board"]
 
         duplicate_strategy = (request.form.get("duplicate_strategy") or "cancel").strip().lower()
@@ -1345,6 +1378,28 @@ def import_board_from_export():
             db.flush()
             old_to_new_column_id[source_column_id] = new_column.id
 
+        # Pre-validate all user IDs referenced in the import data against the current DB.
+        # This prevents FK violations for AFT-to-AFT imports (where original user IDs
+        # won't exist in the target system) while allowing Trello imports with explicit
+        # member_map (which were already validated against active users above).
+        candidate_user_ids = set()
+        for card in import_data.get("cards", []):
+            uid = card.get("assigned_to_id")
+            if isinstance(uid, int) and uid > 0:
+                candidate_user_ids.add(uid)
+        for assignee in import_data.get("card_secondary_assignees", []):
+            uid = assignee.get("user_id")
+            if isinstance(uid, int) and uid > 0:
+                candidate_user_ids.add(uid)
+        if candidate_user_ids:
+            valid_import_user_ids = {
+                row[0] for row in db.query(User.id)
+                .filter(User.id.in_(list(candidate_user_ids)), User.is_active.is_(True))
+                .all()
+            }
+        else:
+            valid_import_user_ids = set()
+
         sorted_cards = sorted(
             import_data["cards"],
             key=lambda card: (
@@ -1379,10 +1434,13 @@ def import_board_from_export():
                 raw_order = 0
             card_order = raw_order if raw_order >= 0 else 0
 
-            # Preserve import attribution to the importing user, and leave assignees
-            # unassigned until explicit mapping support is available.
             created_by_id = user_id
-            assigned_to_id = None
+            source_assigned_to_id = card.get("assigned_to_id")
+            assigned_to_id = (
+                source_assigned_to_id
+                if isinstance(source_assigned_to_id, int) and source_assigned_to_id in valid_import_user_ids
+                else None
+            )
 
             new_card = Card(
                 column_id=old_to_new_column_id[source_column_id],
@@ -1395,6 +1453,8 @@ def import_board_from_export():
                 schedule=None,
                 created_by_id=created_by_id,
                 assigned_to_id=assigned_to_id,
+                start_date=parse_iso_datetime(card.get("start_date")),
+                end_date=parse_iso_datetime(card.get("end_date")),
                 updated_at=utc_now(),
             )
             db.add(new_card)
@@ -1405,6 +1465,18 @@ def import_board_from_export():
             source_schedule_id = card.get("schedule")
             if isinstance(source_schedule_id, int) and source_schedule_id > 0:
                 pending_schedule_references[new_card.id] = source_schedule_id
+
+        for assignee in import_data.get("card_secondary_assignees", []):
+            source_card_id = assignee.get("card_id")
+            assignee_user_id = assignee.get("user_id")
+            if source_card_id not in old_to_new_card_id:
+                continue
+            if not isinstance(assignee_user_id, int) or assignee_user_id not in valid_import_user_ids:
+                continue
+            db.add(CardSecondaryAssignee(
+                card_id=old_to_new_card_id[source_card_id],
+                user_id=assignee_user_id,
+            ))
 
         sorted_checklists = sorted(
             import_data["checklists"],

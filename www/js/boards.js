@@ -204,15 +204,35 @@ class BoardsManager {
             <h3 id="import-board-modal-title">Import Board</h3>
             <button class="modal-close" id="import-modal-close">&times;</button>
           </div>
-          <p id="import-board-modal-description" class="visually-hidden">Import a board from an AFT JSON file. This action validates file structure before importing.</p>
+          <p id="import-board-modal-description" class="visually-hidden">Import a board from an AFT or Trello JSON file. This action validates file structure before importing.</p>
           <form id="import-board-form">
             <div class="form-group">
               <label for="import-board-file">Source File</label>
-              <input type="file" id="import-board-file" name="file" accept=".json,application/json" required>
-              <small class="form-hint">Only AFT formatted JSON exports are supported.</small>
+              <input type="file" id="import-board-file" name="file" accept=".json,application/json" required aria-describedby="import-format-hint">
+              <small id="import-format-hint" class="form-hint">AFT and Trello JSON exports are supported.</small>
+            </div>
+            <div id="import-trello-options" class="import-trello-options" hidden>
+              <div class="import-format-badge">Trello Export Detected</div>
+              <div class="form-check">
+                <input type="checkbox" id="import-include-archived-lists">
+                <label for="import-include-archived-lists">Include archived lists</label>
+              </div>
+              <div class="form-check">
+                <input type="checkbox" id="import-include-archived-cards">
+                <label for="import-include-archived-cards">Include archived cards</label>
+              </div>
+            </div>
+            <div id="import-member-mapping" class="import-member-mapping" hidden>
+              <div class="import-format-badge">Member Mapping</div>
+              <p class="import-member-mapping-hint">Map Trello members to AFT users for card assignment. First member on a card becomes primary assignee; additional members become secondary assignees.</p>
+              <div id="import-member-mapping-rows"></div>
+            </div>
+            <div id="import-warnings-panel" class="import-warnings-panel" hidden aria-live="polite">
+              <p class="import-warnings-title">The following data cannot be fully imported:</p>
+              <ul id="import-warnings-list"></ul>
             </div>
             <div class="import-security-note">
-              Import checks file structure, relationship integrity, and security constraints before data is written. User assignees are not mapped yet and imported cards will be unassigned.
+              Import checks file structure, relationship integrity, and security constraints before data is written. Trello-specific features (labels are converted to description tags, colours, voting, and location data) are not imported.
             </div>
             <div class="modal-actions">
               <button type="button" class="btn btn-secondary" id="import-cancel-btn">Cancel</button>
@@ -252,6 +272,19 @@ class BoardsManager {
     document.getElementById('import-modal-close').addEventListener('click', () => this.closeImportModal());
     document.getElementById('import-cancel-btn').addEventListener('click', () => this.closeImportModal());
     document.getElementById('import-board-form').addEventListener('submit', (e) => this.handleImportBoard(e));
+    document.getElementById('import-board-file').addEventListener('change', (e) => {
+      this.handleImportFileChange(e.target.files?.[0]);
+    });
+    document.getElementById('import-include-archived-cards').addEventListener('change', () => {
+      this._pendingTrelloPayload && this.renderImportWarnings(
+        this.getTrelloImportWarnings(this._pendingTrelloPayload)
+      );
+    });
+    document.getElementById('import-include-archived-lists').addEventListener('change', () => {
+      this._pendingTrelloPayload && this.renderImportWarnings(
+        this.getTrelloImportWarnings(this._pendingTrelloPayload)
+      );
+    });
 
     // Import conflict modal handlers
     document.getElementById('import-conflict-close').addEventListener('click', () => this.closeImportConflictModal());
@@ -778,12 +811,22 @@ class BoardsManager {
   closeImportModal() {
     this.closeModalDialog('import-board-modal');
     this.pendingImportFile = null;
+    this.importFormat = null;
+    this._pendingTrelloPayload = null;
     document.getElementById('import-board-form').reset();
     const submitBtn = document.getElementById('import-submit-btn');
     if (submitBtn) {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Import Board';
     }
+    const trelloOptions = document.getElementById('import-trello-options');
+    if (trelloOptions) trelloOptions.hidden = true;
+    const memberMapping = document.getElementById('import-member-mapping');
+    if (memberMapping) memberMapping.hidden = true;
+    const memberRows = document.getElementById('import-member-mapping-rows');
+    if (memberRows) memberRows.innerHTML = '';
+    const warningsPanel = document.getElementById('import-warnings-panel');
+    if (warningsPanel) warningsPanel.hidden = true;
   }
 
   openImportConflictModal(message) {
@@ -909,6 +952,224 @@ class BoardsManager {
     }
   }
 
+  detectImportFormat(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return 'unknown';
+    }
+    if (payload?.export?.format === 'aft-board') {
+      return 'aft';
+    }
+    if (Array.isArray(payload?.lists) && Array.isArray(payload?.cards) && typeof payload?.name === 'string') {
+      return 'trello';
+    }
+    return 'unknown';
+  }
+
+  validateTrelloImportStructure(payload) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return 'Import file must contain a JSON object';
+    }
+    if (!payload.name || typeof payload.name !== 'string' || !payload.name.trim()) {
+      return 'Board name is required in Trello export';
+    }
+    if (!Array.isArray(payload.lists)) {
+      return 'Missing required key: lists';
+    }
+    if (!Array.isArray(payload.cards)) {
+      return 'Missing required key: cards';
+    }
+    const allListIds = new Set(
+      payload.lists.filter(l => l && typeof l === 'object').map(l => l.id)
+    );
+    for (const card of payload.cards) {
+      if (!card || typeof card !== 'object') continue;
+      if (!card.name || typeof card.name !== 'string' || !card.name.trim()) {
+        return `Card is missing a name`;
+      }
+      if (!card.idList || !allListIds.has(card.idList)) {
+        return `Card "${card.name}" references an unknown list`;
+      }
+    }
+    return null;
+  }
+
+  getTrelloImportWarnings(payload) {
+    if (!payload) return [];
+    const warnings = [];
+    const cards = Array.isArray(payload.cards) ? payload.cards : [];
+
+    const includeArchivedCards = document.getElementById('import-include-archived-cards')?.checked ?? false;
+    const includeArchivedLists = document.getElementById('import-include-archived-lists')?.checked ?? false;
+    const lists = Array.isArray(payload.lists) ? payload.lists : [];
+
+    const archivedListCount = lists.filter(l => l?.closed).length;
+    const archivedCardCount = cards.filter(c => c?.closed).length;
+
+    if (!includeArchivedLists && archivedListCount > 0) {
+      warnings.push({ message: `${archivedListCount} archived list(s) will be skipped (enable "Include archived lists" to import them).` });
+    }
+    if (!includeArchivedCards && archivedCardCount > 0) {
+      warnings.push({ message: `${archivedCardCount} archived card(s) will be skipped (enable "Include archived cards" to import them).` });
+    }
+
+    const labelledCards = cards.filter(c => Array.isArray(c?.idLabels) && c.idLabels.length > 0);
+    if (labelledCards.length > 0) {
+      warnings.push({ message: `${labelledCards.length} card(s) have labels — label names will be prepended to their description as [LabelName] tags.` });
+    }
+
+    const fileAttachmentCards = cards.filter(c =>
+      Array.isArray(c?.attachments) && c.attachments.some(a => a?.isUpload)
+    );
+    if (fileAttachmentCards.length > 0) {
+      const names = fileAttachmentCards.map(c => `"${c.name}"`).join(', ');
+      warnings.push({ message: `File attachments will be dropped on ${fileAttachmentCards.length} card(s): ${names}.` });
+    }
+
+    const urlAttachmentCards = cards.filter(c =>
+      Array.isArray(c?.attachments) && c.attachments.some(a => !a?.isUpload && a?.url)
+    );
+    if (urlAttachmentCards.length > 0) {
+      warnings.push({ message: `URL attachments on ${urlAttachmentCards.length} card(s) will be appended to their card description.` });
+    }
+
+    const actions = Array.isArray(payload.actions) ? payload.actions : [];
+    const commentActionCardIds = new Set(
+      actions
+        .filter(a => a?.type === 'commentCard')
+        .map(a => a?.data?.card?.id)
+        .filter(Boolean)
+    );
+    const cardsWithMissingComments = cards.filter(c =>
+      (c?.badges?.comments > 0) && !commentActionCardIds.has(c.id)
+    );
+    if (cardsWithMissingComments.length > 0) {
+      warnings.push({ message: `${cardsWithMissingComments.length} card(s) have comments that are not present in this export file. This can happen when Trello's export action limit is reached — comments on these cards will not be imported.` });
+    }
+
+    return warnings;
+  }
+
+  renderImportWarnings(warnings) {
+    const panel = document.getElementById('import-warnings-panel');
+    const list = document.getElementById('import-warnings-list');
+    if (!panel || !list) return;
+
+    list.innerHTML = '';
+    if (!warnings || warnings.length === 0) {
+      panel.hidden = true;
+      return;
+    }
+    for (const w of warnings) {
+      const li = document.createElement('li');
+      li.textContent = w.message;
+      list.appendChild(li);
+    }
+    panel.hidden = false;
+  }
+
+  async handleImportFileChange(file) {
+    const trelloOptions = document.getElementById('import-trello-options');
+    const warningsPanel = document.getElementById('import-warnings-panel');
+
+    if (!file) {
+      this.importFormat = null;
+      this._pendingTrelloPayload = null;
+      if (trelloOptions) trelloOptions.hidden = true;
+      if (warningsPanel) warningsPanel.hidden = true;
+      return;
+    }
+
+    let parsed = null;
+    try {
+      const text = await file.text();
+      parsed = JSON.parse(text);
+    } catch (_) {
+      // Invalid JSON — format error will surface on submit
+      this.importFormat = 'unknown';
+      this._pendingTrelloPayload = null;
+      if (trelloOptions) trelloOptions.hidden = true;
+      if (warningsPanel) warningsPanel.hidden = true;
+      return;
+    }
+
+    const format = this.detectImportFormat(parsed);
+    this.importFormat = format;
+
+    if (format === 'trello') {
+      this._pendingTrelloPayload = parsed;
+      if (trelloOptions) trelloOptions.hidden = false;
+      this.renderImportWarnings(this.getTrelloImportWarnings(parsed));
+      await this.renderMemberMapping(parsed);
+    } else {
+      this._pendingTrelloPayload = null;
+      if (trelloOptions) trelloOptions.hidden = true;
+      const memberMapping = document.getElementById('import-member-mapping');
+      if (memberMapping) memberMapping.hidden = true;
+      if (warningsPanel) warningsPanel.hidden = true;
+    }
+  }
+
+  async renderMemberMapping(payload) {
+    const section = document.getElementById('import-member-mapping');
+    const rows = document.getElementById('import-member-mapping-rows');
+    if (!section || !rows) return;
+
+    const members = Array.isArray(payload?.members) ? payload.members.filter(m => m?.id) : [];
+    if (members.length === 0) {
+      section.hidden = true;
+      rows.innerHTML = '';
+      return;
+    }
+
+    if (!this._aftUsers) {
+      try {
+        const resp = await fetch('/api/users/assignable');
+        const data = resp.ok ? await resp.json() : null;
+        this._aftUsers = data?.users || [];
+      } catch (_) {
+        this._aftUsers = [];
+      }
+    }
+
+    rows.innerHTML = '';
+    for (const member of members) {
+      const label = member.fullName
+        ? `${member.fullName} (@${member.username || member.id})`
+        : `@${member.username || member.id}`;
+
+      const row = document.createElement('div');
+      row.className = 'member-mapping-row';
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'member-mapping-name';
+      nameSpan.textContent = label;
+
+      const select = document.createElement('select');
+      select.className = 'member-mapping-select';
+      select.dataset.trelloId = member.id;
+      select.setAttribute('aria-label', `Map ${label} to AFT user`);
+
+      const skipOpt = document.createElement('option');
+      skipOpt.value = '';
+      skipOpt.textContent = '— skip —';
+      select.appendChild(skipOpt);
+
+      for (const user of this._aftUsers) {
+        const opt = document.createElement('option');
+        opt.value = user.id;
+        opt.textContent = user.display_name !== user.username
+          ? `${user.display_name} (@${user.username})`
+          : `@${user.username}`;
+        select.appendChild(opt);
+      }
+
+      row.appendChild(nameSpan);
+      row.appendChild(select);
+      rows.appendChild(row);
+    }
+    section.hidden = false;
+  }
+
   validateAftImportStructure(payload) {
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
       return 'Import file must contain a JSON object';
@@ -968,9 +1229,21 @@ class BoardsManager {
         return;
       }
 
-      const integrityError = this.validateAftImportStructure(parsedPayload);
-      if (integrityError) {
-        this.showErrorToast(`Import integrity check failed: ${integrityError}`);
+      const format = this.detectImportFormat(parsedPayload);
+      if (format === 'aft') {
+        const integrityError = this.validateAftImportStructure(parsedPayload);
+        if (integrityError) {
+          this.showErrorToast(`Import integrity check failed: ${integrityError}`);
+          return;
+        }
+      } else if (format === 'trello') {
+        const integrityError = this.validateTrelloImportStructure(parsedPayload);
+        if (integrityError) {
+          this.showErrorToast(`Import integrity check failed: ${integrityError}`);
+          return;
+        }
+      } else {
+        this.showErrorToast('Unsupported file format. Please provide an AFT or Trello JSON export.');
         return;
       }
 
@@ -986,6 +1259,23 @@ class BoardsManager {
     const formData = new FormData();
     formData.append('file', file, file.name);
     formData.append('duplicate_strategy', duplicateStrategy);
+
+    if (this.importFormat === 'trello') {
+      const inclCards = document.getElementById('import-include-archived-cards')?.checked ?? false;
+      const inclLists = document.getElementById('import-include-archived-lists')?.checked ?? false;
+      formData.append('include_archived_cards', inclCards ? 'true' : 'false');
+      formData.append('include_archived_lists', inclLists ? 'true' : 'false');
+
+      const memberMap = {};
+      document.querySelectorAll('.member-mapping-select').forEach(sel => {
+        const trelloId = sel.dataset.trelloId;
+        const aftId = sel.value ? parseInt(sel.value, 10) : null;
+        if (trelloId && aftId && aftId > 0) {
+          memberMap[trelloId] = aftId;
+        }
+      });
+      formData.append('member_map', JSON.stringify(memberMap));
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);

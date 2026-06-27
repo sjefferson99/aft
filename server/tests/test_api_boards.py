@@ -3,6 +3,7 @@ import json
 import uuid
 
 import pytest
+import requests
 
 
 def get_current_user(api_client, session):
@@ -888,3 +889,586 @@ class TestBoardColumnsAPI:
         columns_data = columns_after.json()['columns']
         column_ids_after = [col['id'] for col in columns_data]
         assert column_id not in column_ids_after, f"Column {column_id} still exists in board after delete"
+
+def build_minimal_trello_payload(board_name="Trello Imported Board"):
+    """Build a minimal valid Trello board export payload for API tests."""
+    return {
+        "id": "trello_board_1",
+        "name": board_name,
+        "desc": "Trello board description",
+        "closed": False,
+        "lists": [
+            {"id": "list_open_1", "name": "To Do", "pos": 16384, "closed": False},
+            {"id": "list_archived_1", "name": "Old List", "pos": 32768, "closed": True},
+        ],
+        "cards": [
+            {
+                "id": "card_1",
+                "idList": "list_open_1",
+                "name": "Open Card",
+                "desc": "Card description",
+                "closed": False,
+                "pos": 16384,
+                "idLabels": [],
+                "attachments": [],
+                "idChecklists": [],
+                "due": None,
+                "start": None,
+                "dueComplete": False,
+            },
+            {
+                "id": "card_archived_1",
+                "idList": "list_open_1",
+                "name": "Archived Card",
+                "desc": "",
+                "closed": True,
+                "pos": 32768,
+                "idLabels": [],
+                "attachments": [],
+                "idChecklists": [],
+                "due": None,
+                "start": None,
+                "dueComplete": False,
+            },
+        ],
+        "checklists": [],
+        "labels": [],
+        "labelNames": {},
+        "actions": [],
+        "members": [],
+        "memberships": [],
+    }
+
+
+def _board_cards_flat(session, api_client, board_id, archived="false"):
+    """Return a flat list of all cards from a board's columns response."""
+    resp = session.get(f"{api_client}/api/boards/{board_id}/cards?archived={archived}")
+    assert resp.status_code == 200, resp.text
+    return [card for col in resp.json()["board"]["columns"] for card in col["cards"]]
+
+
+@pytest.mark.api
+class TestTrelloBoardImport:
+    """Test cases for Trello board import via /api/boards/import."""
+
+    def test_trello_import_success(self, api_client, authenticated_session):
+        """Basic Trello import creates board, column, and open card."""
+        board_name = f"Trello Import {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        data = response.json()
+        assert data["success"] is True
+        assert data["board"]["name"] == board_name
+        assert data["import_meta"]["import_format"] == "trello"
+
+        board_id = data["board"]["id"]
+        columns_resp = authenticated_session.get(f"{api_client}/api/boards/{board_id}/columns")
+        assert columns_resp.status_code == 200
+        columns = columns_resp.json()["columns"]
+        assert len(columns) == 1
+        assert columns[0]["name"] == "To Do"
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card_names = [c["title"] for c in cards]
+        assert "Open Card" in card_names
+        assert "Archived Card" not in card_names
+
+    def test_trello_import_archived_cards_excluded_by_default(self, api_client, authenticated_session):
+        """Archived cards are excluded unless explicitly requested."""
+        board_name = f"Trello Archived Cards {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel", "include_archived_cards": "false"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id, archived="both")
+        card_titles = [c["title"] for c in cards]
+        assert "Archived Card" not in card_titles
+
+    def test_trello_import_archived_cards_included_when_requested(self, api_client, authenticated_session):
+        """Archived cards are imported when include_archived_cards=true."""
+        board_name = f"Trello Incl Archived {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel", "include_archived_cards": "true"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id, archived="both")
+        card_titles = [c["title"] for c in cards]
+        assert "Archived Card" in card_titles
+
+    def test_trello_import_archived_lists_excluded_by_default(self, api_client, authenticated_session):
+        """Archived lists and their cards are excluded by default."""
+        board_name = f"Trello Archived Lists {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["cards"].append({
+            "id": "card_on_archived",
+            "idList": "list_archived_1",
+            "name": "Card On Archived List",
+            "desc": "",
+            "closed": False,
+            "pos": 16384,
+            "idLabels": [],
+            "attachments": [],
+            "idChecklists": [],
+            "due": None,
+            "start": None,
+            "dueComplete": False,
+        })
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        columns_resp = authenticated_session.get(f"{api_client}/api/boards/{board_id}/columns")
+        col_names = [c["name"] for c in columns_resp.json()["columns"]]
+        assert "Old List" not in col_names
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card_titles = [c["title"] for c in cards]
+        assert "Card On Archived List" not in card_titles
+
+    def test_trello_import_archived_lists_included_when_requested(self, api_client, authenticated_session):
+        """Archived lists are imported when include_archived_lists=true."""
+        board_name = f"Trello Incl Archived Lists {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel", "include_archived_lists": "true"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        columns_resp = authenticated_session.get(f"{api_client}/api/boards/{board_id}/columns")
+        col_names = [c["name"] for c in columns_resp.json()["columns"]]
+        assert "Old List" in col_names
+
+    def test_trello_import_checklist_single_group_no_prefix(self, api_client, authenticated_session):
+        """Single checklist per card: items imported flat without group prefix."""
+        board_name = f"Trello Checklist Single {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["checklists"] = [
+            {
+                "id": "cl_1",
+                "idCard": "card_1",
+                "name": "My Checklist",
+                "pos": 16384,
+                "checkItems": [
+                    {"id": "ci_1", "name": "Item A", "state": "incomplete", "pos": 16384},
+                    {"id": "ci_2", "name": "Item B", "state": "complete", "pos": 32768},
+                ],
+            }
+        ]
+        payload["cards"][0]["idChecklists"] = ["cl_1"]
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        item_names = [i["name"] for i in card["checklist_items"]]
+        assert "Item A" in item_names
+        assert "Item B" in item_names
+        assert not any("My Checklist:" in n for n in item_names)
+
+    def test_trello_import_checklist_multiple_groups_prefixed(self, api_client, authenticated_session):
+        """Multiple checklists per card: items prefixed with group name."""
+        board_name = f"Trello Checklist Multi {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["checklists"] = [
+            {
+                "id": "cl_1",
+                "idCard": "card_1",
+                "name": "Shopping",
+                "pos": 16384,
+                "checkItems": [
+                    {"id": "ci_1", "name": "Bread", "state": "incomplete", "pos": 16384},
+                ],
+            },
+            {
+                "id": "cl_2",
+                "idCard": "card_1",
+                "name": "Tasks",
+                "pos": 32768,
+                "checkItems": [
+                    {"id": "ci_2", "name": "Call doctor", "state": "incomplete", "pos": 16384},
+                ],
+            },
+        ]
+        payload["cards"][0]["idChecklists"] = ["cl_1", "cl_2"]
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        item_names = [i["name"] for i in card["checklist_items"]]
+        assert "Shopping: Bread" in item_names
+        assert "Tasks: Call doctor" in item_names
+
+    def test_trello_import_labels_prepended_to_description(self, api_client, authenticated_session):
+        """Card labels are prepended as [LabelName] tags in the description."""
+        board_name = f"Trello Labels {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["labels"] = [
+            {"id": "lbl_1", "name": "Urgent", "color": "red"},
+            {"id": "lbl_2", "name": "", "color": "blue"},
+        ]
+        payload["cards"][0]["idLabels"] = ["lbl_1", "lbl_2"]
+        payload["cards"][0]["desc"] = "Original description"
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        assert "[Urgent]" in card["description"]
+        assert "[blue]" in card["description"]
+        assert "Original description" in card["description"]
+
+    def test_trello_import_url_attachments_appended_to_description(self, api_client, authenticated_session):
+        """URL attachments are appended to card description."""
+        board_name = f"Trello URL Attach {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["cards"][0]["attachments"] = [
+            {"id": "att_1", "name": "Example", "url": "https://example.com", "isUpload": False},
+        ]
+        payload["cards"][0]["desc"] = "Base description"
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        assert "https://example.com" in card["description"]
+        assert "Base description" in card["description"]
+
+    def test_trello_import_file_attachments_dropped_silently(self, api_client, authenticated_session):
+        """File attachments are silently dropped; import still succeeds."""
+        board_name = f"Trello File Attach {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["cards"][0]["attachments"] = [
+            {
+                "id": "att_1",
+                "name": "document.pdf",
+                "url": "https://trello.com/download/document.pdf",
+                "isUpload": True,
+            },
+        ]
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+
+    def test_trello_import_comments_from_actions(self, api_client, authenticated_session):
+        """Comments from commentCard actions are imported."""
+        board_name = f"Trello Comments {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["actions"] = [
+            {
+                "type": "commentCard",
+                "date": "2025-01-01T10:00:00.000Z",
+                "data": {"card": {"id": "card_1"}, "text": "First comment"},
+            },
+            {
+                "type": "commentCard",
+                "date": "2025-01-02T10:00:00.000Z",
+                "data": {"card": {"id": "card_1"}, "text": "Second comment"},
+            },
+        ]
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        comment_texts = [c["comment"] for c in card["comments"]]
+        assert "First comment" in comment_texts
+        assert "Second comment" in comment_texts
+
+    def test_trello_import_due_date_mapped_to_end_date(self, api_client, authenticated_session):
+        """Trello due date is mapped to card end_date."""
+        board_name = f"Trello Due Date {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["cards"][0]["due"] = "2025-06-15T16:00:00.000Z"
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card_id = next(c["id"] for c in cards if c["title"] == "Open Card")
+        card_resp = authenticated_session.get(f"{api_client}/api/cards/{card_id}")
+        assert card_resp.status_code == 200
+        card = card_resp.json()["card"]
+        assert card.get("end_date") is not None
+        assert "2025-06-15" in card["end_date"]
+
+    def test_trello_import_start_date_mapped(self, api_client, authenticated_session):
+        """Trello start date is mapped to card start_date."""
+        board_name = f"Trello Start Date {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["cards"][0]["start"] = "2025-06-10T08:00:00.000Z"
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card_id = next(c["id"] for c in cards if c["title"] == "Open Card")
+        card_resp = authenticated_session.get(f"{api_client}/api/cards/{card_id}")
+        assert card_resp.status_code == 200
+        card = card_resp.json()["card"]
+        assert card.get("start_date") is not None
+        assert "2025-06-10" in card["start_date"]
+
+    def test_trello_import_due_complete_mapped_to_done(self, api_client, authenticated_session):
+        """Trello dueComplete=true maps to card done=true."""
+        board_name = f"Trello Due Complete {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["cards"][0]["dueComplete"] = True
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        assert card["done"] is True
+
+    def test_trello_import_duplicate_name_conflict(self, api_client, authenticated_session):
+        """Duplicate board name returns 409 and suffix retry succeeds."""
+        board_name = f"Trello Duplicate {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+
+        first = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert first.status_code == 201, first.text
+
+        conflict = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["requires_confirmation"] is True
+
+        retry = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "append_suffix"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert retry.status_code == 201, retry.text
+        assert "(imported)" in retry.json()["board"]["name"]
+
+    def test_trello_import_invalid_structure(self, api_client, authenticated_session):
+        """Import of invalid Trello JSON returns 400."""
+        payload = {"name": "Board", "lists": "not-a-list", "cards": []}
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 400
+
+    def test_trello_import_permission_denied(self, api_client, authenticated_session, second_user_session):
+        """Import is rejected for a user without the board_creator role."""
+        second_user = get_current_user(api_client, second_user_session)
+
+        roles_response = authenticated_session.get(f"{api_client}/api/roles")
+        assert roles_response.status_code == 200
+        board_creator_role = next(
+            role for role in roles_response.json()["roles"] if role["name"] == "board_creator"
+        )
+
+        remove_resp = authenticated_session.delete(
+            f"{api_client}/api/users/{second_user['id']}/roles/{board_creator_role['id']}"
+        )
+        assert remove_resp.status_code == 200
+
+        payload = build_minimal_trello_payload("Permission Denied Board")
+
+        response = second_user_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 403
+
+    def test_trello_import_member_mapping_primary_assignee(self, api_client, authenticated_session, second_user_session):
+        """A mapped Trello member becomes the primary assignee on imported cards."""
+        second_user = get_current_user(api_client, second_user_session)
+
+        board_name = f"Trello Member Primary {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["members"] = [{"id": "trello_member_1", "username": "tuser", "fullName": "T User"}]
+        payload["cards"][0]["idMembers"] = ["trello_member_1"]
+
+        member_map = json.dumps({"trello_member_1": second_user["id"]})
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel", "member_map": member_map},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        assert card["assigned_to"] is not None
+        assert card["assigned_to"]["id"] == second_user["id"]
+
+    def test_trello_import_member_mapping_secondary_assignees(self, api_client, authenticated_session, second_user_session):
+        """Additional mapped members become secondary assignees."""
+        admin_user = get_current_user(api_client, authenticated_session)
+        second_user = get_current_user(api_client, second_user_session)
+
+        board_name = f"Trello Member Secondary {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["members"] = [
+            {"id": "tm_1", "username": "tuser1", "fullName": "T User 1"},
+            {"id": "tm_2", "username": "tuser2", "fullName": "T User 2"},
+        ]
+        payload["cards"][0]["idMembers"] = ["tm_1", "tm_2"]
+
+        member_map = json.dumps({"tm_1": second_user["id"], "tm_2": admin_user["id"]})
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel", "member_map": member_map},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        assert card["assigned_to"]["id"] == second_user["id"]
+
+        assignees_resp = authenticated_session.get(f"{api_client}/api/cards/{card['id']}/assignees")
+        assert assignees_resp.status_code == 200
+        secondary_ids = {u["id"] for u in assignees_resp.json().get("secondary_assignees", [])}
+        assert admin_user["id"] in secondary_ids
+
+    def test_trello_import_member_not_in_map_left_unassigned(self, api_client, authenticated_session):
+        """Cards whose Trello members have no mapping are imported unassigned."""
+        board_name = f"Trello Member Unmapped {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["members"] = [{"id": "tm_unknown", "username": "nobody", "fullName": "Nobody"}]
+        payload["cards"][0]["idMembers"] = ["tm_unknown"]
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel", "member_map": "{}"},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        assert card["assigned_to"] is None
+
+    def test_trello_import_member_map_invalid_user_id_ignored(self, api_client, authenticated_session):
+        """A member_map entry pointing to a non-existent user ID is silently ignored."""
+        board_name = f"Trello Member Invalid {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_trello_payload(board_name)
+        payload["members"] = [{"id": "tm_1", "username": "tuser", "fullName": "T User"}]
+        payload["cards"][0]["idMembers"] = ["tm_1"]
+
+        member_map = json.dumps({"tm_1": 999999})
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel", "member_map": member_map},
+            files={"file": ("trello.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+        board_id = response.json()["board"]["id"]
+
+        cards = _board_cards_flat(authenticated_session, api_client, board_id)
+        card = next(c for c in cards if c["title"] == "Open Card")
+        assert card["assigned_to"] is None
+
+    def test_assignable_users_endpoint_requires_auth(self, api_client):
+        """GET /api/users/assignable returns 401 without authentication."""
+        resp = requests.get(f"{api_client}/api/users/assignable")
+        assert resp.status_code == 401
+
+    def test_assignable_users_endpoint_returns_users(self, api_client, authenticated_session):
+        """GET /api/users/assignable returns the active user list for authenticated users."""
+        resp = authenticated_session.get(f"{api_client}/api/users/assignable")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert isinstance(data["users"], list)
+        assert len(data["users"]) > 0
+        first = data["users"][0]
+        assert "id" in first and "username" in first and "display_name" in first
