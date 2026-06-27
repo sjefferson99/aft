@@ -16,6 +16,7 @@ Before submitting any code contribution, **verify ALL items** are complete:
 - [ ] **Accessibility** - UI changes include ARIA attributes, keyboard navigation, screen reader support (see [Accessibility Requirements](#accessibility-requirements))
 - [ ] **Security** - Input validation, length limits, no error leaking (see [Security Guidelines](#security-guidelines))
 - [ ] **Database Changes** - Migration created, schema validation updated (see [Database Changes](#database-changes))
+- [ ] **Import/Export Compatibility** — If adding or changing a card or board field, check whether the native AFT export (`board_routes.py` export endpoint) and import loop, and any active import handlers (`TrelloBoardImportHandler` in `server/board_import_handlers.py`, etc.), need updating. See [trello_import_feature_backlog.md](./trello_import_feature_backlog.md) for tracked gaps.
 - [ ] **Documentation** - README/docs updated if behaviour changed
 - [ ] **Agent Context Updated** - If workflow/security/testing behaviour changed, update [AGENT_CONTEXT.md](./AGENT_CONTEXT.md)
 - [ ] **All Tests Pass** - Run `pytest -v` with fresh database and verify all tests pass
@@ -67,6 +68,10 @@ Use this section to keep documentation tidy and predictable for both humans and 
 - Use [AGENT_CONTEXT.md](./AGENT_CONTEXT.md) for agent-oriented startup context and repeatable operational notes.
 - Use human-facing docs (for example README, TESTING, SECURITY review docs, feature docs) for broader project documentation and reference material.
 - If guidance is useful to both humans and agents, keep it in normal project docs and optionally summarize it in [AGENT_CONTEXT.md](./AGENT_CONTEXT.md).
+
+### Feature Backlog References
+
+- [trello_import_feature_backlog.md](./trello_import_feature_backlog.md) — Tracks two things: (1) Trello-specific features dropped on import that should be revisited when AFT gains the equivalent capability (labels, file attachments, card covers, etc.); (2) existing AFT features not yet covered by the native `aft-board` export/import format (card start/end dates, assignee mapping, board visibility). When implementing any import-adjacent feature, check this file first.
 
 ### New Agent Session Setup
 

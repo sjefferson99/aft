@@ -46,7 +46,7 @@ from utils import (
     sanitize_string,
     validate_string_length,
 )
-from board_import_handlers import ImportHandlerFactory
+from board_import_handlers import ImportHandlerFactory, TrelloBoardImportHandler
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
 from security_validators import validate_json_import_payload_size
 from settings_schema import get_user_default_working_style
@@ -1200,7 +1200,7 @@ def import_board_from_export():
         handler = ImportHandlerFactory.get_handler(payload)
         if not handler:
             return create_error_response(
-                "Unsupported import format. Only AFT-formatted JSON exports are currently supported.",
+                "Unsupported import format. AFT-formatted JSON exports and Trello JSON exports are supported.",
                 400,
             )
 
@@ -1217,7 +1217,44 @@ def import_board_from_export():
                 400,
             )
 
-        import_data = handler.parse(payload)
+        include_archived_cards = (
+            request.form.get("include_archived_cards", "false").lower() == "true"
+        )
+        include_archived_lists = (
+            request.form.get("include_archived_lists", "false").lower() == "true"
+        )
+
+        # Member mapping: JSON object {trelloMemberId: aftUserId}
+        try:
+            raw_member_map = json.loads(request.form.get("member_map", "{}") or "{}")
+            if not isinstance(raw_member_map, dict):
+                raw_member_map = {}
+        except (json.JSONDecodeError, ValueError):
+            raw_member_map = {}
+        candidate_user_ids = [v for v in raw_member_map.values() if isinstance(v, int) and v > 0]
+        if candidate_user_ids:
+            valid_ids = {
+                row[0] for row in db.query(User.id)
+                .filter(
+                    User.id.in_(candidate_user_ids),
+                    User.is_active.is_(True),
+                    User.is_approved.is_(True),
+                )
+                .all()
+            }
+        else:
+            valid_ids = set()
+        member_map = {
+            k: v for k, v in raw_member_map.items()
+            if isinstance(k, str) and isinstance(v, int) and v in valid_ids
+        }
+
+        parse_options = {
+            "include_archived_cards": include_archived_cards,
+            "include_archived_lists": include_archived_lists,
+            "member_map": member_map,
+        }
+        import_data = handler.parse(payload, parse_options)
         board_data = import_data["board"]
 
         duplicate_strategy = (request.form.get("duplicate_strategy") or "cancel").strip().lower()
@@ -1265,18 +1302,6 @@ def import_board_from_export():
             allow_none=True,
         )
 
-        # User identity differs between instances. For safety, assignee mapping is
-        # intentionally disabled until explicit user-mapping support is added.
-        ignored_primary_assignees_count = sum(
-            1
-            for card in import_data["cards"]
-            if isinstance(card.get("assigned_to_id"), int) and card.get("assigned_to_id") > 0
-        )
-        ignored_secondary_assignees_count = sum(
-            1
-            for assignee in import_data["card_secondary_assignees"]
-            if isinstance(assignee.get("user_id"), int) and assignee.get("user_id") > 0
-        )
 
         new_board = Board(
             name=resolved_board_name,
@@ -1345,6 +1370,28 @@ def import_board_from_export():
             db.flush()
             old_to_new_column_id[source_column_id] = new_column.id
 
+        # AFT-to-AFT imports must never apply source-instance user IDs: cross-instance
+        # ID collisions would silently assign cards to unrelated users. Only Trello imports
+        # use explicit member_map (already validated against active+approved users above),
+        # so assignee IDs are trusted only for that format.
+        is_trello_import = import_data.get("import_format") == TrelloBoardImportHandler.FORMAT
+        valid_import_user_ids = valid_ids if is_trello_import else set()
+
+        ignored_primary_assignees_count = sum(
+            1
+            for card in import_data["cards"]
+            if isinstance(card.get("assigned_to_id"), int)
+            and card.get("assigned_to_id") > 0
+            and card.get("assigned_to_id") not in valid_import_user_ids
+        )
+        ignored_secondary_assignees_count = sum(
+            1
+            for assignee in import_data["card_secondary_assignees"]
+            if isinstance(assignee.get("user_id"), int)
+            and assignee.get("user_id") > 0
+            and assignee.get("user_id") not in valid_import_user_ids
+        )
+
         sorted_cards = sorted(
             import_data["cards"],
             key=lambda card: (
@@ -1379,10 +1426,13 @@ def import_board_from_export():
                 raw_order = 0
             card_order = raw_order if raw_order >= 0 else 0
 
-            # Preserve import attribution to the importing user, and leave assignees
-            # unassigned until explicit mapping support is available.
             created_by_id = user_id
-            assigned_to_id = None
+            source_assigned_to_id = card.get("assigned_to_id")
+            assigned_to_id = (
+                source_assigned_to_id
+                if isinstance(source_assigned_to_id, int) and source_assigned_to_id in valid_import_user_ids
+                else None
+            )
 
             new_card = Card(
                 column_id=old_to_new_column_id[source_column_id],
@@ -1395,6 +1445,8 @@ def import_board_from_export():
                 schedule=None,
                 created_by_id=created_by_id,
                 assigned_to_id=assigned_to_id,
+                start_date=parse_iso_datetime(card.get("start_date")),
+                end_date=parse_iso_datetime(card.get("end_date")),
                 updated_at=utc_now(),
             )
             db.add(new_card)
@@ -1405,6 +1457,18 @@ def import_board_from_export():
             source_schedule_id = card.get("schedule")
             if isinstance(source_schedule_id, int) and source_schedule_id > 0:
                 pending_schedule_references[new_card.id] = source_schedule_id
+
+        for assignee in import_data.get("card_secondary_assignees", []):
+            source_card_id = assignee.get("card_id")
+            assignee_user_id = assignee.get("user_id")
+            if source_card_id not in old_to_new_card_id:
+                continue
+            if not isinstance(assignee_user_id, int) or assignee_user_id not in valid_import_user_ids:
+                continue
+            db.add(CardSecondaryAssignee(
+                card_id=old_to_new_card_id[source_card_id],
+                user_id=assignee_user_id,
+            ))
 
         sorted_checklists = sorted(
             import_data["checklists"],
@@ -1519,8 +1583,6 @@ def import_board_from_export():
 
             db.query(Card).filter(Card.id == imported_card_id).update({"schedule": mapped_schedule_id})
 
-        # Secondary assignees are currently not imported by user ID.
-
         db.commit()
 
         return jsonify(
@@ -1538,7 +1600,7 @@ def import_board_from_export():
                     "name_conflict_resolved": had_name_conflict,
                     "import_format": import_data.get("import_format", BOARD_EXPORT_FORMAT),
                     "import_format_version": import_data.get("import_format_version", "1.0"),
-                    "assignee_mapping": "not_mapped",
+                    "assignee_mapping": "member_map" if is_trello_import else "not_mapped",
                     "ignored_primary_assignees_count": ignored_primary_assignees_count,
                     "ignored_secondary_assignees_count": ignored_secondary_assignees_count,
                 },
