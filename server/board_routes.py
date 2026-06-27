@@ -1133,6 +1133,146 @@ def export_board(board_id):
         db.close()
 
 
+@board_bp.route("/api/boards/import/csv-template", methods=["GET"])
+def download_csv_import_template():
+    """Download a CSV template for board import."""
+    template = (
+        "title,column,assignee,description,checklist_items,start_date,end_date\r\n"
+        '"Fix login bug","In Progress","alice","Steps to reproduce here",'
+        '"Check logs|Reproduce issue[done]|Write test",,\r\n'
+        '"Add dark mode","Todo","","","","2026-07-01","2026-07-07"\r\n'
+    )
+    return send_file(
+        io.BytesIO(template.encode("utf-8")),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name="aft-board-import-template.csv",
+    )
+
+
+@board_bp.route("/api/boards/import/preview", methods=["POST"])
+@require_authentication
+def preview_csv_import():
+    """Preview cards that will be affected when importing a CSV into an existing board.
+
+    Returns matched_cards (will be affected by conflict_strategy), new_cards,
+    new_columns, and warnings. No data is written.
+    """
+    db = SessionLocal()
+    try:
+        user_id = g.user.id
+
+        if "file" not in request.files:
+            return create_error_response("No file uploaded", 400)
+
+        file_obj = request.files["file"]
+        if file_obj.filename == "":
+            return create_error_response("No file selected", 400)
+
+        filename = file_obj.filename or ""
+        if not filename.lower().endswith(".csv"):
+            return create_error_response("Preview is only supported for CSV imports", 400)
+
+        payload_bytes = file_obj.read()
+        if not payload_bytes:
+            return create_error_response("File is empty", 400)
+
+        try:
+            payload_text = payload_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            return create_error_response("File must be valid UTF-8", 400)
+
+        target_board_id_raw = request.form.get("target_board_id", "")
+        try:
+            target_board_id = int(target_board_id_raw)
+        except (ValueError, TypeError):
+            return create_error_response("target_board_id must be an integer", 400)
+
+        target_board = db.query(Board).filter(
+            Board.id == target_board_id,
+            Board.archived.is_(False),
+        ).first()
+        if not target_board:
+            return create_error_response("Target board not found", 404)
+
+        board_perms = get_user_permissions(user_id, board_id=target_board_id)
+        if "board.edit" not in board_perms and "system.admin" not in board_perms:
+            return create_error_response("Permission denied: board editor access required", 403)
+
+        handler = ImportHandlerFactory.get_csv_handler()
+        validation_result = handler.validate(payload_text)
+        if not validation_result.is_valid:
+            return jsonify({
+                "success": False,
+                "message": "CSV validation failed",
+                "errors": validation_result.errors,
+            }), 400
+
+        all_users = db.query(User).filter(
+            User.is_active.is_(True), User.is_approved.is_(True)
+        ).all()
+        username_to_user_id = {u.username.lower(): u.id for u in all_users}
+
+        import_data = handler.parse(payload_text, {
+            "board_name": "preview",
+            "username_to_user_id": username_to_user_id,
+        })
+
+        existing_columns = db.query(BoardColumn).filter(
+            BoardColumn.board_id == target_board_id
+        ).all()
+        col_name_lower_to_id = {col.name.lower(): col.id for col in existing_columns}
+        col_id_to_name = {col.id: col.name for col in existing_columns}
+
+        existing_cards = []
+        if existing_columns:
+            existing_cards = db.query(Card).filter(
+                Card.column_id.in_([col.id for col in existing_columns]),
+                Card.archived.is_(False),
+            ).all()
+
+        existing_match_keys = {
+            (col_id_to_name.get(card.column_id, "").lower(), card.title.lower())
+            for card in existing_cards
+        }
+
+        csv_col_id_to_name = {col["id"]: col["name"] for col in import_data["columns"]}
+
+        matched_cards = []
+        new_cards = []
+        new_columns = []
+        seen_new_cols = set()
+
+        for col in import_data["columns"]:
+            col_lower = col["name"].lower()
+            if col_lower not in col_name_lower_to_id and col_lower not in seen_new_cols:
+                new_columns.append(col["name"])
+                seen_new_cols.add(col_lower)
+
+        for card in import_data["cards"]:
+            col_name = csv_col_id_to_name.get(card["column_id"], "")
+            match_key = (col_name.lower(), card["title"].lower())
+            entry = {"title": card["title"], "column": col_name}
+            if match_key in existing_match_keys:
+                matched_cards.append(entry)
+            else:
+                new_cards.append(entry)
+
+        return jsonify({
+            "success": True,
+            "matched_cards": matched_cards,
+            "new_cards": new_cards,
+            "new_columns": new_columns,
+            "warnings": import_data.get("warnings", []),
+        })
+
+    except Exception as e:
+        logger.error(f"Error previewing CSV import: {str(e)}")
+        return create_error_response("Failed to preview import", 500)
+    finally:
+        db.close()
+
+
 @board_bp.route("/api/boards/import", methods=["POST"])
 @require_authentication
 def import_board_from_export():
@@ -1183,7 +1323,7 @@ def import_board_from_export():
         try:
             payload_text = payload_bytes.decode("utf-8")
         except UnicodeDecodeError:
-            return create_error_response("Import file must be valid UTF-8 JSON", 400)
+            return create_error_response("Import file must be valid UTF-8", 400)
 
         is_valid_size, size_error = validate_json_import_payload_size(
             payload_text,
@@ -1192,77 +1332,331 @@ def import_board_from_export():
         if not is_valid_size:
             return create_error_response(size_error, 400)
 
-        try:
-            payload = json.loads(payload_text)
-        except json.JSONDecodeError:
-            return create_error_response("Import file is not valid JSON", 400)
+        # ---- Detect format by file extension ----
+        filename = file_obj.filename or ""
+        file_ext = os.path.splitext(filename)[1].lower()
 
-        handler = ImportHandlerFactory.get_handler(payload)
-        if not handler:
-            return create_error_response(
-                "Unsupported import format. AFT-formatted JSON exports and Trello JSON exports are supported.",
-                400,
-            )
+        if file_ext == ".csv":
+            # ================================================================
+            # CSV import path
+            # ================================================================
+            handler = ImportHandlerFactory.get_csv_handler()
+            validation_result = handler.validate(payload_text)
+            if not validation_result.is_valid:
+                return jsonify({
+                    "success": False,
+                    "message": "CSV validation failed",
+                    "errors": validation_result.errors,
+                }), 400
 
-        validation_result = handler.validate(payload)
-        if not validation_result.is_valid:
-            return (
-                jsonify(
-                    {
+            # Resolve all active+approved users for assignee matching
+            all_users = db.query(User).filter(
+                User.is_active.is_(True), User.is_approved.is_(True)
+            ).all()
+            username_to_user_id = {u.username.lower(): u.id for u in all_users}
+            valid_import_user_ids = set(username_to_user_id.values())
+
+            target_mode = (request.form.get("target_mode") or "new_board").strip().lower()
+
+            if target_mode == "existing_board":
+                # ---- CSV into existing board ----
+                target_board_id_raw = request.form.get("target_board_id", "")
+                try:
+                    target_board_id = int(target_board_id_raw)
+                except (ValueError, TypeError):
+                    return create_error_response(
+                        "target_board_id is required for existing_board mode", 400
+                    )
+
+                conflict_strategy = (request.form.get("conflict_strategy") or "").strip().lower()
+                if conflict_strategy not in ("duplicate", "overwrite"):
+                    return create_error_response(
+                        "conflict_strategy must be 'duplicate' or 'overwrite'", 400
+                    )
+
+                target_board = db.query(Board).filter(
+                    Board.id == target_board_id,
+                    Board.archived.is_(False),
+                ).first()
+                if not target_board:
+                    return create_error_response("Target board not found", 404)
+
+                board_perms = get_user_permissions(user_id, board_id=target_board_id)
+                if "board.edit" not in board_perms and "system.admin" not in board_perms:
+                    return create_error_response(
+                        "Permission denied: board editor access required for the target board", 403
+                    )
+
+                import_data = handler.parse(payload_text, {
+                    "board_name": target_board.name,
+                    "username_to_user_id": username_to_user_id,
+                })
+
+                csv_col_id_to_name = {col["id"]: col["name"] for col in import_data["columns"]}
+
+                # Ensure all CSV columns exist; create missing ones at the end
+                existing_columns = db.query(BoardColumn).filter(
+                    BoardColumn.board_id == target_board_id
+                ).order_by(BoardColumn.order).all()
+                col_name_lower_to_col = {col.name.lower(): col for col in existing_columns}
+                max_col_order = max((col.order for col in existing_columns), default=-1)
+
+                csv_col_id_to_db_col_id = {}
+                new_columns_created = []
+                for csv_col in import_data["columns"]:
+                    col_lower = csv_col["name"].lower()
+                    if col_lower in col_name_lower_to_col:
+                        csv_col_id_to_db_col_id[csv_col["id"]] = col_name_lower_to_col[col_lower].id
+                    else:
+                        max_col_order += 1
+                        new_col = BoardColumn(
+                            board_id=target_board_id,
+                            name=sanitize_import_text(csv_col["name"], "Column name", MAX_TITLE_LENGTH),
+                            order=max_col_order,
+                            updated_at=utc_now(),
+                        )
+                        db.add(new_col)
+                        db.flush()
+                        csv_col_id_to_db_col_id[csv_col["id"]] = new_col.id
+                        col_name_lower_to_col[col_lower] = new_col
+                        new_columns_created.append(csv_col["name"])
+
+                # Fetch existing non-archived cards in the (pre-existing) columns for matching
+                pre_existing_col_ids = {col.id for col in existing_columns}
+                existing_cards = []
+                if pre_existing_col_ids:
+                    existing_cards = db.query(Card).filter(
+                        Card.column_id.in_(pre_existing_col_ids),
+                        Card.archived.is_(False),
+                    ).all()
+
+                # Match index: (db_col_id, title_lower) → Card
+                match_key_to_card = {
+                    (card.column_id, card.title.lower()): card
+                    for card in existing_cards
+                }
+
+                # Track titles per db column for duplicate suffix logic
+                existing_titles_per_col = {}
+                for card in existing_cards:
+                    existing_titles_per_col.setdefault(card.column_id, set()).add(card.title.lower())
+
+                def _find_unique_title(db_col_id, title):
+                    titles = existing_titles_per_col.get(db_col_id, set())
+                    candidate = title
+                    counter = 2
+                    while candidate.lower() in titles:
+                        candidate = f"{title} ({counter})"
+                        counter += 1
+                    return candidate
+
+                # Group CSV checklist items by CSV card id for easy lookup
+                checklists_by_csv_card_id = {}
+                for item in import_data.get("checklists", []):
+                    checklists_by_csv_card_id.setdefault(item["card_id"], []).append(item)
+
+                updated_count = 0
+                created_count = 0
+                csv_card_id_to_db_card_id = {}
+
+                for csv_card in import_data["cards"]:
+                    csv_card_id = csv_card["id"]
+                    db_col_id = csv_col_id_to_db_col_id.get(csv_card["column_id"])
+                    if db_col_id is None:
+                        continue
+
+                    title = sanitize_import_text(
+                        csv_card.get("title"), "Card title", MAX_TITLE_LENGTH, allow_none=False
+                    )
+                    description = sanitize_import_text(
+                        csv_card.get("description"), "Card description",
+                        MAX_DESCRIPTION_LENGTH, allow_none=True
+                    )
+                    source_assigned_to_id = csv_card.get("assigned_to_id")
+                    assigned_to_id = (
+                        source_assigned_to_id
+                        if isinstance(source_assigned_to_id, int)
+                        and source_assigned_to_id in valid_import_user_ids
+                        else None
+                    )
+
+                    match_key = (db_col_id, title.lower())
+                    existing_card = match_key_to_card.get(match_key)
+
+                    if existing_card and conflict_strategy == "overwrite":
+                        existing_card.description = description
+                        existing_card.assigned_to_id = assigned_to_id
+                        existing_card.start_date = parse_iso_datetime(csv_card.get("start_date"))
+                        existing_card.end_date = parse_iso_datetime(csv_card.get("end_date"))
+                        existing_card.updated_at = utc_now()
+                        # Replace checklist items for this card
+                        db.query(ChecklistItem).filter(
+                            ChecklistItem.card_id == existing_card.id
+                        ).delete()
+                        db.flush()
+                        csv_card_id_to_db_card_id[csv_card_id] = existing_card.id
+                        updated_count += 1
+                    else:
+                        if existing_card and conflict_strategy == "duplicate":
+                            title = _find_unique_title(db_col_id, title)
+
+                        card_count_in_col = db.query(Card).filter(
+                            Card.column_id == db_col_id
+                        ).count()
+                        new_card = Card(
+                            column_id=db_col_id,
+                            title=title,
+                            description=description,
+                            order=card_count_in_col,
+                            archived=False,
+                            scheduled=False,
+                            done=False,
+                            schedule=None,
+                            created_by_id=user_id,
+                            assigned_to_id=assigned_to_id,
+                            start_date=parse_iso_datetime(csv_card.get("start_date")),
+                            end_date=parse_iso_datetime(csv_card.get("end_date")),
+                            updated_at=utc_now(),
+                        )
+                        db.add(new_card)
+                        db.flush()
+                        existing_titles_per_col.setdefault(db_col_id, set()).add(title.lower())
+                        csv_card_id_to_db_card_id[csv_card_id] = new_card.id
+                        created_count += 1
+
+                # Create checklist items for all processed cards
+                checklist_order = 0
+                for csv_card_id_key, db_card_id in csv_card_id_to_db_card_id.items():
+                    for item in checklists_by_csv_card_id.get(csv_card_id_key, []):
+                        item_name = sanitize_import_text(
+                            item.get("name"), "Checklist item name", 500, allow_none=False
+                        )
+                        db.add(ChecklistItem(
+                            card_id=db_card_id,
+                            name=item_name,
+                            checked=coerce_bool(item.get("checked"), default=False),
+                            order=checklist_order,
+                            updated_at=utc_now(),
+                        ))
+                        checklist_order += 1
+
+                db.commit()
+                return jsonify({
+                    "success": True,
+                    "message": "Cards imported successfully",
+                    "board": {
+                        "id": target_board.id,
+                        "name": target_board.name,
+                        "description": target_board.description,
+                        "archived": bool(target_board.archived),
+                    },
+                    "import_meta": {
+                        "import_format": "csv",
+                        "import_format_version": "1.0",
+                        "target_mode": "existing_board",
+                        "conflict_strategy": conflict_strategy,
+                        "updated_count": updated_count,
+                        "created_count": created_count,
+                        "new_columns_created": new_columns_created,
+                        "warnings": import_data.get("warnings", []),
+                    },
+                }), 201
+
+            # ---- CSV new board ----
+            board_name_raw = (request.form.get("board_name") or "").strip()
+            if not board_name_raw:
+                board_name_raw = os.path.splitext(os.path.basename(filename))[0].strip()
+            if not board_name_raw:
+                board_name_raw = "Imported Board"
+
+            import_data = handler.parse(payload_text, {
+                "board_name": board_name_raw,
+                "username_to_user_id": username_to_user_id,
+            })
+            duplicate_strategy = "append_suffix"
+
+        else:
+            # ================================================================
+            # JSON import path (AFT native and Trello)
+            # ================================================================
+            try:
+                payload = json.loads(payload_text)
+            except json.JSONDecodeError:
+                return create_error_response("Import file is not valid JSON", 400)
+
+            handler = ImportHandlerFactory.get_handler(payload)
+            if not handler:
+                return create_error_response(
+                    "Unsupported import format. AFT-formatted JSON exports, "
+                    "Trello JSON exports, and CSV files are supported.",
+                    400,
+                )
+
+            validation_result = handler.validate(payload)
+            if not validation_result.is_valid:
+                return (
+                    jsonify({
                         "success": False,
                         "message": "Import validation failed",
                         "errors": validation_result.errors,
-                    }
-                ),
-                400,
-            )
-
-        include_archived_cards = (
-            request.form.get("include_archived_cards", "false").lower() == "true"
-        )
-        include_archived_lists = (
-            request.form.get("include_archived_lists", "false").lower() == "true"
-        )
-
-        # Member mapping: JSON object {trelloMemberId: aftUserId}
-        try:
-            raw_member_map = json.loads(request.form.get("member_map", "{}") or "{}")
-            if not isinstance(raw_member_map, dict):
-                raw_member_map = {}
-        except (json.JSONDecodeError, ValueError):
-            raw_member_map = {}
-        candidate_user_ids = [v for v in raw_member_map.values() if isinstance(v, int) and v > 0]
-        if candidate_user_ids:
-            valid_ids = {
-                row[0] for row in db.query(User.id)
-                .filter(
-                    User.id.in_(candidate_user_ids),
-                    User.is_active.is_(True),
-                    User.is_approved.is_(True),
+                    }),
+                    400,
                 )
-                .all()
-            }
-        else:
-            valid_ids = set()
-        member_map = {
-            k: v for k, v in raw_member_map.items()
-            if isinstance(k, str) and isinstance(v, int) and v in valid_ids
-        }
 
-        parse_options = {
-            "include_archived_cards": include_archived_cards,
-            "include_archived_lists": include_archived_lists,
-            "member_map": member_map,
-        }
-        import_data = handler.parse(payload, parse_options)
-        board_data = import_data["board"]
-
-        duplicate_strategy = (request.form.get("duplicate_strategy") or "cancel").strip().lower()
-        if duplicate_strategy not in {"cancel", "append_suffix"}:
-            return create_error_response(
-                "duplicate_strategy must be one of: cancel, append_suffix",
-                400,
+            include_archived_cards = (
+                request.form.get("include_archived_cards", "false").lower() == "true"
             )
+            include_archived_lists = (
+                request.form.get("include_archived_lists", "false").lower() == "true"
+            )
+
+            # Member mapping: JSON object {trelloMemberId: aftUserId}
+            try:
+                raw_member_map = json.loads(request.form.get("member_map", "{}") or "{}")
+                if not isinstance(raw_member_map, dict):
+                    raw_member_map = {}
+            except (json.JSONDecodeError, ValueError):
+                raw_member_map = {}
+            candidate_user_ids = [v for v in raw_member_map.values() if isinstance(v, int) and v > 0]
+            if candidate_user_ids:
+                valid_ids = {
+                    row[0] for row in db.query(User.id)
+                    .filter(
+                        User.id.in_(candidate_user_ids),
+                        User.is_active.is_(True),
+                        User.is_approved.is_(True),
+                    )
+                    .all()
+                }
+            else:
+                valid_ids = set()
+            member_map = {
+                k: v for k, v in raw_member_map.items()
+                if isinstance(k, str) and isinstance(v, int) and v in valid_ids
+            }
+
+            parse_options = {
+                "include_archived_cards": include_archived_cards,
+                "include_archived_lists": include_archived_lists,
+                "member_map": member_map,
+            }
+            import_data = handler.parse(payload, parse_options)
+
+            # AFT-to-AFT imports must never apply source-instance user IDs: cross-instance
+            # ID collisions would silently assign cards to unrelated users. Only Trello imports
+            # use explicit member_map (already validated against active+approved users above),
+            # so assignee IDs are trusted only for that format.
+            is_trello_format = import_data.get("import_format") == TrelloBoardImportHandler.FORMAT
+            valid_import_user_ids = valid_ids if is_trello_format else set()
+
+            duplicate_strategy = (request.form.get("duplicate_strategy") or "cancel").strip().lower()
+            if duplicate_strategy not in {"cancel", "append_suffix"}:
+                return create_error_response(
+                    "duplicate_strategy must be one of: cancel, append_suffix",
+                    400,
+                )
+
+        board_data = import_data["board"]
 
         source_board_name = sanitize_import_text(
             board_data.get("name"),
@@ -1369,13 +1763,6 @@ def import_board_from_export():
             db.add(new_column)
             db.flush()
             old_to_new_column_id[source_column_id] = new_column.id
-
-        # AFT-to-AFT imports must never apply source-instance user IDs: cross-instance
-        # ID collisions would silently assign cards to unrelated users. Only Trello imports
-        # use explicit member_map (already validated against active+approved users above),
-        # so assignee IDs are trusted only for that format.
-        is_trello_import = import_data.get("import_format") == TrelloBoardImportHandler.FORMAT
-        valid_import_user_ids = valid_ids if is_trello_import else set()
 
         ignored_primary_assignees_count = sum(
             1
@@ -1600,9 +1987,10 @@ def import_board_from_export():
                     "name_conflict_resolved": had_name_conflict,
                     "import_format": import_data.get("import_format", BOARD_EXPORT_FORMAT),
                     "import_format_version": import_data.get("import_format_version", "1.0"),
-                    "assignee_mapping": "member_map" if is_trello_import else "not_mapped",
+                    "assignee_mapping": "member_map" if import_data.get("import_format") == TrelloBoardImportHandler.FORMAT else "not_mapped",
                     "ignored_primary_assignees_count": ignored_primary_assignees_count,
                     "ignored_secondary_assignees_count": ignored_secondary_assignees_count,
+                    "warnings": import_data.get("warnings", []),
                 },
             }
         ), 201
