@@ -757,6 +757,39 @@ class TestBoardsAPI:
         current_user_id = me_response.json()['user']['id']
         assert exported_data['cards'][0]['created_by_id'] == current_user_id
 
+    def test_import_board_aft_assignees_ignored_even_when_id_exists_locally(
+        self, api_client, authenticated_session
+    ):
+        """AFT import never maps assignees by raw ID, even when that ID coincidentally
+        exists in the local DB (cross-instance ID collision guard)."""
+        current_user = get_current_user(api_client, authenticated_session)
+        local_user_id = current_user["id"]
+
+        unique_board_name = f"AFT Collision Guard {uuid.uuid4().hex[:8]}"
+        payload = build_minimal_board_import_payload(unique_board_name)
+        # Use the *real* local user ID so it would pass any DB existence check.
+        payload["cards"][0]["assigned_to_id"] = local_user_id
+        payload["card_secondary_assignees"][0]["user_id"] = local_user_id
+
+        response = authenticated_session.post(
+            f"{api_client}/api/boards/import",
+            data={"duplicate_strategy": "cancel"},
+            files={"file": ("board-import.json", json.dumps(payload), "application/json")},
+        )
+        assert response.status_code == 201, response.text
+
+        data = response.json()
+        assert data["import_meta"]["assignee_mapping"] == "not_mapped"
+        assert data["import_meta"]["ignored_primary_assignees_count"] == 1
+        assert data["import_meta"]["ignored_secondary_assignees_count"] == 1
+
+        imported_board_id = data["board"]["id"]
+        export_response = authenticated_session.get(
+            f"{api_client}/api/boards/{imported_board_id}/export"
+        )
+        assert export_response.status_code == 200
+        assert export_response.json()["cards"][0]["assigned_to_id"] is None
+
     def test_import_board_invalid_structure(self, api_client, authenticated_session):
         """Import rejects payloads missing required top-level keys."""
         payload = build_minimal_board_import_payload('Invalid Structure Board')
@@ -1378,7 +1411,9 @@ class TestTrelloBoardImport:
             files={"file": ("trello.json", json.dumps(payload), "application/json")},
         )
         assert response.status_code == 201, response.text
-        board_id = response.json()["board"]["id"]
+        resp_data = response.json()
+        assert resp_data["import_meta"]["assignee_mapping"] == "member_map"
+        board_id = resp_data["board"]["id"]
 
         cards = _board_cards_flat(authenticated_session, api_client, board_id)
         card = next(c for c in cards if c["title"] == "Open Card")
