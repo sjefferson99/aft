@@ -245,6 +245,8 @@ class TrelloBoardImportHandler(BoardImportHandler):
             if not isinstance(lst, dict):
                 errors.append(f"lists[{index}] must be an object")
                 continue
+            if not lst.get("id"):
+                errors.append(f"lists[{index}].id is required")
             list_name = lst.get("name")
             if not isinstance(list_name, str) or not list_name.strip():
                 errors.append(f"lists[{index}].name is required")
@@ -253,6 +255,8 @@ class TrelloBoardImportHandler(BoardImportHandler):
             if not isinstance(card, dict):
                 errors.append(f"cards[{index}] must be an object")
                 continue
+            if not card.get("id"):
+                errors.append(f"cards[{index}].id is required")
             card_name = card.get("name")
             if not isinstance(card_name, str) or not card_name.strip():
                 errors.append(f"cards[{index}].name is required")
@@ -293,7 +297,7 @@ class TrelloBoardImportHandler(BoardImportHandler):
         # --- Label lookup for description prefixes ---
         label_map = {}  # Trello label id → display name
         for lbl in payload.get("labels", []):
-            if not isinstance(lbl, dict):
+            if not isinstance(lbl, dict) or not lbl.get("id"):
                 continue
             name = (lbl.get("name") or "").strip() or (lbl.get("color") or lbl.get("id", ""))
             label_map[lbl["id"]] = name
@@ -309,8 +313,10 @@ class TrelloBoardImportHandler(BoardImportHandler):
         for action in payload.get("actions", []):
             if not isinstance(action, dict) or action.get("type") != "commentCard":
                 continue
-            card_id = (action.get("data") or {}).get("card", {}).get("id")
-            text = (action.get("data") or {}).get("text")
+            data = action.get("data") or {}
+            card_obj = data.get("card")
+            card_id = card_obj.get("id") if isinstance(card_obj, dict) else None
+            text = data.get("text")
             if not card_id or not isinstance(text, str) or not text.strip():
                 continue
             comments_by_card_id.setdefault(card_id, []).append({

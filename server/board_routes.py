@@ -1235,7 +1235,11 @@ def import_board_from_export():
         if candidate_user_ids:
             valid_ids = {
                 row[0] for row in db.query(User.id)
-                .filter(User.id.in_(candidate_user_ids), User.is_active.is_(True))
+                .filter(
+                    User.id.in_(candidate_user_ids),
+                    User.is_active.is_(True),
+                    User.is_approved.is_(True),
+                )
                 .all()
             }
         else:
