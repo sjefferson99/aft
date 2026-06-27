@@ -1182,6 +1182,13 @@ def preview_csv_import():
         except UnicodeDecodeError:
             return create_error_response("File must be valid UTF-8", 400)
 
+        is_valid_size, size_error = validate_json_import_payload_size(
+            payload_text,
+            max_size_mb=MAX_BOARD_IMPORT_FILE_SIZE_MB,
+        )
+        if not is_valid_size:
+            return create_error_response(size_error, 400)
+
         target_board_id_raw = request.form.get("target_board_id", "")
         try:
             target_board_id = int(target_board_id_raw)
@@ -1458,7 +1465,7 @@ def import_board_from_export():
                 updated_count = 0
                 created_count = 0
                 csv_card_id_to_db_card_id = {}
-
+                next_order_by_col_id = {}
                 for csv_card in import_data["cards"]:
                     csv_card_id = csv_card["id"]
                     db_col_id = csv_col_id_to_db_col_id.get(csv_card["column_id"])
@@ -1500,14 +1507,20 @@ def import_board_from_export():
                         if existing_card and conflict_strategy == "duplicate":
                             title = _find_unique_title(db_col_id, title)
 
-                        card_count_in_col = db.query(Card).filter(
-                            Card.column_id == db_col_id
-                        ).count()
+                        if db_col_id not in next_order_by_col_id:
+                            max_order = db.query(func.max(Card.order)).filter(
+                                Card.column_id == db_col_id
+                            ).scalar()
+                            next_order_by_col_id[db_col_id] = (
+                                max_order + 1 if max_order is not None else 0
+                            )
+                        card_order_in_col = next_order_by_col_id[db_col_id]
+                        next_order_by_col_id[db_col_id] = card_order_in_col + 1
                         new_card = Card(
                             column_id=db_col_id,
                             title=title,
                             description=description,
-                            order=card_count_in_col,
+                            order=card_order_in_col,
                             archived=False,
                             scheduled=False,
                             done=False,
@@ -1525,9 +1538,8 @@ def import_board_from_export():
                         created_count += 1
 
                 # Create checklist items for all processed cards
-                checklist_order = 0
                 for csv_card_id_key, db_card_id in csv_card_id_to_db_card_id.items():
-                    for item in checklists_by_csv_card_id.get(csv_card_id_key, []):
+                    for idx, item in enumerate(checklists_by_csv_card_id.get(csv_card_id_key, [])):
                         item_name = sanitize_import_text(
                             item.get("name"), "Checklist item name", 500, allow_none=False
                         )
@@ -1535,10 +1547,9 @@ def import_board_from_export():
                             card_id=db_card_id,
                             name=item_name,
                             checked=coerce_bool(item.get("checked"), default=False),
-                            order=checklist_order,
+                            order=idx,
                             updated_at=utc_now(),
                         ))
-                        checklist_order += 1
 
                 db.commit()
                 return jsonify({

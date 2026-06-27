@@ -531,7 +531,7 @@ class CSVBoardImportHandler(BoardImportHandler):
         date_fields = [f for f in ("start_date", "end_date") if f in header_map]
 
         for index, row in enumerate(rows):
-            row_num = index + 1
+            row_num = index + 2
             title = self._get(row, "title", header_map)
             column = self._get(row, "column", header_map)
 
@@ -576,7 +576,7 @@ class CSVBoardImportHandler(BoardImportHandler):
         checklists = []
         card_seq = 1
         checklist_seq = 1
-
+        card_order_by_col_id = {}
         for row in rows:
             title = self._get(row, "title", header_map)
             col_name = self._get(row, "column", header_map)
@@ -602,12 +602,15 @@ class CSVBoardImportHandler(BoardImportHandler):
             start_date = self._get(row, "start_date", header_map) or None
             end_date = self._get(row, "end_date", header_map) or None
 
+            order_in_col = card_order_by_col_id.get(column_id, 0)
+            card_order_by_col_id[column_id] = order_in_col + 1
+
             cards.append({
                 "id": card_seq,
                 "column_id": column_id,
                 "title": title[:255],
                 "description": description,
-                "order": card_seq - 1,
+                "order": order_in_col,
                 "archived": False,
                 "scheduled": False,
                 "schedule": None,
@@ -619,6 +622,7 @@ class CSVBoardImportHandler(BoardImportHandler):
 
             checklist_raw = self._get(row, "checklist_items", header_map)
             if checklist_raw:
+                item_order = 0
                 for item_raw in (s.strip() for s in checklist_raw.split("|") if s.strip()):
                     checked = item_raw.lower().endswith("[done]")
                     item_name = item_raw[:-6].strip() if checked else item_raw
@@ -628,9 +632,10 @@ class CSVBoardImportHandler(BoardImportHandler):
                             "card_id": card_seq,
                             "name": item_name[:500],
                             "checked": checked,
-                            "order": checklist_seq - 1,
+                            "order": item_order,
                         })
                         checklist_seq += 1
+                        item_order += 1
 
             card_seq += 1
 

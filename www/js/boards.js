@@ -1500,8 +1500,8 @@ class BoardsManager {
         opt.textContent = String(board.name || 'Untitled Board');
         select.appendChild(opt);
       }
-    } catch (_) {
-      // Silent fail — user can still type board ID if needed
+    } catch (error) {
+      this.showErrorToast('Failed to load boards for CSV import. Please try again.');
     }
   }
 
@@ -1572,7 +1572,7 @@ class BoardsManager {
           const column = this.escapeHtml(String(card.column || ''));
           li.innerHTML = conflictStrategy === 'overwrite'
             ? `<strong>${title}</strong> in ${column}`
-            : `<strong>${title}</strong> → <strong>${title} (2)</strong> in ${column}`;
+            : `<strong>${title}</strong> → <strong>${title} (n)</strong> in ${column}`;
           list.appendChild(li);
         });
       }
