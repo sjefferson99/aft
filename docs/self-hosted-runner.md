@@ -9,6 +9,9 @@ completely free regardless of how many builds you run.
 - Docker must be installed on the machine that will act as the runner
 - The machine must have internet access to reach GitHub and GHCR
 - Windows, Linux, or macOS are all supported
+- The runner's Docker daemon must allow privileged containers (used by
+  `docker/setup-qemu-action` to register binfmt handlers for cross-building
+  `linux/arm64` images, e.g. for Raspberry Pi)
 
 ---
 
@@ -67,7 +70,12 @@ The workflow (`.github/workflows/build-and-push.yml`) triggers when you
 1. Push your code to `main` as normal
 2. When ready to cut a release, go to GitHub → **Releases** → **Draft a new release**
 3. Create a tag in semver format (e.g. `v1.2.0`) and publish
-4. The runner picks up the job, builds both images, and pushes to GHCR
+4. The runner picks up the job, builds both images for `linux/amd64` and
+   `linux/arm64`, and pushes a single multi-arch manifest per tag to GHCR.
+   `docker pull`/`docker compose pull` automatically grabs the right
+   architecture, so the same images run on a Raspberry Pi without changes.
+   The `arm64` leg is built via QEMU emulation, so builds take noticeably
+   longer than amd64-only builds did.
 
 Images will be available at:
 - `ghcr.io/sjefferson99/aft:latest` (and `ghcr.io/sjefferson99/aft:1.2.0`)

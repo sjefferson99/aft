@@ -48,11 +48,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      # Registers QEMU binfmt handlers so Buildx can emulate arm64 on this
+      # amd64 runner to produce multi-architecture images.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
       # GITHUB_TOKEN is automatically provided — no PAT or extra secret needed
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -62,7 +70,7 @@ jobs:
 
       - name: Extract metadata for aft (server)
         id: meta-server
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/aft
           tags: |
@@ -78,10 +86,11 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
 
       - name: Build and push aft (server)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: server/Dockerfile
+          platforms: linux/amd64,linux/arm64
           # On a release event or push to main always push; on manual dispatch respect the input
           push: ${{ github.event_name == 'release' || github.event_name == 'push' || inputs.push_images == 'true' }}
           tags: ${{ steps.meta-server.outputs.tags }}
@@ -91,7 +100,7 @@ jobs:
 
       - name: Extract metadata for aft-web
         id: meta-web
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/aft-web
           tags: |
@@ -102,10 +111,11 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
 
       - name: Build and push aft-web (nginx + UI)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: server/Dockerfile.nginx
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'release' || github.event_name == 'push' || inputs.push_images == 'true' }}
           tags: ${{ steps.meta-web.outputs.tags }}
           labels: ${{ steps.meta-web.outputs.labels }}
