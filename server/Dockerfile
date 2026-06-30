@@ -8,11 +8,7 @@ WORKDIR /app
 # Using retries for better reliability with network issues
 RUN apt-get update || apt-get update || apt-get update
 RUN apt-get install -y --no-install-recommends \
-        gcc \
-        default-libmysqlclient-dev \
         default-mysql-client \
-        pkg-config \
-        build-essential \
         curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
