@@ -66,6 +66,8 @@ Available images:
 - `ghcr.io/sjefferson99/aft:latest` — API server only
 - `ghcr.io/sjefferson99/aft-web:latest` — nginx + UI (proxies to the server)
 
+> **Raspberry Pi / arm64:** Both images are published as multi-architecture manifests covering `linux/amd64` and `linux/arm64`. The same `compose.example.yml` works unmodified on a Raspberry Pi or other arm64 host — `docker compose pull` automatically selects the matching architecture, no extra configuration needed.
+
 ### Server-only deployment
 Remove or comment out the `nginx` service in `compose.example.yml` before renaming it to `compose.yml` to run the API server without the web UI.
 
