@@ -50,6 +50,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Registers QEMU binfmt handlers so Buildx can emulate arm64 on this
+      # amd64 runner to produce multi-architecture images.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       # GITHUB_TOKEN is automatically provided — no PAT or extra secret needed
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -82,6 +90,7 @@ jobs:
         with:
           context: .
           file: server/Dockerfile
+          platforms: linux/amd64,linux/arm64
           # On a release event or push to main always push; on manual dispatch respect the input
           push: ${{ github.event_name == 'release' || github.event_name == 'push' || inputs.push_images == 'true' }}
           tags: ${{ steps.meta-server.outputs.tags }}
@@ -106,6 +115,7 @@ jobs:
         with:
           context: .
           file: server/Dockerfile.nginx
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name == 'release' || github.event_name == 'push' || inputs.push_images == 'true' }}
           tags: ${{ steps.meta-web.outputs.tags }}
           labels: ${{ steps.meta-web.outputs.labels }}
