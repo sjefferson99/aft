@@ -47,7 +47,6 @@ auth_bp = Blueprint('auth', __name__, url_prefix='/api/auth')
 
 # Session configuration constants
 SESSION_LIFETIME_HOURS = 24 * 7  # 7 days
-REMEMBER_ME_LIFETIME_DAYS = 30
 
 
 def ensure_global_role(db, user_id, role_name):

@@ -169,3 +169,127 @@ class TestBrandingAPI:
         assert get_response.json()['filename'] == filename
 
         _reset_logo(api_client, authenticated_session)
+
+
+def _reset_app_name(api_client, authenticated_session):
+    """Reset PWA app name to the default."""
+    response = authenticated_session.delete(f'{api_client}/api/branding/app-name')
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.api
+class TestBrandingAppNameAPI:
+    """Test cases for the PWA app name branding endpoints."""
+
+    def test_get_app_name_default(self, api_client, authenticated_session):
+        """GET returns the default name when nothing is configured."""
+        _reset_app_name(api_client, authenticated_session)
+
+        response = requests.get(f'{api_client}/api/branding/app-name')
+        assert response.status_code == 200
+        assert response.json()['name'] == 'AFT Tasks'
+
+    def test_set_app_name_success(self, api_client, authenticated_session):
+        """Admin can set a custom app name and read it back."""
+        _reset_app_name(api_client, authenticated_session)
+
+        response = authenticated_session.put(
+            f'{api_client}/api/branding/app-name',
+            json={'name': 'AFT - Work'},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()['name'] == 'AFT - Work'
+
+        get_response = requests.get(f'{api_client}/api/branding/app-name')
+        assert get_response.status_code == 200
+        assert get_response.json()['name'] == 'AFT - Work'
+
+        _reset_app_name(api_client, authenticated_session)
+
+    def test_set_app_name_empty(self, api_client, authenticated_session):
+        """Empty/whitespace-only names are rejected."""
+        response = authenticated_session.put(
+            f'{api_client}/api/branding/app-name',
+            json={'name': '   '},
+        )
+        assert response.status_code == 400
+        assert response.json()['success'] is False
+
+    def test_set_app_name_too_long(self, api_client, authenticated_session):
+        """Names longer than the max length are rejected."""
+        response = authenticated_session.put(
+            f'{api_client}/api/branding/app-name',
+            json={'name': 'x' * 46},
+        )
+        assert response.status_code == 400
+        assert response.json()['success'] is False
+
+    def test_set_app_name_no_permission(self, api_client, authenticated_session, second_user_session):
+        """Non-admin users cannot set the instance app name."""
+        _reset_app_name(api_client, authenticated_session)
+
+        response = second_user_session.put(
+            f'{api_client}/api/branding/app-name',
+            json={'name': 'Hijacked'},
+        )
+        assert response.status_code == 403
+
+    def test_reset_app_name(self, api_client, authenticated_session):
+        """Reset removes the configured custom app name."""
+        set_response = authenticated_session.put(
+            f'{api_client}/api/branding/app-name',
+            json={'name': 'AFT - Work'},
+        )
+        assert set_response.status_code == 200, set_response.text
+
+        reset_response = authenticated_session.delete(f'{api_client}/api/branding/app-name')
+        assert reset_response.status_code == 200
+        assert reset_response.json()['success'] is True
+
+        get_response = requests.get(f'{api_client}/api/branding/app-name')
+        assert get_response.status_code == 200
+        assert get_response.json()['name'] == 'AFT Tasks'
+
+    def test_reset_app_name_no_permission(self, api_client, authenticated_session, second_user_session):
+        """Non-admin users cannot reset the instance app name."""
+        response = second_user_session.delete(f'{api_client}/api/branding/app-name')
+        assert response.status_code == 403
+
+        _reset_app_name(api_client, authenticated_session)
+
+
+@pytest.mark.api
+class TestPwaManifestAPI:
+    """Test cases for the dynamic PWA web app manifest route."""
+
+    def test_manifest_default(self, api_client, authenticated_session):
+        """Manifest reflects the default app name and required PWA fields."""
+        _reset_app_name(api_client, authenticated_session)
+
+        response = requests.get(f'{api_client}/manifest.webmanifest')
+        assert response.status_code == 200
+        assert response.headers['Content-Type'].startswith('application/manifest+json')
+
+        data = response.json()
+        assert data['name'] == 'AFT Tasks'
+        assert data['short_name'] == 'AFT'
+        assert data['display'] == 'standalone'
+        assert data['start_url'] == '/'
+        icon_sizes = {icon['sizes'] for icon in data['icons']}
+        assert {'192x192', '512x512'}.issubset(icon_sizes)
+
+    def test_manifest_reflects_custom_app_name(self, api_client, authenticated_session):
+        """Manifest name/short_name update immediately after a custom name is set."""
+        set_response = authenticated_session.put(
+            f'{api_client}/api/branding/app-name',
+            json={'name': 'AFT - Work'},
+        )
+        assert set_response.status_code == 200, set_response.text
+
+        response = requests.get(f'{api_client}/manifest.webmanifest')
+        assert response.status_code == 200
+        data = response.json()
+        assert data['name'] == 'AFT - Work'
+        assert data['short_name'] == 'AFT - Work'[:12]
+
+        _reset_app_name(api_client, authenticated_session)

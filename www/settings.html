@@ -6,7 +6,14 @@
   <title>Settings - AFT</title>
   <link rel="icon" type="image/png" href="/images/AFT_logo.png">
   <link rel="icon" type="image/webp" href="/images/AFT_logo.webp">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#2C3E50">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="AFT">
   <script src="/js/theme-loader.js"></script>
+  <script src="/js/pwa.js"></script>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/header.css">
   <link rel="stylesheet" href="/css/settings.css">
@@ -79,6 +86,17 @@
             <option value="">Loading...</option>
           </select>
         </div>
+
+        <div class="setting-item" id="pwa-install-section" hidden>
+          <label for="pwa-install-btn">Install App</label>
+          <p class="setting-help" id="pwa-install-help">Install AFT as an app on this device for a full-screen, home-screen experience.</p>
+          <button class="btn btn-secondary" id="pwa-install-btn" type="button" aria-describedby="pwa-install-help">Install App</button>
+        </div>
+
+        <div class="setting-item" id="pwa-ios-instructions-section" hidden>
+          <label>Install App</label>
+          <p class="setting-help">On iPhone/iPad: tap the Share icon in Safari, then "Add to Home Screen".</p>
+        </div>
         </section>
 
         <section class="settings-section" id="global-settings-panel" hidden aria-labelledby="global-settings-title">
@@ -136,6 +154,19 @@
 
             <div id="branding-status" class="settings-status" role="status" aria-live="polite"></div>
           </div>
+
+          <div class="setting-item" id="app-name-section">
+            <label for="app-name-input">PWA App Name</label>
+            <p class="setting-help">Name shown when this instance is installed as an app. Useful for telling multiple self-hosted instances apart on the same device.</p>
+
+            <div class="branding-actions">
+              <input id="app-name-input" class="setting-select" type="text" maxlength="45" placeholder="AFT Tasks" aria-label="PWA app name">
+              <button id="app-name-save-btn" class="btn btn-secondary" type="button">Save</button>
+              <button id="app-name-reset-btn" class="btn btn-secondary" type="button">Reset to Default</button>
+            </div>
+
+            <div id="app-name-status" class="settings-status" role="status" aria-live="polite"></div>
+          </div>
         </section>
       </div>
 
@@ -149,5 +180,6 @@
   <script src="/js/notifications.js"></script>
   <script src="/js/header.js"></script>
   <script src="/js/settings.js"></script>
+  <script src="/js/pwa-install.js"></script>
 </body>
 </html>

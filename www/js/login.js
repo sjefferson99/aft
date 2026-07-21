@@ -17,6 +17,15 @@ function isSafeRelativePath(path) {
     return typeof path === 'string' && path.startsWith('/') && !path.startsWith('//');
 }
 
+// Default "Remember me" to checked when launched as an installed PWA -
+// staying logged in between launches is the point of a home-screen app,
+// unlike the shared web login page, where session-only is a sensible
+// default (e.g. a public/shared computer). No-op in a normal browser tab.
+// Still overridable - this only sets the initial state.
+if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+    document.getElementById('rememberMe').checked = true;
+}
+
 // Support login links that pass ?redirect=... while preserving existing
 // sessionStorage redirect flow used elsewhere in the app.
 (function hydrateRedirectFromQuery() {

@@ -2,6 +2,29 @@
 // This must run IMMEDIATELY in the HEAD to prevent style flash
 
 (function() {
+  const THEME_COLOR_STORAGE_KEY = 'aftThemeColor';
+
+  // Installed/standalone PWAs (notably Android Chrome) paint the OS status
+  // bar from the theme-color meta tag once, very early - updating the tag
+  // later via JS after an async API call reliably updates the in-page value
+  // but the already-painted system status bar does not repaint to match.
+  // localStorage (unlike sessionStorage) survives a full app close, so this
+  // applies the last-known-correct color synchronously, before anything
+  // else runs, closing the gap for first-launch/first-navigation-of-session.
+  (function applyStoredThemeColorImmediately() {
+    try {
+      const stored = localStorage.getItem(THEME_COLOR_STORAGE_KEY);
+      if (stored) {
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) {
+          meta.setAttribute('content', stored);
+        }
+      }
+    } catch (e) {
+      // localStorage unavailable (private browsing etc.) - static fallback in the HTML stands.
+    }
+  })();
+
   const SAFE_THEME_SETTING_NAME = /^[A-Za-z0-9-]+$/;
   const colorValidationElement = document.createElement('span');
   // Expose as a shared constant so other scripts (e.g. header.js) can reuse
@@ -108,6 +131,26 @@
     return Object.keys(safeSettings).length > 0 ? safeSettings : null;
   }
 
+  // Keeps the browser/OS chrome color (address bar, status bar, task
+  // switcher) in sync with the app's own header, instead of a static value
+  // that would only ever match the default theme.
+  function applyThemeColorMeta(headerBackground) {
+    if (!headerBackground) {
+      return;
+    }
+
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute('content', headerBackground);
+    }
+
+    try {
+      localStorage.setItem(THEME_COLOR_STORAGE_KEY, headerBackground);
+    } catch (e) {
+      // localStorage unavailable (private browsing etc.) - in-page value above still applies.
+    }
+  }
+
   function applyThemeSettings(root, settings) {
     const safeSettings = getSafeThemeSettings(settings);
 
@@ -118,6 +161,8 @@
     Object.entries(safeSettings).forEach(([key, value]) => {
       root.style.setProperty(`--${key}`, value);
     });
+
+    applyThemeColorMeta(safeSettings['header-background']);
 
     return safeSettings;
   }

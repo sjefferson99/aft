@@ -20,6 +20,10 @@ class Settings {
     this.brandingResetBtn = document.getElementById('branding-reset-btn');
     this.brandingStatus = document.getElementById('branding-status');
     this.defaultLogoPath = this.currentLogoPreview?.getAttribute('src') || '/images/AFT_logo.webp';
+    this.appNameInput = document.getElementById('app-name-input');
+    this.appNameSaveBtn = document.getElementById('app-name-save-btn');
+    this.appNameResetBtn = document.getElementById('app-name-reset-btn');
+    this.appNameStatus = document.getElementById('app-name-status');
     this.saveTimeout = null;
     this.canManageBranding = false;
   }
@@ -45,6 +49,7 @@ class Settings {
     await this.applyThemeColors(); // Ensure theme is loaded on page load
     if (this.canManageBranding) {
       await this.loadBrandingSettings();
+      await this.loadAppName();
     }
     this.attachEventListeners();
   }
@@ -213,6 +218,116 @@ class Settings {
         this.showBrandingStatus('Reset timed out. Please try again.', 'error');
       } else {
         this.showBrandingStatus(`Error resetting logo: ${error.message}`, 'error');
+      }
+    }
+  }
+
+  showAppNameStatus(message, type = 'info') {
+    if (!this.appNameStatus) {
+      return;
+    }
+
+    this.appNameStatus.textContent = message;
+    this.appNameStatus.className = `settings-status ${type}`;
+
+    if (type === 'success') {
+      setTimeout(() => {
+        if (this.appNameStatus) {
+          this.appNameStatus.textContent = '';
+          this.appNameStatus.className = 'settings-status';
+        }
+      }, 2000);
+    }
+  }
+
+  async loadAppName() {
+    if (!this.canManageBranding || !this.appNameInput) {
+      return;
+    }
+
+    try {
+      const response = await this.fetchWithTimeout('/api/branding/app-name', {
+        cache: 'no-store'
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      this.appNameInput.value = data.name || '';
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Error loading app name:', error);
+      }
+    }
+  }
+
+  async saveAppName() {
+    if (!this.canManageBranding || !this.appNameInput) {
+      return;
+    }
+
+    const name = this.appNameInput.value.trim();
+    if (!name) {
+      this.showAppNameStatus('Please enter a name.', 'error');
+      return;
+    }
+
+    try {
+      this.showAppNameStatus('Saving...', 'info');
+
+      const response = await this.fetchWithTimeout('/api/branding/app-name', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to save app name');
+      }
+
+      this.appNameInput.value = data.name;
+      this.showAppNameStatus('App name saved. Reinstall the app to see the new name/icon label.', 'success');
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        this.showAppNameStatus('Save timed out. Please try again.', 'error');
+      } else {
+        this.showAppNameStatus(`Error saving app name: ${error.message}`, 'error');
+      }
+    }
+  }
+
+  async resetAppName() {
+    if (!this.canManageBranding) {
+      return;
+    }
+
+    try {
+      this.showAppNameStatus('Resetting...', 'info');
+
+      const response = await this.fetchWithTimeout('/api/branding/app-name', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to reset app name');
+      }
+
+      await this.loadAppName();
+      this.showAppNameStatus('App name reset to default.', 'success');
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        this.showAppNameStatus('Reset timed out. Please try again.', 'error');
+      } else {
+        this.showAppNameStatus(`Error resetting app name: ${error.message}`, 'error');
       }
     }
   }
@@ -975,6 +1090,18 @@ class Settings {
     if (this.canManageBranding && this.brandingResetBtn) {
       this.brandingResetBtn.addEventListener('click', () => {
         this.resetBrandingLogo();
+      });
+    }
+
+    if (this.canManageBranding && this.appNameSaveBtn) {
+      this.appNameSaveBtn.addEventListener('click', () => {
+        this.saveAppName();
+      });
+    }
+
+    if (this.canManageBranding && this.appNameResetBtn) {
+      this.appNameResetBtn.addEventListener('click', () => {
+        this.resetAppName();
       });
     }
 
