@@ -1,5 +1,6 @@
 """Branding routes for instance-wide logo management."""
 
+import json
 import logging
 import os
 import time
@@ -10,6 +11,7 @@ from flask import Blueprint, jsonify, request
 
 from database import SessionLocal
 from models import InstanceConfig
+from theme_defaults import get_instance_default_theme
 from utils import create_error_response, create_success_response, require_permission
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,8 @@ DEFAULT_APP_NAME = 'AFT Tasks'
 DEFAULT_APP_SHORT_NAME = 'AFT'
 MAX_APP_NAME_LENGTH = 45  # Android's install UI truncates well before this; keeps things sane.
 MAX_APP_SHORT_NAME_LENGTH = 12  # Home-screen label space is tight, especially on iOS.
+DEFAULT_MANIFEST_BACKGROUND_COLOR = '#ffffff'
+DEFAULT_MANIFEST_THEME_COLOR = '#2C3E50'
 
 
 @branding_bp.route('/api/branding/logo', methods=['GET'])
@@ -171,6 +175,26 @@ def clear_branding_logo():
         return create_error_response('Error clearing branding logo', 500)
     finally:
         session.close()
+
+
+def get_manifest_colors(session):
+    """Resolve manifest background/theme colors from the instance default theme.
+
+    Falls back to the static AFT brand colors if no theme is configured or
+    its settings can't be parsed, so the manifest route never breaks.
+    """
+    theme = get_instance_default_theme(session)
+    if not theme or not theme.settings:
+        return DEFAULT_MANIFEST_BACKGROUND_COLOR, DEFAULT_MANIFEST_THEME_COLOR
+
+    try:
+        settings = json.loads(theme.settings)
+    except (TypeError, ValueError):
+        return DEFAULT_MANIFEST_BACKGROUND_COLOR, DEFAULT_MANIFEST_THEME_COLOR
+
+    background_color = settings.get('background-light') or DEFAULT_MANIFEST_BACKGROUND_COLOR
+    theme_color = settings.get('header-background') or DEFAULT_MANIFEST_THEME_COLOR
+    return background_color, theme_color
 
 
 def get_configured_app_name():
@@ -335,7 +359,13 @@ def get_pwa_manifest():
       200:
         description: Web app manifest
     """
-    app_name = get_configured_app_name()
+    session = SessionLocal()
+    try:
+        app_name = get_configured_app_name()
+        background_color, theme_color = get_manifest_colors(session)
+    finally:
+        session.close()
+
     # Short name mirrors the full name when custom (space is tight on the
     # home screen, but showing *something* distinct beats the generic "AFT"
     # default when a name has been explicitly set); truncated to fit.
@@ -349,8 +379,8 @@ def get_pwa_manifest():
         'start_url': '/',
         'scope': '/',
         'display': 'standalone',
-        'background_color': '#ffffff',
-        'theme_color': '#2C3E50',
+        'background_color': background_color,
+        'theme_color': theme_color,
         'icons': [
             {'src': '/icons/icon-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any'},
             {'src': '/icons/icon-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
