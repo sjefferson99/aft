@@ -1278,6 +1278,29 @@ class TestNotificationIDORSecurity:
 
 
 @pytest.mark.api
+class TestMobileAppInstallNotification:
+    """Regression test for Issue 514: new users get a mobile app install notification."""
+
+    def test_new_user_receives_mobile_app_install_notification(
+        self, api_client, second_user_session
+    ):
+        """A freshly registered user should have the 'Install AFT as an app' notification."""
+        response = second_user_session.get(f'{api_client}/api/notifications')
+        assert response.status_code == 200
+
+        notifications = response.json()['notifications']
+        install_notif = next(
+            (n for n in notifications if n['subject'] == 'Install AFT as an app'), None
+        )
+        assert install_notif is not None, (
+            f"Expected an 'Install AFT as an app' notification for a new user, "
+            f"but found subjects: {[n.get('subject') for n in notifications]}"
+        )
+        assert install_notif['unread'] is True
+        assert install_notif['action_url'] == '/settings.html'
+
+
+@pytest.mark.api
 class TestNotificationMultiUserCreation:
     """Test cases for admin creating notifications for all users."""
     
