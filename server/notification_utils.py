@@ -6,6 +6,32 @@ from models import Notification, Role, User, UserRole
 
 logger = logging.getLogger(__name__)
 
+# Shared with alembic/versions/034_add_mobile_app_notification.py - keep both in sync.
+MOBILE_APP_NOTIFICATION_SUBJECT = 'Install AFT as an app'
+MOBILE_APP_NOTIFICATION_MESSAGE = (
+    "AFT can be installed as an app on your phone, tablet, Mac or PC for a "
+    "full-screen, home-screen experience with no browser address bar. "
+    "Mac/PC (Chrome or Edge): open AFT, then click the install icon in the "
+    "address bar, or the browser menu > Install AFT. "
+    "Android (Chrome): open AFT, tap the menu (three dots) > Install app, "
+    "or use the Install App button in AFT Settings. "
+    "iPhone/iPad (Safari): open AFT, tap the Share icon, then Add to Home "
+    "Screen. See AFT Settings for step-by-step help."
+)
+MOBILE_APP_NOTIFICATION_ACTION_TITLE = 'Open Settings'
+MOBILE_APP_NOTIFICATION_ACTION_URL = '/settings.html'
+
+
+def create_mobile_app_notification(user_id: int) -> bool:
+    """Create the 'install AFT as an app' notification for a single new user."""
+    return create_notification(
+        subject=MOBILE_APP_NOTIFICATION_SUBJECT,
+        message=MOBILE_APP_NOTIFICATION_MESSAGE,
+        action_title=MOBILE_APP_NOTIFICATION_ACTION_TITLE,
+        action_url=MOBILE_APP_NOTIFICATION_ACTION_URL,
+        user_id=user_id,
+    )
+
 
 def _resolve_recipient_user_ids(db, explicit_user_id=None):
     """Resolve recipient user IDs for internal notifications.

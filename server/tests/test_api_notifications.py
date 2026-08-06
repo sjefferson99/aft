@@ -1224,9 +1224,14 @@ class TestNotificationIDORSecurity:
         })
         assert b_create.status_code == 201
 
+        b_before = second_user_session.get(f'{api_client}/api/notifications')
+        b_unread_count = sum(1 for n in b_before.json()['notifications'] if n['unread'])
+
         mark_resp = second_user_session.put(f'{api_client}/api/notifications/mark-all-read')
         assert mark_resp.status_code == 200
-        assert mark_resp.json()['count'] == 1, "Expected exactly User B's 1 notification to be updated"
+        assert mark_resp.json()['count'] == b_unread_count, (
+            "Expected exactly User B's own unread notifications to be updated"
+        )
 
         check = authenticated_session.get(f'{api_client}/api/notifications')
         notifs = check.json()['notifications']
@@ -1255,9 +1260,15 @@ class TestNotificationIDORSecurity:
             'subject': 'User B to delete',
             'message': 'User B notification',
         })
+
+        b_before = second_user_session.get(f'{api_client}/api/notifications')
+        b_notif_count = len(b_before.json()['notifications'])
+
         delete_resp = second_user_session.delete(f'{api_client}/api/notifications/delete-all')
         assert delete_resp.status_code == 200
-        assert delete_resp.json()['count'] == 1, "Expected exactly User B's 1 notification to be deleted"
+        assert delete_resp.json()['count'] == b_notif_count, (
+            "Expected exactly User B's own notifications to be deleted"
+        )
 
         check = authenticated_session.get(f'{api_client}/api/notifications')
         notifs = check.json()['notifications']
