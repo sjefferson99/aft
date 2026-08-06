@@ -1224,9 +1224,14 @@ class TestNotificationIDORSecurity:
         })
         assert b_create.status_code == 201
 
+        b_before = second_user_session.get(f'{api_client}/api/notifications')
+        b_unread_count = sum(1 for n in b_before.json()['notifications'] if n['unread'])
+
         mark_resp = second_user_session.put(f'{api_client}/api/notifications/mark-all-read')
         assert mark_resp.status_code == 200
-        assert mark_resp.json()['count'] == 1, "Expected exactly User B's 1 notification to be updated"
+        assert mark_resp.json()['count'] == b_unread_count, (
+            "Expected exactly User B's own unread notifications to be updated"
+        )
 
         check = authenticated_session.get(f'{api_client}/api/notifications')
         notifs = check.json()['notifications']
@@ -1255,15 +1260,44 @@ class TestNotificationIDORSecurity:
             'subject': 'User B to delete',
             'message': 'User B notification',
         })
+
+        b_before = second_user_session.get(f'{api_client}/api/notifications')
+        b_notif_count = len(b_before.json()['notifications'])
+
         delete_resp = second_user_session.delete(f'{api_client}/api/notifications/delete-all')
         assert delete_resp.status_code == 200
-        assert delete_resp.json()['count'] == 1, "Expected exactly User B's 1 notification to be deleted"
+        assert delete_resp.json()['count'] == b_notif_count, (
+            "Expected exactly User B's own notifications to be deleted"
+        )
 
         check = authenticated_session.get(f'{api_client}/api/notifications')
         notifs = check.json()['notifications']
         assert any(n['id'] == a_notif_id for n in notifs), (
             "User A's notification was deleted by User B's delete-all"
         )
+
+
+@pytest.mark.api
+class TestMobileAppInstallNotification:
+    """Regression test for Issue 514: new users get a mobile app install notification."""
+
+    def test_new_user_receives_mobile_app_install_notification(
+        self, api_client, second_user_session
+    ):
+        """A freshly registered user should have the 'Install AFT as an app' notification."""
+        response = second_user_session.get(f'{api_client}/api/notifications')
+        assert response.status_code == 200
+
+        notifications = response.json()['notifications']
+        install_notif = next(
+            (n for n in notifications if n['subject'] == 'Install AFT as an app'), None
+        )
+        assert install_notif is not None, (
+            f"Expected an 'Install AFT as an app' notification for a new user, "
+            f"but found subjects: {[n.get('subject') for n in notifications]}"
+        )
+        assert install_notif['unread'] is True
+        assert install_notif['action_url'] == '/settings.html'
 
 
 @pytest.mark.api

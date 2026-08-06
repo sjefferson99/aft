@@ -946,9 +946,12 @@ def register():
             create_default_user_settings(user.id, db)
             
             db.commit()
-            
+
             logger.info(f"New user registered: {user.email} (ID: {user.id})")
-            
+
+            from notification_utils import create_mobile_app_notification
+            create_mobile_app_notification(user.id)
+
             # Don't auto-login - user needs admin approval
             # Return success but explain approval is needed
             user_data = {
@@ -1335,9 +1338,12 @@ def setup_admin():
                 ensure_administrator_role(existing_admin)
                 
                 db.commit()
-                
+
                 user = existing_admin
                 logger.info(f"Updated default admin user: {user.email} (ID: {user.id})")
+
+                from notification_utils import create_mobile_app_notification
+                create_mobile_app_notification(user.id)
             else:
                 # Create new admin user
                 user = User(
@@ -1362,9 +1368,12 @@ def setup_admin():
                 ensure_administrator_role(user)
                 
                 db.commit()
-                
+
                 logger.info(f"Created first admin user: {user.email} (ID: {user.id})")
-            
+
+                from notification_utils import create_mobile_app_notification
+                create_mobile_app_notification(user.id)
+
             # Auto-login after setup
             session['user_id'] = user.id
             session['user_email_hash'] = hashlib.sha256(user.email.encode()).hexdigest()[:16]
