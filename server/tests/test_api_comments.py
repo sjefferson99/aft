@@ -407,31 +407,34 @@ class TestCommentsIntegration:
         assert response.status_code in [200, 404]
     
     def test_card_with_comments_in_board_response(self, api_client, authenticated_session, sample_board, sample_column, sample_card):
-        """Test that board response includes comment data for cards."""
+        """Test that board response includes a comment_count (not full comment
+        bodies) for cards. The board list endpoint intentionally omits comment
+        content -- see docs/PERFORMANCE_board_updates.md item 1.5 -- full
+        comment bodies are only available via GET /api/cards/{id}.
+        """
         # Create a comment
         authenticated_session.post(
             f'{api_client}/api/cards/{sample_card["id"]}/comments',
             json={'comment': 'Test comment'}
         )
-        
+
         # Get board data
         response = authenticated_session.get(
             f'{api_client}/api/boards/{sample_board["id"]}/cards'
         )
         assert response.status_code == 200
         data = response.json()
-        
+
         # Find the card in the response
         card_found = False
         for column in data['board']['columns']:
             for card in column['cards']:
                 if card['id'] == sample_card['id']:
                     card_found = True
-                    assert 'comments' in card
-                    assert len(card['comments']) == 1
-                    assert card['comments'][0]['comment'] == 'Test comment'
+                    assert 'comments' not in card
+                    assert card['comment_count'] == 1
                     break
-        
+
         assert card_found, "Sample card not found in board response"
     
     def test_get_single_card_includes_comments(self, api_client, authenticated_session, sample_card):

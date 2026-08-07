@@ -21,7 +21,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from database import SessionLocal
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
-from models import Board, BoardColumn, Card, CardSecondaryAssignee, User
+from models import Board, BoardColumn, Card, CardSecondaryAssignee, Comment, User
 from settings_schema import WORKING_STYLE_AGILE, get_board_working_style
 from utils import (
     MAX_DESCRIPTION_LENGTH,
@@ -29,6 +29,7 @@ from utils import (
     create_error_response,
     create_success_response,
     get_current_user_id,
+    get_request_socket_id,
     get_user_permissions,
     get_user_scoped_query,
     require_board_access,
@@ -390,7 +391,10 @@ def get_board_cards(board_id):
             # Get cards for this column with archived filter
             # Always filter out scheduled template cards (scheduled=True) from task views
             cards_query = db.query(Card).filter(Card.column_id == column.id).filter(Card.scheduled.is_(False))
-            cards_query = cards_query.options(selectinload(Card.assigned_to))
+            cards_query = cards_query.options(
+                selectinload(Card.assigned_to),
+                selectinload(Card.checklist_items),
+            )
 
             cards_query = _apply_assignee_card_filters(
                 cards_query,
@@ -410,7 +414,20 @@ def get_board_cards(board_id):
 
             cards = cards_query.order_by(Card.order).all()
 
-            # Serialize cards with checklist items and comments while session is active
+            # Comment count only (never the comment bodies — the board view
+            # doesn't display them, only the count; full comment content is
+            # fetched separately when a card is opened via GET /api/cards/:id).
+            # A single grouped COUNT query per column instead of loading and
+            # discarding every comment row.
+            card_ids = [card.id for card in cards]
+            comment_counts = dict(
+                db.query(Comment.card_id, func.count(Comment.id))
+                .filter(Comment.card_id.in_(card_ids))
+                .group_by(Comment.card_id)
+                .all()
+            ) if card_ids else {}
+
+            # Serialize cards with checklist items and comment counts while session is active
             cards_data = [
                 {
                     "id": card.id,
@@ -442,16 +459,7 @@ def get_board_cards(board_id):
                         }
                         for item in card.checklist_items
                     ],
-                    "comments": [
-                        {
-                            "id": comment.id,
-                            "card_id": comment.card_id,
-                            "comment": comment.comment,
-                            "order": comment.order,
-                            "created_at": serialize_datetime(comment.created_at)
-                        }
-                        for comment in card.comments
-                    ]
+                    "comment_count": comment_counts.get(card.id, 0),
                 }
                 for card in cards
             ]
@@ -724,7 +732,7 @@ def create_card(column_id):
                 'column_id': column_id,
                 'card_id': card.id,
                 'card_data': result
-            }, board_id)
+            }, board_id, get_request_socket_id())
         else:
             logger.warning(f"Skipping card_created broadcast for card {card.id}: column {column_id} has no board_id")
 
@@ -998,7 +1006,7 @@ def move_all_cards_in_column(source_column_id):
                 'target_column_id': target_column_id,
                 'moved_count': len(source_cards),
                 'position': position
-            }, source_column.board_id)
+            }, source_column.board_id, get_request_socket_id())
 
         return (
             jsonify(
@@ -1487,7 +1495,7 @@ def update_card(card_id):
                 'column_id': card.column_id,
                 'card_data': result,
                 'moved': old_column_id != card.column_id or old_order != card.order
-            }, column.board_id, getattr(request, "sid", None))
+            }, column.board_id, get_request_socket_id())
 
         return create_success_response({"card": result})
 
@@ -1558,9 +1566,13 @@ def delete_card(card_id):
             db.close()
             return jsonify({"success": False, "message": "Card not found or access denied"}), 404
 
-        # Get board_id for WebSocket broadcast before deleting
+        # Get board_id/column_id for WebSocket broadcast before deleting —
+        # the card instance is detached after commit()+close(), so any
+        # attribute needed for the broadcast payload must be captured now.
         column = db.query(BoardColumn).filter(BoardColumn.id == card.column_id).first()
         board_id = column.board_id if column else None
+        column_id = card.column_id
+        socket_id = get_request_socket_id()
 
         db.delete(card)
         db.commit()
@@ -1571,8 +1583,8 @@ def delete_card(card_id):
             _broadcast_event('card_deleted', {
                 'board_id': board_id,
                 'card_id': card_id,
-                'column_id': card.column_id
-            }, board_id)
+                'column_id': column_id
+            }, board_id, socket_id)
         else:
             logger.warning(f"⚠️  Failed to broadcast card_deleted for card {card_id}: column or board_id not found")
 
@@ -1842,7 +1854,7 @@ def archive_card(card_id):
                 'card_id': card.id,
                 'column_id': card.column_id,
                 'card_data': card_dict
-            }, board_id)
+            }, board_id, get_request_socket_id())
 
         return jsonify({"success": True, "message": "Card archived successfully", "card": card_dict}), 200
     except Exception as e:
@@ -1937,7 +1949,7 @@ def unarchive_card(card_id):
                 'card_id': card.id,
                 'column_id': card.column_id,
                 'card_data': card_dict
-            }, board_id)
+            }, board_id, get_request_socket_id())
 
         return jsonify({"success": True, "message": "Card unarchived successfully", "card": card_dict}), 200
     except Exception as e:
@@ -2112,7 +2124,7 @@ def update_card_done_status(card_id):
                 'column_id': card.column_id,
                 'done': done_status,
                 'card_data': card_dict
-            }, board_id)
+            }, board_id, get_request_socket_id())
 
         return jsonify({
             "success": True,

@@ -12,6 +12,7 @@ from utils import (
     MAX_COMMENT_LENGTH,
     create_error_response,
     create_success_response,
+    get_request_socket_id,
     get_user_scoped_query,
     require_permission,
     sanitize_string,
@@ -29,9 +30,9 @@ def configure_schedule_routes(broadcast_event_fn):
     _broadcast_event = broadcast_event_fn
 
 
-def broadcast_event(event_name, data, board_id):
+def broadcast_event(event_name, data, board_id, skip_sid=None):
     if _broadcast_event:
-        _broadcast_event(event_name, data, board_id)
+        _broadcast_event(event_name, data, board_id, skip_sid)
 
 
 MAX_REGENERATION_RANGE_DAYS = 90
@@ -258,6 +259,7 @@ def create_schedule():
 
         # Broadcast related card changes so other clients update without page refresh.
         if board_id is not None:
+            socket_id = get_request_socket_id()
             if created_template_card is not None:
                 broadcast_event('card_created', {
                     'board_id': board_id,
@@ -276,7 +278,7 @@ def create_schedule():
                         'created_at': serialize_datetime(created_template_card.created_at),
                         'updated_at': serialize_datetime(created_template_card.updated_at)
                     }
-                }, board_id)
+                }, board_id, socket_id)
 
             if updated_source_card is not None:
                 broadcast_event('card_updated', {
@@ -285,14 +287,14 @@ def create_schedule():
                     'updated_fields': {
                         'schedule': updated_source_card.schedule
                     }
-                }, board_id)
+                }, board_id, socket_id)
 
             if deleted_source_card_id is not None:
                 broadcast_event('card_deleted', {
                     'board_id': board_id,
                     'card_id': deleted_source_card_id,
                     'column_id': deleted_source_column_id
-                }, board_id)
+                }, board_id, socket_id)
         else:
             import logging
             logging.getLogger(__name__).warning(
@@ -675,6 +677,7 @@ def delete_schedule(schedule_id):
 
         # Broadcast card changes so clients in normal/scheduled views stay in sync.
         if board_id is not None:
+            socket_id = get_request_socket_id()
             for impacted_card_id in impacted_card_ids:
                 broadcast_event('card_updated', {
                     'board_id': board_id,
@@ -682,14 +685,14 @@ def delete_schedule(schedule_id):
                     'updated_fields': {
                         'schedule': None
                     }
-                }, board_id)
+                }, board_id, socket_id)
 
             if template_card_column_id is not None:
                 broadcast_event('card_deleted', {
                     'board_id': board_id,
                     'card_id': template_card_id,
                     'column_id': template_card_column_id
-                }, board_id)
+                }, board_id, socket_id)
         else:
             import logging
             logging.getLogger(__name__).warning(
@@ -864,7 +867,7 @@ def create_checklist_item(card_id):
                     'created_at': serialize_datetime(checklist_item.created_at),
                     'updated_at': serialize_datetime(checklist_item.updated_at)
                 }
-            }, column.board_id)
+            }, column.board_id, get_request_socket_id())
 
         return jsonify({
             "success": True,
@@ -1009,7 +1012,7 @@ def update_checklist_item(item_id):
                 'card_id': checklist_item.card_id,
                 'item_id': checklist_item.id,
                 'item_data': result
-            }, board_id)
+            }, board_id, get_request_socket_id())
 
         return jsonify({
             "success": True,

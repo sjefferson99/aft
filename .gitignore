@@ -21,6 +21,11 @@ htmlcov/
 ui-tests/test-results/
 ui-tests/playwright-report/
 
+# Performance test harness — saved DevTools traces can be large; results/
+# JSON summaries and history.md ARE tracked (small, meant to be compared
+# over time)
+perf-tests/results/traces/
+
 # IDE
 .idea/
 *.swp

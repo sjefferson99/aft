@@ -92,10 +92,11 @@ class TestPublicBoardsAPI:
         assert len(card["checklist_items"]) == 1
         assert card["checklist_items"][0]["name"] == "Checklist task"
 
-        assert len(card["comments"]) == 1
-        assert card["comments"][0]["comment"] == "Public comment content"
-        assert "user_id" not in card["comments"][0]
-        assert "author" not in card["comments"][0]
+        # Public board list endpoint returns comment_count only, not comment
+        # bodies -- see docs/PERFORMANCE_board_updates.md item 1.5. Full
+        # comment content is available via the public single-card endpoint.
+        assert "comments" not in card
+        assert card["comment_count"] == 1
 
     def test_public_board_headers_are_present_via_nginx_http_and_https(
         self,

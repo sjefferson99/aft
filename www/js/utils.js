@@ -22,7 +22,27 @@
     return publicPages.some((pagePath) => (pathname || '').includes(pagePath));
   }
 
+  function isSameOriginApiRequest(input) {
+    try {
+      const url = new URL(typeof input === 'string' ? input : input.url, window.location.origin);
+      return url.origin === window.location.origin && url.pathname.startsWith('/api/');
+    } catch (e) {
+      return false;
+    }
+  }
+
   window.fetch = async function(...args) {
+    // Tag same-origin API requests with the active WebSocket session id (if
+    // connected) so the server can exclude this tab from the WebSocket
+    // broadcast echo of changes it just made itself — see
+    // WebSocketManager in board.js and skip_sid handling server-side.
+    if (window.__aftSocketId && isSameOriginApiRequest(args[0])) {
+      const [input, init = {}] = args;
+      const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
+      headers.set('X-Socket-Id', window.__aftSocketId);
+      args = [input, { ...init, headers }];
+    }
+
     const response = await originalFetch.apply(this, args);
     
     // Clone response so we can read it twice if needed

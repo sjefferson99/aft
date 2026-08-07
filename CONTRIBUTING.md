@@ -17,6 +17,7 @@ Before submitting any code contribution, **verify ALL items** are complete:
 - [ ] **Security** - Input validation, length limits, no error leaking (see [Security Guidelines](#security-guidelines))
 - [ ] **Database Changes** - Migration created, schema validation updated (see [Database Changes](#database-changes))
 - [ ] **Import/Export Compatibility** — If adding or changing a card or board field, check whether the native AFT export (`board_routes.py` export endpoint) and import loop, and any active import handlers (`TrelloBoardImportHandler` in `server/board_import_handlers.py`, etc.), need updating. See [trello_import_feature_backlog.md](./trello_import_feature_backlog.md) for tracked gaps.
+- [ ] **Performance at Scale** — If touching a board list/read endpoint or `www/js/board.js` rendering/DOM code, check it against [Performance Considerations](#performance-considerations) below. AFT boards are used with 100+ cards per column in practice.
 - [ ] **Documentation** - README/docs updated if behaviour changed
 - [ ] **Agent Context Updated** - If workflow/security/testing behaviour changed, update [AGENT_CONTEXT.md](./AGENT_CONTEXT.md)
 - [ ] **All Tests Pass** - Run `pytest -v` with fresh database and verify all tests pass
@@ -34,6 +35,7 @@ Before submitting any code contribution, **verify ALL items** are complete:
 - [Testing Requirements](#testing-requirements)
 - [UI/E2E Testing Requirements](#uie2e-testing-requirements)
 - [Accessibility Requirements](#accessibility-requirements)
+- [Performance Considerations](#performance-considerations)
 - [Security Guidelines](#security-guidelines)
 - [Pull Request Process](#pull-request-process)
 - [Style Guide](#style-guide)
@@ -732,6 +734,94 @@ All UI changes must meet accessibility standards. See [ACCESSIBILITY.md](docs/AC
 3. Test with a screen reader
 4. Run automated tools (axe DevTools, Lighthouse)
 
+## Performance Considerations
+
+Boards are used with 100+ cards per column in practice, and the board view is
+the highest-traffic screen in the app. A change that looks fine on a 10-card
+test board can be badly wrong at 100+ cards — this happened for real: see
+[docs/PERFORMANCE_board_updates.md](docs/PERFORMANCE_board_updates.md) for the
+full investigation, the measurements, and the fixes. That document is a
+worked example — read it before adding to a board-scale endpoint or the
+board render path, and use [perf-tests/](perf-tests/) to measure your own
+change on a large seeded board rather than guessing.
+
+### Server: board-scale endpoints (`/api/boards/:id/cards` and similar)
+
+- **No per-row queries.** If you add a relationship to the card/column
+  serializer, eager-load it (`selectinload`), don't rely on lazy loading —
+  lazy loading a relationship inside a `for card in cards` loop is an N+1
+  that is invisible on a 10-card dev board and very visible at 800+ cards.
+  Check `perf-tests/run_all.py`'s query-count output before/after; a change
+  that adds more than a small constant number of queries per request needs
+  a reason.
+- **Don't add fields to a list endpoint that only the detail view needs.**
+  If the board list only ever displays a count or a summary (see the
+  `comment_count` vs. full `comments` split in `card_routes.py`), return the
+  summary from the list endpoint and the full content from the single-item
+  endpoint (`GET /api/cards/:id` and equivalents). Every field added to a
+  per-card object in a board-list response is multiplied by the card count.
+- **Composite indexes for board-scale filter+sort patterns.** If a query
+  filters board data by more than one column and orders by another, check
+  `EXPLAIN` against a large seeded board rather than assuming the existing
+  single-column indexes are enough (see migration
+  `035_add_card_column_state_order_index.py` for the pattern).
+- **WebSocket broadcasts: pass `skip_sid`.** If a mutating route broadcasts
+  a change, get the acting client's socket id via
+  `get_request_socket_id()` (`server/utils.py`) and pass it as `skip_sid` —
+  otherwise the client that made the change also receives its own change
+  back over the socket and does a redundant reload.
+
+### Client: `www/js/board.js` rendering and DOM code
+
+- **Never interleave DOM reads and writes in a loop over cards.** Reading
+  `getBoundingClientRect()`/`scrollHeight`/`offsetHeight` forces a
+  synchronous layout if a previous write in the same frame invalidated it;
+  writing a class/style immediately after reading forces the *next* read to
+  pay for it again. If a loop over `.card` elements needs to both measure
+  and mutate, do it in two passes: collect everything to change first, then
+  apply all changes in a second pass. This exact bug, once fixed, cut
+  forced layout events from 806 to under 20 on an 800-card board (see item
+  1.6 in the performance doc) — it is the single highest-leverage pattern
+  to get right.
+- **Avoid `transition: all` on any element that can appear in bulk** (cards,
+  list rows). Scope the transition to the specific properties that are
+  actually animated by that element's state classes; `all` re-engages the
+  transition machinery for every animatable property on every class change.
+- **Drag-and-drop / any handler firing on `dragover`, `mousemove`, or
+  `scroll`:** these fire at high frequency (dozens to hundreds of times per
+  second during an interaction). Never do a full-column
+  `querySelectorAll` + `getBoundingClientRect()` sweep inside one of these
+  handlers if it can be avoided — snapshot positions once at the start of
+  the interaction and reuse them, or throttle to one update per
+  `requestAnimationFrame`.
+- **A WebSocket event handler updating one card/column does not need to
+  reload the whole board.** The socket payload for `card_updated`,
+  `card_created`, etc. already carries the changed data — prefer patching
+  the affected DOM node directly over calling `loadBoard()`. Where a full
+  reload genuinely is needed (structural changes, reconnect), route it
+  through `scheduleBoardReload()` rather than calling `loadBoard()`
+  directly, so a burst of events coalesces into one reload instead of one
+  per event.
+
+### Measuring your change
+
+Use [perf-tests/](perf-tests/) rather than eyeballing it on a small dev
+board:
+
+```bash
+.venv/Scripts/python.exe perf-tests/seed_board.py --columns 8 --cards-per-column 100
+.venv/Scripts/python.exe perf-tests/run_all.py --board-id <id> --label before
+# make your change
+.venv/Scripts/python.exe perf-tests/run_all.py --board-id <id> --label after
+```
+
+Compare the two rows in `perf-tests/results/history.md`. For drag/interaction
+changes specifically, follow the manual Chrome DevTools procedure in
+[perf-tests/DRAG_MEASUREMENT.md](perf-tests/DRAG_MEASUREMENT.md) — headless
+automation of native HTML5 drag events proved unreliable; don't spend time
+re-attempting it (see the docstring in `perf-tests/browser_probe.py` for
+what was tried).
+
 ## Frontend Error Handling
 
 All frontend API interactions must follow error handling best practices to ensure a consistent user experience when the database or API is unavailable.
@@ -861,6 +951,7 @@ Add screenshots for UI changes
 - [ ] Documentation updated
 - [ ] Accessibility verified
 - [ ] Security reviewed
+- [ ] Performance at scale checked (if touching a board-scale endpoint or board.js rendering — see [Performance Considerations](#performance-considerations))
 ```
 
 ### Review Process

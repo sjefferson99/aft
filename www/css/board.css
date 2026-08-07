@@ -589,7 +589,15 @@
   border-radius: 5px;
   padding: 12px;
   cursor: grab;
-  transition: all 0.2s;
+  /* `all` engaged the transition machinery for every animatable property
+     on every class change (has-overflow/collapsed from item 1.6 alone
+     touches all 800 cards at once). Scoped to the properties actually
+     changed by .card.* state rules below: opacity/transform (dragging,
+     archived-card, mobile-touch-drag-source), box-shadow (:hover),
+     border (update-failed, no-schedule), background (archived-card,
+     no-schedule), padding-bottom (card--has-assignee), max-width (dragging). */
+  transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s, border 0.2s,
+    background 0.2s, padding-bottom 0.2s, max-width 0.2s;
   position: relative;
 }
 
