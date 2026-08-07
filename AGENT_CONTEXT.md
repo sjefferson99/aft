@@ -42,6 +42,13 @@ Security workflow
 - Run Snyk Code after modifying first-party code in supported languages.
 - If issues are introduced, fix and rescan until no new issues are reported for changed paths.
 
+PR review workflow (agent-assisted)
+- Review sequentially (one pass, one train of thought) rather than fanning out into many parallel/competing subagents — parallel review agents on this repo have produced confusing, overlapping, hard-to-follow output.
+- Reproduce findings before reporting them: don't just read the diff, actually exercise the changed code (e.g. run the validator against a crafted input) and compare behaviour against the pre-change version to confirm a regression is real, not theoretical.
+- Post findings as PR comments (a summary comment plus inline comments anchored to the relevant lines) and stop — wait for explicit go-ahead before committing any fix, even when the fix seems obvious.
+- Any PR comment posted by an agent on a human's GitHub account must include a disclaimer that the text is LLM/agent-generated, since the comment otherwise appears to come directly from the account owner.
+- After a fix is approved and applied, re-verify with the same reproduction used to find the bug, then let the human decide about resolving/closing review threads.
+
 Useful commands
 - Rebuild dev stack: docker compose down; docker compose up -d --build
 - Quick dev command reference:
