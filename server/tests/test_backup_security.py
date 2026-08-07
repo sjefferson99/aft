@@ -249,15 +249,34 @@ class TestSQLPatternValidation:
     def test_prepare_statement_detected(self):
         """PREPARE statements should be blocked."""
         from app import validate_backup_file_security
-        
+
         content = VALID_BACKUP_HEADER + VALID_TABLE_STRUCTURE
         content += "\nPREPARE stmt FROM 'SELECT * FROM boards';\n"
         filepath = create_test_backup_file(content)
-        
+
         try:
             is_valid, error = validate_backup_file_security(filepath)
             assert not is_valid, "PREPARE statement should be blocked"
             assert error and "Prepared" in error
+        finally:
+            os.unlink(filepath)
+
+    def test_prepare_word_in_data_value_not_detected(self):
+        """A card/row value that merely contains the word 'Prepare' (e.g. a
+        card titled 'Prepare flower bed') must not be treated as a dangerous
+        PREPARE statement."""
+        from app import validate_backup_file_security
+
+        content = VALID_BACKUP_HEADER + VALID_TABLE_STRUCTURE
+        content += (
+            "\nINSERT INTO `cards` (`id`, `column_id`, `title`, `description`) VALUES "
+            "(1,1,'Prepare flower bed',NULL);\n"
+        )
+        filepath = create_test_backup_file(content)
+
+        try:
+            is_valid, error = validate_backup_file_security(filepath)
+            assert is_valid, f"Data value containing 'Prepare' should not be blocked: {error}"
         finally:
             os.unlink(filepath)
 
