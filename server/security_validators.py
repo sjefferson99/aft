@@ -35,19 +35,27 @@ def validate_safe_url(url):
 
 def validate_backup_file_security(file_path):
     """Validate backup file for dangerous SQL patterns."""
+    # Patterns anchored to the start of a statement (start of line, or
+    # immediately after a `;` statement separator, optionally with leading
+    # whitespace) so they only match actual SQL statements — not occurrences
+    # of these words inside quoted data values (e.g. an INSERT row containing
+    # the text "Prepare flower bed") — while still catching a dangerous
+    # statement smuggled after a leading throwaway statement on the same
+    # line (e.g. "SELECT 1; GRANT ALL PRIVILEGES ON *.* TO 'x'@'%';").
+    STMT_START = r'(?:^|;)\s*'
     dangerous_patterns = [
-        (r'\bGRANT\s+', 'GRANT statements (privilege manipulation)'),
-        (r'\bCREATE\s+USER\b', 'CREATE USER statements'),
-        (r'\bDROP\s+USER\b', 'DROP USER statements'),
-        (r'\bALTER\s+USER\b', 'ALTER USER statements'),
+        (STMT_START + r'GRANT\s+', 'GRANT statements (privilege manipulation)'),
+        (STMT_START + r'CREATE\s+USER\b', 'CREATE USER statements'),
+        (STMT_START + r'DROP\s+USER\b', 'DROP USER statements'),
+        (STMT_START + r'ALTER\s+USER\b', 'ALTER USER statements'),
         (r'\bINTO\s+OUTFILE\b', 'INTO OUTFILE (file system access)'),
-        (r'\bLOAD\s+DATA\b', 'LOAD DATA (file system access)'),
-        (r'\bCREATE\s+(PROCEDURE|FUNCTION)\b', 'Stored procedures/functions'),
-        (r'^\s*USE\s+[`\']?\w+[`\']?\s*;', 'USE statements (cross-database operation)'),
+        (STMT_START + r'LOAD\s+DATA\b', 'LOAD DATA (file system access)'),
+        (STMT_START + r'CREATE\s+(PROCEDURE|FUNCTION)\b', 'Stored procedures/functions'),
+        (STMT_START + r'USE\s+[`\']?\w+[`\']?\s*;', 'USE statements (cross-database operation)'),
         (r'\\!', 'MySQL shell commands'),
         (r'\bSELECT\s+.+?\bINTO\s+@', 'Variable assignment with SELECT'),
-        (r'\bEXECUTE\s+', 'Dynamic SQL execution'),
-        (r'\bPREPARE\s+', 'Prepared statement (potential SQL injection)'),
+        (STMT_START + r'EXECUTE\s+', 'Dynamic SQL execution'),
+        (STMT_START + r'PREPARE\s+', 'Prepared statement (potential SQL injection)'),
     ]
 
     try:

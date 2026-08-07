@@ -249,15 +249,68 @@ class TestSQLPatternValidation:
     def test_prepare_statement_detected(self):
         """PREPARE statements should be blocked."""
         from app import validate_backup_file_security
-        
+
         content = VALID_BACKUP_HEADER + VALID_TABLE_STRUCTURE
         content += "\nPREPARE stmt FROM 'SELECT * FROM boards';\n"
         filepath = create_test_backup_file(content)
-        
+
         try:
             is_valid, error = validate_backup_file_security(filepath)
             assert not is_valid, "PREPARE statement should be blocked"
             assert error and "Prepared" in error
+        finally:
+            os.unlink(filepath)
+
+    def test_prepare_word_in_data_value_not_detected(self):
+        """A card/row value that merely contains the word 'Prepare' (e.g. a
+        card titled 'Prepare flower bed') must not be treated as a dangerous
+        PREPARE statement."""
+        from app import validate_backup_file_security
+
+        content = VALID_BACKUP_HEADER + VALID_TABLE_STRUCTURE
+        content += (
+            "\nINSERT INTO `cards` (`id`, `column_id`, `title`, `description`) VALUES "
+            "(1,1,'Prepare flower bed',NULL);\n"
+        )
+        filepath = create_test_backup_file(content)
+
+        try:
+            is_valid, error = validate_backup_file_security(filepath)
+            assert is_valid, f"Data value containing 'Prepare' should not be blocked: {error}"
+        finally:
+            os.unlink(filepath)
+
+    @pytest.mark.parametrize(
+        "statement,expected_substring",
+        [
+            ("GRANT ALL PRIVILEGES ON *.* TO 'attacker'@'%';", "GRANT"),
+            ("CREATE USER 'attacker'@'localhost' IDENTIFIED BY 'password';", "CREATE USER"),
+            ("DROP USER 'attacker'@'localhost';", "DROP USER"),
+            ("ALTER USER 'attacker'@'localhost' IDENTIFIED BY 'password';", "ALTER USER"),
+            ("LOAD DATA INFILE '/etc/passwd' INTO TABLE boards;", "LOAD DATA"),
+            ("CREATE PROCEDURE evil_proc() BEGIN SELECT 1; END;", "procedures"),
+            ("EXECUTE stmt;", "Dynamic SQL"),
+            ("PREPARE stmt FROM 'SELECT * FROM boards';", "Prepared"),
+        ],
+    )
+    def test_dangerous_statement_after_semicolon_on_same_line_detected(
+        self, statement, expected_substring
+    ):
+        """A dangerous statement smuggled after a leading throwaway statement
+        on the same line (e.g. "SELECT 1; GRANT ...;") must still be
+        blocked, not just dangerous statements that start the line."""
+        from app import validate_backup_file_security
+
+        content = VALID_BACKUP_HEADER + VALID_TABLE_STRUCTURE
+        content += f"\nSELECT 1; {statement}\n"
+        filepath = create_test_backup_file(content)
+
+        try:
+            is_valid, error = validate_backup_file_security(filepath)
+            assert not is_valid, (
+                f"Statement smuggled after ';' on the same line should be blocked: {statement}"
+            )
+            assert error and expected_substring in error
         finally:
             os.unlink(filepath)
 
