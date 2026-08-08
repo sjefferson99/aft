@@ -143,7 +143,14 @@ class Card(Base):
     # Relationships to assignees
     assigned_to = relationship("User", foreign_keys=[assigned_to_id])
     secondary_assignees = relationship("CardSecondaryAssignee", back_populates="card", cascade="all, delete-orphan")
-    
+
+    __table_args__ = (
+        # Board card list queries filter by column_id + archived + scheduled
+        # and order by `order` (see get_board_cards in card_routes.py); the
+        # single-column indexes above don't cover that combination.
+        Index('idx_card_column_state_order', 'column_id', 'archived', 'scheduled', 'order'),
+    )
+
     def __repr__(self):
         return f"<Card(id={self.id}, column_id={self.column_id}, title='{self.title}', order={self.order}, scheduled={self.scheduled})>"
 

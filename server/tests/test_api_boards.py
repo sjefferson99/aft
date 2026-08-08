@@ -1264,7 +1264,12 @@ class TestTrelloBoardImport:
         board_id = response.json()["board"]["id"]
 
         cards = _board_cards_flat(authenticated_session, api_client, board_id)
-        card = next(c for c in cards if c["title"] == "Open Card")
+        card_id = next(c["id"] for c in cards if c["title"] == "Open Card")
+        # Board-list endpoint only returns comment_count; fetch the single-card
+        # endpoint for full comment bodies (see docs/PERFORMANCE_board_updates.md).
+        card_resp = authenticated_session.get(f"{api_client}/api/cards/{card_id}")
+        assert card_resp.status_code == 200
+        card = card_resp.json()["card"]
         comment_texts = [c["comment"] for c in card["comments"]]
         assert "First comment" in comment_texts
         assert "Second comment" in comment_texts

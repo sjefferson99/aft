@@ -12,6 +12,7 @@ from utils import (
     create_error_response,
     create_success_response,
     get_current_user_id,
+    get_request_socket_id,
     get_user_scoped_query,
     require_board_access,
     require_permission,
@@ -272,7 +273,7 @@ def create_column(board_id):
             'board_id': board_id,
             'column_id': column.id,
             'column_data': result
-        }, board_id)
+        }, board_id, get_request_socket_id())
 
         return create_success_response({"column": result}, status_code=201)
 
@@ -353,7 +354,7 @@ def delete_column(column_id):
         _broadcast_event('column_deleted', {
             'board_id': board_id,
             'column_id': column_id
-        }, board_id)
+        }, board_id, get_request_socket_id())
 
         return jsonify({"success": True, "message": "Column deleted successfully"}), 200
     except Exception as e:
@@ -549,7 +550,7 @@ def update_column(column_id):
             'board_id': board_id,
             'column_id': column.id,
             'column_data': result
-        }, board_id)
+        }, board_id, get_request_socket_id())
 
         return jsonify({"success": True, "column": result}), 200
     except Exception as e:

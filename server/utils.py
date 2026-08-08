@@ -23,6 +23,31 @@ MAX_DESCRIPTION_LENGTH = 2000  # Maximum length for descriptions
 MAX_COMMENT_LENGTH = 50000  # Maximum length for comments (50K chars for large notes)
 MAX_REQUEST_SIZE = 10 * 1024 * 1024  # 10MB max request size
 
+# Cap length of the client-supplied WebSocket session id header so a
+# malformed/oversized value can't be used to probe or abuse Socket.IO
+# internals. Socket.IO sids are short opaque tokens (typically ~20 chars).
+MAX_SOCKET_ID_HEADER_LENGTH = 100
+
+
+def get_request_socket_id() -> str | None:
+    """Get the WebSocket session id the client attached to this HTTP request.
+
+    The board UI tags mutating API requests with the id of its own active
+    WebSocket connection (X-Socket-Id header, set in www/js/utils.js /
+    board.js's WebSocketManager) so routes can pass it as skip_sid when
+    broadcasting the resulting change. Without this, the originating client
+    receives the echo of its own change over the WebSocket and reloads the
+    board a second time for nothing.
+
+    Returns None if the header is absent, empty, or implausibly long — never
+    raises, since a missing/bad header should just mean "don't skip anyone",
+    not break the request.
+    """
+    socket_id = request.headers.get("X-Socket-Id")
+    if not socket_id or len(socket_id) > MAX_SOCKET_ID_HEADER_LENGTH:
+        return None
+    return socket_id
+
 
 def db_session(func: Callable) -> Callable:
     """Decorator to handle database session lifecycle automatically.

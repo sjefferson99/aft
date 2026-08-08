@@ -2136,7 +2136,10 @@ def get_board_scheduled_cards(board_id):
             # Get only scheduled template cards for this column
             cards = (
                 db.query(Card)
-                .options(selectinload(Card.assigned_to))
+                .options(
+                    selectinload(Card.assigned_to),
+                    selectinload(Card.checklist_items),
+                )
                 .filter(Card.column_id == column.id)
                 .filter(Card.scheduled.is_(True))
             )
@@ -2150,7 +2153,16 @@ def get_board_scheduled_cards(board_id):
 
             cards = _apply_text_search_filter(cards, text_query, parsed_groups=parsed_text_query).order_by(Card.order).all()
 
-            # Serialize cards with checklist items and comments
+            # Comment count only — see get_board_cards in card_routes.py for why.
+            card_ids = [card.id for card in cards]
+            comment_counts = dict(
+                db.query(Comment.card_id, func.count(Comment.id))
+                .filter(Comment.card_id.in_(card_ids))
+                .group_by(Comment.card_id)
+                .all()
+            ) if card_ids else {}
+
+            # Serialize cards with checklist items and comment counts
             cards_data = [
                 {
                     "id": card.id,
@@ -2182,16 +2194,7 @@ def get_board_scheduled_cards(board_id):
                         }
                         for item in card.checklist_items
                     ],
-                    "comments": [
-                        {
-                            "id": comment.id,
-                            "card_id": comment.card_id,
-                            "comment": comment.comment,
-                            "order": comment.order,
-                            "created_at": serialize_datetime(comment.created_at)
-                        }
-                        for comment in card.comments
-                    ]
+                    "comment_count": comment_counts.get(card.id, 0),
                 }
                 for card in cards
             ]
@@ -2213,7 +2216,7 @@ def get_board_scheduled_cards(board_id):
         result["can_edit"] = can_edit
 
         return jsonify({"success": True, "board": result})
-        
+
     except Exception as e:
         logger.error(f"Error getting scheduled cards for board {board_id}: {str(e)}")
         return jsonify({"success": False, "message": "Failed to get scheduled cards"}), 500
@@ -2797,9 +2800,19 @@ def get_public_board(slug):
 
             cards_query = cards_query.options(
                 selectinload(Card.checklist_items),
-                selectinload(Card.comments),
             )
             cards = cards_query.order_by(Card.order).all()
+
+            # Comment count only — see the equivalent authenticated-board
+            # comment (card_routes.py get_board_cards) for why: the board
+            # view only ever displays the count, never comment bodies.
+            card_ids = [card.id for card in cards]
+            comment_counts = dict(
+                db.query(Comment.card_id, func.count(Comment.id))
+                .filter(Comment.card_id.in_(card_ids))
+                .group_by(Comment.card_id)
+                .all()
+            ) if card_ids else {}
 
             cards_data = [
                 {
@@ -2823,16 +2836,7 @@ def get_public_board(slug):
                         }
                         for item in card.checklist_items
                     ],
-                    "comments": [
-                        {
-                            "id": comment.id,
-                            "card_id": comment.card_id,
-                            "comment": comment.comment,
-                            "order": comment.order,
-                            "created_at": serialize_datetime(comment.created_at),
-                        }
-                        for comment in card.comments
-                    ],
+                    "comment_count": comment_counts.get(card.id, 0),
                 }
                 for card in cards
             ]

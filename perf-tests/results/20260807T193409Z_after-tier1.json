@@ -1,0 +1,99 @@
+{
+  "label": "after-tier1",
+  "board_id": 1,
+  "timestamp": "2026-08-07T19:34:09.621011+00:00",
+  "host": {
+    "python_version": "3.12.10",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+    "logical_processors": 16,
+    "total_physical_memory_gb": 31.2,
+    "cpu_model": "AMD Ryzen 7 7800X3D 8-Core Processor",
+    "system_model": "System Product Name / ASUS",
+    "docker_server_version": "29.6.2",
+    "docker_resources": "16 CPUs / 16353804288 bytes RAM allocated to Docker",
+    "mysql_version": "mysql  Ver 9.5.0 for Linux on x86_64 (MySQL Community Server - GPL)",
+    "server_container_python_version": "3.14.7"
+  },
+  "api": {
+    "endpoint": "/api/boards/1/cards",
+    "response_bytes": 1313626,
+    "probe_enabled": true,
+    "client_observed_ms": {
+      "min": 116.2,
+      "median": 118.9,
+      "max": 141.1,
+      "n": 5
+    },
+    "server_ms": {
+      "min": 99.6,
+      "median": 101.7,
+      "max": 126.5,
+      "n": 5
+    },
+    "query_counts": {
+      "min": 38,
+      "median": 38,
+      "max": 38,
+      "n": 5
+    }
+  },
+  "browser": {
+    "runs": [
+      {
+        "layout_count": 20,
+        "recalc_style_count": 23,
+        "script_time_ms": 244.1,
+        "long_task_count": 4,
+        "long_task_total_ms": 671.6,
+        "raw_event_count": 10010
+      },
+      {
+        "layout_count": 6,
+        "recalc_style_count": 10,
+        "script_time_ms": 365.0,
+        "long_task_count": 6,
+        "long_task_total_ms": 894.5,
+        "raw_event_count": 8957
+      },
+      {
+        "layout_count": 17,
+        "recalc_style_count": 19,
+        "script_time_ms": 247.1,
+        "long_task_count": 4,
+        "long_task_total_ms": 670.0,
+        "raw_event_count": 9511
+      }
+    ],
+    "layout_count": {
+      "min": 6,
+      "median": 17,
+      "max": 20,
+      "n": 3
+    },
+    "recalc_style_count": {
+      "min": 10,
+      "median": 19,
+      "max": 23,
+      "n": 3
+    },
+    "script_time_ms": {
+      "min": 244.1,
+      "median": 247.1,
+      "max": 365.0,
+      "n": 3
+    },
+    "long_task_count": {
+      "min": 4,
+      "median": 4,
+      "max": 6,
+      "n": 3
+    },
+    "long_task_total_ms": {
+      "min": 670.0,
+      "median": 671.6,
+      "max": 894.5,
+      "n": 3
+    }
+  }
+}

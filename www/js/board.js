@@ -14,6 +14,7 @@ const INITIAL_BOARD_LOAD_TIMEOUT_MS = 15000;
 const SUBSEQUENT_BOARD_LOAD_TIMEOUT_MS = 10000;
 const MAX_INITIAL_BOARD_LOAD_ATTEMPTS = 2;
 const BOARD_SEARCH_TOOLTIP_FALLBACK_TEXT = 'Search cards using spaces (AND), commas (OR), and quoted phrases for exact matches.';
+const BOARD_RELOAD_DEBOUNCE_MS = 150;
 
 /**
  * Calculate the percentage of checked items in a checklist
@@ -526,6 +527,12 @@ class WebSocketManager {
     // Connection events
     this.socket.on('connect', () => {
       this.reconnectAttempts = 0;
+      // Exposed so utils.js's fetch wrapper can tag outgoing API requests
+      // with this tab's socket id (X-Socket-Id header), letting the server
+      // skip_sid this connection when broadcasting the resulting change —
+      // otherwise this tab reloads the board twice: once from its own
+      // request's success handler, once from the echo of its own broadcast.
+      window.__aftSocketId = this.socket.id;
       this.joinBoard();
       this.joinThemeRoom();
       // Update header status immediately when WebSocket connects
@@ -536,6 +543,9 @@ class WebSocketManager {
     });
 
     this.socket.on('disconnect', () => {
+      if (window.__aftSocketId === this.socket.id) {
+        window.__aftSocketId = null;
+      }
       // Update header status immediately when WebSocket disconnects
       if (window.header) {
         window.header.updateWebSocketStatus();
@@ -702,13 +712,16 @@ class WebSocketManager {
     });
   }
 
-  // Handle incoming events from other clients
+  // Handle incoming events from other clients.
+  // All of these debounce through boardManager.scheduleBoardReload() rather
+  // than calling loadBoard() directly: a burst of events (e.g. a batch
+  // archive or "move all cards" broadcasting several updates in quick
+  // succession) would otherwise trigger one full board reload per event,
+  // each aborting the previous in-flight request.
   handleCardCreated(data) {
     // A new card was created on another client
     if (this.boardManager) {
-      // Request the board manager to refresh the card or column
-      this.boardManager.loadBoard();
-      this.boardManager.refreshPlannerIfVisible();
+      this.boardManager.scheduleBoardReload();
     }
   }
 
@@ -716,8 +729,7 @@ class WebSocketManager {
     // A card was updated on another client
     // Always reload the board to ensure consistency
     // Even if only the title changed, reloading guarantees the UI matches the server state
-    this.boardManager.loadBoard();
-    this.boardManager.refreshPlannerIfVisible();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleCardDeleted(data) {
@@ -732,57 +744,55 @@ class WebSocketManager {
   handleCardMoved(data) {
     // A card was moved on another client
     // Refresh the entire board to ensure correct state
-    this.boardManager.loadBoard();
-    this.boardManager.refreshPlannerIfVisible();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleCardsMoved(data) {
     // Multiple cards were moved on another client
     // Refresh the entire board to ensure correct state
-    this.boardManager.loadBoard();
-    this.boardManager.refreshPlannerIfVisible();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleColumnReordered(data) {
     // Columns were reordered on another client
     // Refresh the board to reflect new column order
-    this.boardManager.loadBoard();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleColumnCreated(data) {
     // A column was created on another client
     // Reload board so the new column appears immediately
-    this.boardManager.loadBoard();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleColumnDeleted(data) {
     // A column was deleted on another client
     // Reload board so removed columns disappear immediately
-    this.boardManager.loadBoard();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleChecklistItemAdded(data) {
     // A checklist item was added on another client
     // Reload board to reflect checklist changes
-    this.boardManager.loadBoard();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleChecklistItemUpdated(data) {
     // A checklist item was updated on another client
     // Reload board to reflect checklist changes in the card detail modal
-    this.boardManager.loadBoard();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleChecklistItemDeleted(data) {
     // A checklist item was deleted on another client
     // Reload board to reflect checklist changes
-    this.boardManager.loadBoard();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleColumnUpdated(data) {
     // A column was updated on another client
     // Reload board to reflect column name changes and order changes
-    this.boardManager.loadBoard();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleCardArchived(data) {
@@ -793,15 +803,13 @@ class WebSocketManager {
       cardElement.remove();
     }
     // Reload to update card count and ensure consistency
-    this.boardManager.loadBoard();
-    this.boardManager.refreshPlannerIfVisible();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleCardUnarchived(data) {
     // A card was unarchived on another client
     // Reload board to show the restored card
-    this.boardManager.loadBoard();
-    this.boardManager.refreshPlannerIfVisible();
+    this.boardManager.scheduleBoardReload();
   }
 
   handleThemeChanged(data) {
@@ -2779,6 +2787,26 @@ class BoardManager {
     this.container.innerHTML = '';
   }
 
+  /**
+   * Debounced wrapper around loadBoard()+refreshPlannerIfVisible() for
+   * WebSocket-driven reloads. A burst of events (e.g. a batch archive or
+   * "move all cards" emitting several broadcasts in quick succession) would
+   * otherwise trigger one full board reload per event, each aborting the
+   * previous in-flight request (see loadBoard()'s AbortController use) —
+   * pure wasted work. Direct user-initiated calls to loadBoard() elsewhere
+   * are intentionally left as-is so those stay immediate.
+   */
+  scheduleBoardReload() {
+    if (this.boardReloadDebounceTimeoutId) {
+      clearTimeout(this.boardReloadDebounceTimeoutId);
+    }
+    this.boardReloadDebounceTimeoutId = setTimeout(() => {
+      this.boardReloadDebounceTimeoutId = null;
+      this.loadBoard();
+      this.refreshPlannerIfVisible();
+    }, BOARD_RELOAD_DEBOUNCE_MS);
+  }
+
   async loadBoard() {
     // Ignore duplicate startup reloads while the first board request is still in flight.
     if (this.isBootstrappingBoard && this.currentLoadController && !this.hasLoadedBoardData) {
@@ -2961,8 +2989,10 @@ class BoardManager {
         Array.from(this.assigneeFilterSelectedUserIds).filter((userId) => eligibleUserIds.has(userId))
       );
 
-      // Store the original unfiltered columns for counting purposes
-      this.originalColumns = JSON.parse(JSON.stringify(board.columns));
+      // Store the original unfiltered columns for counting purposes.
+      // structuredClone avoids a full JSON.stringify+parse round-trip of
+      // the whole board payload on every load.
+      this.originalColumns = structuredClone(board.columns);
       this.columns = board.columns;
       
       // Store edit permission flag (default to true for backwards compatibility)
@@ -3141,6 +3171,11 @@ class BoardManager {
     if (this.searchDebounceTimer) {
       clearTimeout(this.searchDebounceTimer);
       this.searchDebounceTimer = null;
+    }
+
+    if (this.boardReloadDebounceTimeoutId) {
+      clearTimeout(this.boardReloadDebounceTimeoutId);
+      this.boardReloadDebounceTimeoutId = null;
     }
 
     if (this.searchInputWatcherId) {
@@ -3548,11 +3583,11 @@ class BoardManager {
                       <div class="card-content-wrapper" id="card-content-${card.id}">
                         <h5 class="card-title">${linkifyUrls(this.escapeHtml(card.title))}</h5>
                         <p class="card-description">${linkifyUrls(this.escapeHtml(card.description))}</p>
-                        ${card.updated_at || (card.comments && card.comments.length > 0) ? `
+                        ${card.updated_at || (card.comment_count > 0) ? `
                           <div class="card-meta-row">
-                            ${card.comments && card.comments.length > 0 ? `
+                            ${card.comment_count > 0 ? `
                               <div class="card-comments-indicator">
-                                💬 ${card.comments.length} ${card.comments.length === 1 ? 'comment' : 'comments'}
+                                💬 ${card.comment_count} ${card.comment_count === 1 ? 'comment' : 'comments'}
                               </div>
                             ` : ''}
                             ${card.updated_at ? `
@@ -3836,20 +3871,25 @@ class BoardManager {
           return;
         }
         
+        // Two passes to avoid layout thrash: reading scrollHeight forces a
+        // synchronous layout, and writing has-overflow/collapsed classes
+        // invalidates it again — interleaving read/write per card (as a
+        // single forEach would) forces one reflow per card. Collecting all
+        // overflowing cards first, then applying every class change in a
+        // second pass, forces at most one reflow for the whole batch.
+        const overflowingCards = [];
         document.querySelectorAll('.card').forEach(card => {
           const contentWrapper = card.querySelector('.card-content-wrapper');
           const expandBtn = card.querySelector('.card-expand-btn');
-          
-          if (contentWrapper && expandBtn) {
-            // Measure the actual content height
-            const contentHeight = contentWrapper.scrollHeight;
-            
-            // If content is taller than the threshold, make it collapsible
-            if (contentHeight > collapseHeight) {
-              card.classList.add('has-overflow');
-              card.classList.add('collapsed');
-            }
+
+          if (contentWrapper && expandBtn && contentWrapper.scrollHeight > collapseHeight) {
+            overflowingCards.push(card);
           }
+        });
+
+        overflowingCards.forEach(card => {
+          card.classList.add('has-overflow');
+          card.classList.add('collapsed');
         });
 
         this.restoreExpandedCardState();
@@ -4346,7 +4386,7 @@ class BoardManager {
         e.dataTransfer.dropEffect = 'move';
 
         this.updateColumnAutoScrollDuringDrag(columnContainer, e.clientY);
-        
+
         const afterElement = this.getDragAfterElement(columnContainer, e.clientY);
         const dragging = document.querySelector('.dragging');
         

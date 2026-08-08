@@ -61,6 +61,17 @@ APP_VERSION = "2026.6.0"
 
 app = Flask(__name__)
 
+# Dev-only performance instrumentation (SQL query count + request timing),
+# part of the perf-tests/ measurement harness (see perf-tests/README.md and
+# docs/PERFORMANCE_board_updates.md). No-op unless PERF_PROBE=1 is set —
+# zero cost in normal operation, including in production.
+try:
+    from _perf_probe import install as _install_perf_probe
+    from database import engine as _perf_probe_engine
+    _install_perf_probe(app, _perf_probe_engine)
+except ImportError:
+    pass
+
 # Configure session
 app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', 'True').lower() == 'true'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
