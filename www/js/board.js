@@ -3173,6 +3173,11 @@ class BoardManager {
       this.searchDebounceTimer = null;
     }
 
+    if (this.boardReloadDebounceTimeoutId) {
+      clearTimeout(this.boardReloadDebounceTimeoutId);
+      this.boardReloadDebounceTimeoutId = null;
+    }
+
     if (this.searchInputWatcherId) {
       clearInterval(this.searchInputWatcherId);
       this.searchInputWatcherId = null;

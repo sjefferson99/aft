@@ -513,6 +513,9 @@ pytest
 
 See [ui-tests/docs/UI_TESTING.md](ui-tests/docs/UI_TESTING.md) for details.
 
+For measuring board performance at scale (seeding a large board and comparing
+server/client cost before and after a change), see [perf-tests/README.md](perf-tests/README.md).
+
 ## Contributing and Agent Context
 
 If you are contributing code (human or AI-assisted), start with [CONTRIBUTING.md](CONTRIBUTING.md).
