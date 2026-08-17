@@ -3,17 +3,17 @@ flask-cors==6.0.5
 flask-socketio==5.6.1
 flask-session==0.8.0
 sqlalchemy==2.0.51
-python-socketio==5.16.3
+python-socketio==5.16.4
 redis==8.1.0
-alembic==1.18.5
+alembic==1.19.1
 pymysql==1.2.0
 cryptography==50.0.0
 gunicorn==26.0.0
-flask-swagger-ui==5.32.11
+flask-swagger-ui==5.32.12
 flasgger==0.9.7.1
 psutil==7.2.2
 requests==2.34.2
-packaging==26.2
+packaging==26.3
 tzdata  # IANA timezone database for zoneinfo on slim containers without system tzdata
 werkzeug>=3.1.8 # not directly required, pinned by Snyk to avoid a vulnerability
 zipp>=4.1.0 # not directly required, pinned by Snyk to avoid a vulnerability
