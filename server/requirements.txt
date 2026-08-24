@@ -8,7 +8,7 @@ redis==8.1.0
 alembic==1.19.1
 pymysql==1.2.0
 cryptography==50.0.0
-gunicorn==26.0.0
+gunicorn==26.1.0
 flask-swagger-ui==5.32.13
 flasgger==0.9.7.1
 psutil==7.2.2
