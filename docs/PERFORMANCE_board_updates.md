@@ -413,7 +413,7 @@ checklist items. Follow it.
 This is a prerequisite for item 2.3: incremental patching is only cheap if inserting a card
 node does not require re-wiring listeners.
 
-### 2.2 Fix the drag hot path — **1 day**
+### 2.2 Fix the drag hot path — **1 day** — ✅ implemented and measured
 
 **Measured, not just predicted** — see
 [Drag measurement](#drag-measurement-manual-chrome-devtools) above: one realistic drag (down
@@ -450,6 +450,76 @@ Fix:
 
 Re-measure with the same manual procedure after this fix lands — the 12.57s number is the
 "before" to beat.
+
+**Implemented** (`getDragAfterElement()`, `setupDragAndDrop()`, and the mobile touch-drag
+equivalent `moveMobileTouchCardDrag()` in `www/js/board.js`), on branch `525-2-2-drag-hot-path`:
+- `getDragAfterElement()` now binary-searches a per-container cache of sorted card
+  midpoints (`buildDragMidpointCache()`/`dragMidpointCaches`) instead of calling
+  `getBoundingClientRect()` on every card on every event.
+- The cache is invalidated when the DOM changes for that container: a card is moved during
+  drag (via the shared `placeDraggedCard()` helper, used by both the native and mobile touch
+  paths), a card is removed by another client mid-drag (`handleCardDeleted`/
+  `handleCardArchived`), or `renderBoard()` rebuilds the DOM wholesale (covers any other
+  reload path, e.g. a websocket-triggered reload mid-drag). It's cleared entirely on
+  `dragstart`/drag end. Auto-scroll doesn't invalidate at all — `shiftDragMidpointCache()`
+  adjusts every cached midpoint by the scroll delta in place, so sustained auto-scroll (60
+  ticks/sec) doesn't force a full re-measure of the column every frame.
+- Both the native `dragover` handler and the mobile `touchmove` handler (which shares the same
+  `getDragAfterElement()` hot path, and now the same `placeDraggedCard()` placement logic) are
+  throttled to one placement update per `requestAnimationFrame`, coalescing bursts of pointer
+  events into at most 60 DOM-mutating updates/sec regardless of how many raw events fire.
+- `drop` (native) and `finishMobileTouchCardDrag()` (mobile) are one-off, not hot-path calls,
+  so they force a fresh cache build before reading, and invalidate again after mutating,
+  rather than trusting a possibly-stale cached one.
+- Correctness verified with a Playwright script exercising `getDragAfterElement()` directly
+  against the real 800-card seeded board (`perf-tests/seed_board.py`): 0 mismatches across 133
+  sampled pointer y-positions (including every card's exact midpoint — the boundary case a
+  code review caught a genuine off-by-one regression in, since fixed: the binary search now
+  matches the original algorithm's strict `y < midpoint` semantics) compared against the
+  original brute-force algorithm, plus targeted checks for cross-column cache isolation,
+  invalidation, scroll-shift, and `renderBoard()` cache-clearing. Native HTML5 drag itself
+  could not be simulated headlessly to validate the full interaction end-to-end — same
+  limitation noted above; this needs the manual `perf-tests/DRAG_MEASUREMENT.md` procedure.
+- `pytest` (370 backend tests) and the board/move-card `ui-tests` (13 tests) pass unchanged;
+  Snyk Code scan on the modified file reports 0 issues.
+- A code review of the initial version of this fix found several real gaps, all since fixed:
+  an off-by-one in the binary search at exact midpoint matches; cache invalidation not covering
+  non-drag-driven DOM mutation (concurrent card delete/archive from another client, or a
+  websocket-triggered `renderBoard()` mid-drag); auto-scroll forcing a full cache rebuild every
+  tick instead of an O(1) shift; the `drop` handler not re-invalidating after its own mutation;
+  and duplicated placement logic between the native and touch paths (now unified in
+  `placeDraggedCard()`).
+
+**Re-measured** with the manual `perf-tests/DRAG_MEASUREMENT.md` procedure (Incognito, LastPass/
+Bitwarden confirmed absent from the trace's 1st/3rd-party table this run — the first attempt was
+re-done after those extensions showed up dominating an initial capture), same drag gesture
+(down past ~15-20 cards) on the same 800-card seeded board:
+
+| Metric | Before (baseline) | After (this fix) | Change |
+|---|---|---|---|
+| Total | 12.57s | **8.95s** | 29% faster |
+| Hit test | 1,774.8ms (34.6%) | 1,269.7ms (37.8%) | 28% faster |
+| Layout | 525.3ms (10.2%) | 133.5ms (4.0%) | **75% faster** |
+| Paint | 480.6ms (9.4%) | 269.2ms (8.0%) | 44% faster |
+| Recalculate style | 146.7ms (2.9%) | 54.4ms (1.6%) | 63% faster |
+
+`getDragAfterElement` no longer appears in the Bottom-Up trace at all (previously visible
+enough to matter) — the per-event `getBoundingClientRect()` sweep it used to do is gone.
+
+Layout/Recalculate-style/Paint — the costs this fix most directly targets — improved the most
+(44-75% faster). **Hit test only improved ~28%** and is now the largest single share of the
+trace (37.8%, up in proportion though down in absolute terms): it's Chrome's own cost of
+resolving which draggable element the pointer is over on each `dragover`, driven as much by
+the drag gesture's real duration/frequency as by how often this code mutates the DOM — rAF
+throttling helps but was never going to eliminate it. Total time dropping less than
+Layout/Recalc's improvement alone would suggest is a direct consequence of Hit test's
+dominant, only-partially-addressable share of the budget.
+
+Caveat: both the before and after numbers are single manual captures (not averaged/repeated
+runs), consistent with this document's standing caveat that these are relative, same-host
+comparisons rather than precise benchmarks — treat the ~29% total-time improvement as
+directionally solid, the Layout/Recalc/Paint drops (much larger than plausible run-to-run
+noise) as the more reliable numbers.
 
 `getDropOrderValue()` ([board.js:4434](../www/js/board.js#L4434)) does a similar full
 `querySelectorAll` + `indexOf` walk, but only on drop, so it matters far less.

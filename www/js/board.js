@@ -736,7 +736,14 @@ class WebSocketManager {
     // A card was deleted on another client
     const cardElement = document.querySelector(`[data-card-id="${data.card_id}"]`);
     if (cardElement) {
+      const container = cardElement.closest('.column-cards');
       cardElement.remove();
+      // Removing a card mid-drag (from another client) shifts the layout of
+      // every card below it — the cached drag midpoints for this column are
+      // now stale, independent of the debounced board reload below.
+      if (container) {
+        this.boardManager.invalidateDragMidpointCache(container);
+      }
     }
     this.boardManager.refreshPlannerIfVisible();
   }
@@ -800,7 +807,13 @@ class WebSocketManager {
     // Remove the card from the DOM if it's displayed
     const cardElement = document.querySelector(`[data-card-id="${data.card_id}"]`);
     if (cardElement) {
+      const container = cardElement.closest('.column-cards');
       cardElement.remove();
+      // Same reasoning as handleCardDeleted: invalidate immediately, don't
+      // wait for the debounced reload below.
+      if (container) {
+        this.boardManager.invalidateDragMidpointCache(container);
+      }
     }
     // Reload to update card count and ensure consistency
     this.boardManager.scheduleBoardReload();
@@ -1755,9 +1768,16 @@ class BoardManager {
       this.stopColumnAutoScroll();
     }
 
+    if (state.touchDragState?.moveRafId) {
+      cancelAnimationFrame(state.touchDragState.moveRafId);
+      state.touchDragState.moveRafId = null;
+    }
+
     if (state.touchDragState?.ghostElement) {
       state.touchDragState.ghostElement.remove();
     }
+
+    this.clearDragMidpointCaches();
 
     if (state.cardElement) {
       const cardId = Number(state.cardElement.getAttribute('data-card-id'));
@@ -1879,8 +1899,10 @@ class BoardManager {
       ghostElement,
       pointerOffsetX,
       pointerOffsetY,
-      originalPosition
+      originalPosition,
+      moveRafId: null
     };
+    this.clearDragMidpointCaches();
 
     cardElement.classList.add('dragging');
     cardElement.classList.add('mobile-touch-drag-source');
@@ -1907,26 +1929,24 @@ class BoardManager {
       touchDragState.ghostElement.style.transform = `translate3d(${ghostLeft}px, ${ghostTop}px, 0)`;
     }
 
-    const columnContainer = this.resolveColumnCardsContainerFromPoint(touch.clientX, touch.clientY);
-    if (!columnContainer) {
-      this.stopColumnAutoScroll();
-      return;
-    }
+    const clientX = touch.clientX;
+    const clientY = touch.clientY;
 
-    this.updateColumnAutoScrollDuringDrag(columnContainer, touch.clientY);
+    if (touchDragState.moveRafId) return; // Pending frame will pick up the latest touch point.
 
-    const afterElement = this.getDragAfterElement(columnContainer, touch.clientY);
-    if (!afterElement) {
-      const addCardBtn = columnContainer.querySelector('.add-card-btn');
-      if (addCardBtn) {
-        columnContainer.insertBefore(draggedCard, addCardBtn);
-      } else {
-        columnContainer.appendChild(draggedCard);
+    touchDragState.moveRafId = requestAnimationFrame(() => {
+      touchDragState.moveRafId = null;
+
+      if (!touchDragState.active || !draggedCard.isConnected) return;
+
+      const columnContainer = this.resolveColumnCardsContainerFromPoint(clientX, clientY);
+      if (!columnContainer) {
+        this.stopColumnAutoScroll();
+        return;
       }
-      return;
-    }
 
-    columnContainer.insertBefore(draggedCard, afterElement);
+      this.placeDraggedCard(columnContainer, draggedCard, clientY);
+    });
   }
 
   async finishMobileTouchCardDrag(state) {
@@ -1945,6 +1965,11 @@ class BoardManager {
       touchDragState.ghostElement.remove();
     }
     this.stopColumnAutoScroll();
+    if (touchDragState.moveRafId) {
+      cancelAnimationFrame(touchDragState.moveRafId);
+      touchDragState.moveRafId = null;
+    }
+    this.clearDragMidpointCaches();
 
     if (!targetContainer || !originalPosition) {
       if (originalPosition) {
@@ -3407,6 +3432,11 @@ class BoardManager {
 
   renderBoard() {
     this.stopColumnAutoScroll();
+    // Rebuilding the DOM invalidates any cached drag-midpoint rects and
+    // detaches the containers they're keyed on — clear them regardless of
+    // whether a drag is in progress (e.g. a concurrent edit from another
+    // client can trigger this mid-drag via a websocket reload).
+    this.clearDragMidpointCaches();
 
     // Show/hide views dropdown in header based on columns
     if (window.header) {
@@ -4237,7 +4267,14 @@ class BoardManager {
     const previousScrollTop = container.scrollTop;
     container.scrollTop += this.autoScrollDirection * scrollStep;
 
-    if (container.scrollTop === previousScrollTop) {
+    if (container.scrollTop !== previousScrollTop) {
+      // Scrolling shifts every card's viewport-relative rect by exactly the
+      // scroll delta — adjust the cached midpoints in place instead of
+      // invalidating, so sustained auto-scroll doesn't force a full
+      // re-measure of every card on every frame.
+      const actualDelta = container.scrollTop - previousScrollTop;
+      this.shiftDragMidpointCache(container, -actualDelta);
+    } else {
       this.stopColumnAutoScroll();
       return;
     }
@@ -4309,7 +4346,8 @@ class BoardManager {
     
     let draggedCard = null;
     let originalPosition = null; // Store original position before drag
-    
+    let dragoverRafId = null;
+
     // Card drag events
     cards.forEach(card => {
       card.addEventListener('dragstart', (e) => {
@@ -4341,7 +4379,8 @@ class BoardManager {
         card.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/html', card.innerHTML);
-        
+        this.clearDragMidpointCaches();
+
         // Capture original position NOW, before any DOM manipulation
         const oldColumnId = parseInt(card.getAttribute('data-column-id'));
         const oldOrder = parseInt(card.getAttribute('data-order'));
@@ -4376,33 +4415,32 @@ class BoardManager {
         draggedCard = null;
         originalPosition = null; // Clear stored position
         this.stopColumnAutoScroll();
+        this.clearDragMidpointCaches();
+        if (dragoverRafId) {
+          cancelAnimationFrame(dragoverRafId);
+          dragoverRafId = null;
+        }
       });
     });
-    
+
     // Column drop zone events
     columnCards.forEach(columnContainer => {
       columnContainer.addEventListener('dragover', (e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
 
-        this.updateColumnAutoScrollDuringDrag(columnContainer, e.clientY);
+        const clientY = e.clientY;
 
-        const afterElement = this.getDragAfterElement(columnContainer, e.clientY);
-        const dragging = document.querySelector('.dragging');
-        
-        if (!dragging) return;
-        
-        if (!afterElement) {
-          // Append at the end (before the add card button if it exists)
-          const addCardBtn = columnContainer.querySelector('.add-card-btn');
-          if (addCardBtn) {
-            columnContainer.insertBefore(dragging, addCardBtn);
-          } else {
-            columnContainer.appendChild(dragging);
-          }
-        } else {
-          columnContainer.insertBefore(dragging, afterElement);
-        }
+        if (dragoverRafId) return; // Already have a pending frame; let it pick up the latest clientY.
+
+        dragoverRafId = requestAnimationFrame(() => {
+          dragoverRafId = null;
+
+          const dragging = document.querySelector('.dragging');
+          if (!dragging) return;
+
+          this.placeDraggedCard(columnContainer, dragging, clientY);
+        });
       });
       
       columnContainer.addEventListener('drop', async (e) => {
@@ -4410,6 +4448,14 @@ class BoardManager {
         this.stopColumnAutoScroll();
         
         if (!draggedCard || !originalPosition) return;
+
+        // Drop is a one-off, not a hot path — force a fresh measurement before
+        // reading (so a stale cache, e.g. from a dragover frame that never
+        // got to run, can't produce the wrong final placement) and again
+        // after mutating (mirrors dragover's own post-mutation invalidation,
+        // rather than relying on dragend's clearDragMidpointCaches() always
+        // running immediately afterward).
+        this.invalidateDragMidpointCache(columnContainer);
 
         // Re-evaluate placement at drop time so the final order reflects where
         // the pointer is when released (important after auto-scroll movement).
@@ -4424,6 +4470,8 @@ class BoardManager {
         } else {
           columnContainer.insertBefore(draggedCard, finalAfterElement);
         }
+
+        this.invalidateDragMidpointCache(columnContainer);
         
         const targetColumnId = parseInt(columnContainer.getAttribute('data-column-id'));
         const cardId = parseInt(draggedCard.getAttribute('data-card-id'));
@@ -4456,19 +4504,95 @@ class BoardManager {
     });
   }
 
-  getDragAfterElement(container, y) {
-    const draggableElements = [...container.querySelectorAll('.card:not(.dragging)')];
-    
-    return draggableElements.reduce((closest, child) => {
-      const box = child.getBoundingClientRect();
-      const offset = y - box.top - box.height / 2;
-      
-      if (offset < 0 && offset > closest.offset) {
-        return { offset: offset, element: child };
-      } else {
-        return closest;
+  // Shared by both the native dragover and mobile touchmove hot paths:
+  // updates auto-scroll, finds the insertion point, moves draggedCard if
+  // its position actually changed, and invalidates the affected caches.
+  placeDraggedCard(columnContainer, draggedCard, clientY) {
+    this.updateColumnAutoScrollDuringDrag(columnContainer, clientY);
+
+    const afterElement = this.getDragAfterElement(columnContainer, clientY);
+    const previousContainer = draggedCard.closest('.column-cards');
+    let moved = false;
+
+    if (!afterElement) {
+      const addCardBtn = columnContainer.querySelector('.add-card-btn');
+      if (addCardBtn) {
+        if (draggedCard.nextElementSibling !== addCardBtn) {
+          columnContainer.insertBefore(draggedCard, addCardBtn);
+          moved = true;
+        }
+      } else if (draggedCard !== columnContainer.lastElementChild) {
+        columnContainer.appendChild(draggedCard);
+        moved = true;
       }
-    }, { offset: Number.NEGATIVE_INFINITY }).element;
+    } else if (draggedCard.nextElementSibling !== afterElement) {
+      columnContainer.insertBefore(draggedCard, afterElement);
+      moved = true;
+    }
+
+    if (moved) {
+      this.invalidateDragMidpointCache(columnContainer);
+      if (previousContainer && previousContainer !== columnContainer) {
+        this.invalidateDragMidpointCache(previousContainer);
+      }
+    }
+
+    return moved;
+  }
+
+  buildDragMidpointCache(container) {
+    const draggableElements = [...container.querySelectorAll('.card:not(.dragging)')];
+    const midpoints = draggableElements.map(element => {
+      const box = element.getBoundingClientRect();
+      return { midpoint: box.top + box.height / 2, element };
+    });
+    midpoints.sort((a, b) => a.midpoint - b.midpoint);
+
+    const cache = { midpoints };
+    if (!this.dragMidpointCaches) {
+      this.dragMidpointCaches = new Map();
+    }
+    this.dragMidpointCaches.set(container, cache);
+    return cache;
+  }
+
+  invalidateDragMidpointCache(container) {
+    this.dragMidpointCaches?.delete(container);
+  }
+
+  shiftDragMidpointCache(container, deltaY) {
+    const cache = this.dragMidpointCaches?.get(container);
+    if (!cache) return;
+    for (const entry of cache.midpoints) {
+      entry.midpoint += deltaY;
+    }
+  }
+
+  clearDragMidpointCaches() {
+    this.dragMidpointCaches?.clear();
+  }
+
+  getDragAfterElement(container, y) {
+    const cache = this.dragMidpointCaches?.get(container) || this.buildDragMidpointCache(container);
+    const midpoints = cache.midpoints;
+
+    // Binary search for the first element whose midpoint is strictly below y —
+    // that's the element the dragged card should be inserted before. Matches
+    // the original algorithm's strict `y < midpoint` (offset < 0) check: a
+    // pointer exactly on a card's midpoint anchors to the *next* card, not
+    // the matching one.
+    let low = 0;
+    let high = midpoints.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (midpoints[mid].midpoint <= y) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+
+    return low < midpoints.length ? midpoints[low].element : null;
   }
 
   getDropOrderValue(container, draggedCard, originalPosition = null) {
