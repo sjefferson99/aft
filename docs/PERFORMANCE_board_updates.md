@@ -456,25 +456,39 @@ equivalent `moveMobileTouchCardDrag()` in `www/js/board.js`), on branch `525-2-2
 - `getDragAfterElement()` now binary-searches a per-container cache of sorted card
   midpoints (`buildDragMidpointCache()`/`dragMidpointCaches`) instead of calling
   `getBoundingClientRect()` on every card on every event.
-- The cache is invalidated only when the DOM actually changes for that container: a card is
-  moved during drag, or the column auto-scrolls (which shifts every card's viewport-relative
-  rect). It's cleared entirely on `dragstart`/drag end.
+- The cache is invalidated when the DOM changes for that container: a card is moved during
+  drag (via the shared `placeDraggedCard()` helper, used by both the native and mobile touch
+  paths), a card is removed by another client mid-drag (`handleCardDeleted`/
+  `handleCardArchived`), or `renderBoard()` rebuilds the DOM wholesale (covers any other
+  reload path, e.g. a websocket-triggered reload mid-drag). It's cleared entirely on
+  `dragstart`/drag end. Auto-scroll doesn't invalidate at all — `shiftDragMidpointCache()`
+  adjusts every cached midpoint by the scroll delta in place, so sustained auto-scroll (60
+  ticks/sec) doesn't force a full re-measure of the column every frame.
 - Both the native `dragover` handler and the mobile `touchmove` handler (which shares the same
-  `getDragAfterElement()` hot path) are throttled to one placement update per
-  `requestAnimationFrame`, coalescing bursts of pointer events into at most 60 DOM-mutating
-  updates/sec regardless of how many raw events fire.
+  `getDragAfterElement()` hot path, and now the same `placeDraggedCard()` placement logic) are
+  throttled to one placement update per `requestAnimationFrame`, coalescing bursts of pointer
+  events into at most 60 DOM-mutating updates/sec regardless of how many raw events fire.
 - `drop` (native) and `finishMobileTouchCardDrag()` (mobile) are one-off, not hot-path calls,
-  so they force a fresh cache build rather than trusting a possibly-stale cached one.
+  so they force a fresh cache build before reading, and invalidate again after mutating,
+  rather than trusting a possibly-stale cached one.
 - Correctness verified with a Playwright script exercising `getDragAfterElement()` directly
-  against the real 800-card seeded board (`perf-tests/seed_board.py`): 0 mismatches across 34
-  sampled pointer y-positions compared against the original brute-force algorithm, plus
-  targeted checks for cross-column cache isolation, invalidation, and post-mutation
-  correctness. Native HTML5 drag itself could not be simulated headlessly to validate the
-  full interaction end-to-end — same limitation noted above; this needs the manual
-  `perf-tests/DRAG_MEASUREMENT.md` procedure, both to confirm the interaction still feels
-  correct and to capture the "after" number against the 12.57s baseline.
+  against the real 800-card seeded board (`perf-tests/seed_board.py`): 0 mismatches across 133
+  sampled pointer y-positions (including every card's exact midpoint — the boundary case a
+  code review caught a genuine off-by-one regression in, since fixed: the binary search now
+  matches the original algorithm's strict `y < midpoint` semantics) compared against the
+  original brute-force algorithm, plus targeted checks for cross-column cache isolation,
+  invalidation, scroll-shift, and `renderBoard()` cache-clearing. Native HTML5 drag itself
+  could not be simulated headlessly to validate the full interaction end-to-end — same
+  limitation noted above; this needs the manual `perf-tests/DRAG_MEASUREMENT.md` procedure.
 - `pytest` (370 backend tests) and the board/move-card `ui-tests` (13 tests) pass unchanged;
   Snyk Code scan on the modified file reports 0 issues.
+- A code review of the initial version of this fix found several real gaps, all since fixed:
+  an off-by-one in the binary search at exact midpoint matches; cache invalidation not covering
+  non-drag-driven DOM mutation (concurrent card delete/archive from another client, or a
+  websocket-triggered `renderBoard()` mid-drag); auto-scroll forcing a full cache rebuild every
+  tick instead of an O(1) shift; the `drop` handler not re-invalidating after its own mutation;
+  and duplicated placement logic between the native and touch paths (now unified in
+  `placeDraggedCard()`).
 
 **Re-measured** with the manual `perf-tests/DRAG_MEASUREMENT.md` procedure (Incognito, LastPass/
 Bitwarden confirmed absent from the trace's 1st/3rd-party table this run — the first attempt was
