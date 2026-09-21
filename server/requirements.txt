@@ -3,10 +3,10 @@ flask-cors==6.0.5
 flask-socketio==5.6.1
 flask-session==0.8.0
 sqlalchemy==2.0.52
-python-socketio==5.16.4
+python-socketio==5.17.0
 redis==8.1.0
-alembic==1.19.2
-pymysql==1.2.0
+alembic==1.20.0
+pymysql==1.2.3
 cryptography==50.0.1
 gunicorn==26.2.0
 flask-swagger-ui==5.32.15
