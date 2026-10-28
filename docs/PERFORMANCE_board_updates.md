@@ -1,6 +1,6 @@
 # Performance Review: Board Updates at Scale
 
-Status: Tier 1 implemented and measured; Tier 2 items 2.1 and 2.2 implemented and measured; the rest of Tier 2 and Tier 3 still proposal-only
+Status: Tier 1 implemented and measured; Tier 2 items 2.1, 2.2 and 2.9 implemented and measured; 2.4/2.5 measured and deferred until after 2.3; the rest of Tier 2 and Tier 3 still proposal-only
 Scope: the board view (`www/js/board.js`, `www/css/board.css`) and the board read/write API (`server/card_routes.py`, `server/board_routes.py`, `server/broadcasting.py`)
 Trigger: board interactions degrade sharply once columns exceed ~100 cards, including when the change is on a *different* column
 
