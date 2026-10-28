@@ -400,7 +400,7 @@ gets fixed. Do Tier 1 first and measure; some of these may look different afterw
 **Implemented** on branch `525-2-1-event-delegation`. The original proposal follows below
 the results.
 - `renderBoard()` no longer attaches any listeners. `setupBoardEventDelegation()` attaches
-  nine listeners to `#board-container` once, at init: `click`, `scroll` (capture phase,
+  eight listeners to `#board-container` once, at init: `click`, `scroll` (capture phase,
   because scroll doesn't bubble), `mouseover`/`mouseleave` (hovered-column tracking, which
   replaces per-column `mouseenter`/`mouseleave`), and `dragstart`/`dragover`/`drop`/`dragleave`.
 - The listeners go on `#board-container`, not `.columns-container` as proposed below, because
@@ -436,7 +436,7 @@ the same host and stack:
 |---|---|---|---|
 | `renderBoard()` sync, median of 20 re-renders ([render_probe.py](../perf-tests/render_probe.py)) | ~176 ms | ~167 ms | ~5% faster |
 | Re-render to next frame, median of 20 | ~366 ms | ~346 ms | ~5% faster |
-| Listener registrations per render | ~9,000–10,000 (11–13 per card) | 0 (9 in total, attached once) | — |
+| Listener registrations per render | ~9,000–10,000 (11–13 per card) | 0 (8 in total, attached once) | — |
 
 The direct speed gain is small. HTML building, `innerHTML` parsing and layout dominate a
 full render, not listener wiring. The value of this item is as the prerequisite for item 2.3,

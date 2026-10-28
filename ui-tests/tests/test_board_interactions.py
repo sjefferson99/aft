@@ -5,6 +5,7 @@ than per-element listeners re-attached on every render (issue #525 item 2.1).
 Each interaction is exercised after a WebSocket-triggered re-render to check
 the handlers survive the board's innerHTML being replaced.
 """
+import time
 import uuid
 import pytest
 
@@ -207,8 +208,12 @@ def test_drag_card_to_other_column(logged_in_page, api_session, ui_base_url, boa
         f'.column-cards[data-column-id="{col_b_id}"] .card[data-card-id="{card_id}"]'
     ).wait_for(state="attached", timeout=8000)
 
-    def card_column():
-        return api_session.get(f"{ui_base_url}/api/cards/{card_id}").json()["card"]["column_id"]
-
-    page.wait_for_timeout(500)
-    assert card_column() == col_b_id
+    # The DOM moves before the PATCH lands; poll the API rather than assume a fixed delay.
+    deadline = time.monotonic() + 8
+    column_id = None
+    while time.monotonic() < deadline:
+        column_id = api_session.get(f"{ui_base_url}/api/cards/{card_id}").json()["card"]["column_id"]
+        if column_id == col_b_id:
+            break
+        page.wait_for_timeout(200)
+    assert column_id == col_b_id

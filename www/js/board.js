@@ -3643,6 +3643,18 @@ class BoardManager {
       this.container.removeEventListener('click', this.boardMomentumClickHandler, true);
       this.boardTouchScrollingSetup = false;
     }
+
+    if (this.container && this.boardEventDelegationSetup) {
+      this.container.removeEventListener('click', this.boardClickHandler);
+      this.container.removeEventListener('scroll', this.boardScrollHandler, { capture: true });
+      this.container.removeEventListener('mouseover', this.boardMouseOverHandler);
+      this.container.removeEventListener('mouseleave', this.boardMouseLeaveHandler);
+      this.container.removeEventListener('dragstart', this.boardDragStartHandler);
+      this.container.removeEventListener('dragover', this.boardDragOverHandler);
+      this.container.removeEventListener('drop', this.boardDropHandler);
+      this.container.removeEventListener('dragleave', this.boardDragLeaveHandler);
+      this.boardEventDelegationSetup = false;
+    }
     this.resetBoardTouchScrollingState();
     this.stopBoardMomentumScroll();
 
@@ -4415,7 +4427,7 @@ class BoardManager {
       return false;
     }
     
-    e.stopPropagation(); // Prevent column from also starting to drag
+    e.stopPropagation(); // Card drags stop here; nothing above the board container needs dragstart
     this.nativeDragCard = card;
     card.classList.add('dragging');
     e.dataTransfer.effectAllowed = 'move';
