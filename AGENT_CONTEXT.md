@@ -5,6 +5,10 @@ etc.). Tool-specific entry points such as CLAUDE.md point here. Keep entries
 short, factual and durable. Update this file when behaviour or workflow
 changes, not for one-off task notes.
 
+## Sub-agents
+
+Never use sub-agents, for any task, including code review, research or searching. Do all the work yourself in the main session.
+
 ## Before making changes
 
 Read CONTRIBUTING.md before implementing anything. It covers:
@@ -73,7 +77,7 @@ Non-obvious behaviour that is easy to break:
 
 ## PR review workflow
 
-- **Size the review to the diff.** Check `git diff --stat` first. For a single file or fewer than ~300 changed lines, do one sequential review pass with no parallel sub-agents. Multi-agent fan-out on a small diff produces many overlapping, low-value findings. Use fan-out only for large, multi-file or high-risk changes, and even then only when the user asks for it.
+- **Review sequentially.** Check `git diff --stat` first, then review the diff yourself in one pass. Never fan out to sub-agents (see Sub-agents above).
 - **Reproduce before reporting.** Run the changed code against a crafted input and compare it with the pre-change behaviour. Report a regression only after you have confirmed it is real.
 - **Report, then wait.** Post findings as PR comments: one summary comment, plus inline comments on the relevant lines. Then stop. Don't commit fixes until the user approves them, even obvious ones.
 - **Label AI-written comments.** Comments are posted from the user's GitHub account, so readers will assume the user wrote them unless told otherwise. Every comment body must start with this exact line, followed by a blank line:
