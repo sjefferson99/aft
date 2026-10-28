@@ -9,6 +9,15 @@ const MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX = 900;
 const MOBILE_BOARD_TOUCH_SCROLL_LOCK_THRESHOLD_PX = 8;
 const MOBILE_CARD_LONG_PRESS_DELAY_MS = 500;
 const MOBILE_CARD_LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+// Momentum ("fling") after a mobile touch scroll is released. Deliberately
+// short-lived: time constant ~ -16.67 / ln(friction) ms (~200ms at 0.92).
+const MOBILE_BOARD_MOMENTUM_FRICTION_PER_FRAME = 0.92;
+const MOBILE_BOARD_MOMENTUM_SAMPLE_WINDOW_MS = 100;
+const MOBILE_BOARD_MOMENTUM_RELEASE_MAX_IDLE_MS = 50;
+const MOBILE_BOARD_MOMENTUM_MIN_START_VELOCITY = 0.15; // px/ms
+const MOBILE_BOARD_MOMENTUM_STOP_VELOCITY = 0.02; // px/ms
+const MOBILE_BOARD_MOMENTUM_MAX_VELOCITY = 2.5; // px/ms
+const MOBILE_BOARD_MOMENTUM_TAP_SUPPRESS_MS = 400;
 const BOARD_LOADING_OVERLAY_DELAY_MS = 500;
 const INITIAL_BOARD_LOAD_TIMEOUT_MS = 15000;
 const SUBSEQUENT_BOARD_LOAD_TIMEOUT_MS = 10000;
@@ -880,6 +889,9 @@ class BoardManager {
     this.boardTouchMoveHandler = this.handleBoardTouchMove.bind(this);
     this.boardTouchEndHandler = this.handleBoardTouchEnd.bind(this);
     this.boardContextMenuHandler = this.handleBoardContextMenu.bind(this);
+    this.boardMomentumClickHandler = this.handleBoardMomentumClick.bind(this);
+    this.boardMomentumState = null;
+    this.suppressBoardClickUntil = 0;
     this.boardClickHandler = this.handleBoardClick.bind(this);
     this.boardScrollHandler = this.handleBoardScroll.bind(this);
     this.boardMouseOverHandler = this.handleBoardMouseOver.bind(this);
@@ -1712,6 +1724,7 @@ class BoardManager {
     this.container.addEventListener('touchend', this.boardTouchEndHandler, { passive: true });
     this.container.addEventListener('touchcancel', this.boardTouchEndHandler, { passive: true });
     this.container.addEventListener('contextmenu', this.boardContextMenuHandler);
+    this.container.addEventListener('click', this.boardMomentumClickHandler, true);
     this.boardTouchScrollingSetup = true;
   }
 
@@ -2278,6 +2291,9 @@ class BoardManager {
       return;
     }
 
+    // Touching during a fling stops it, as native scrolling does.
+    const interruptedMomentum = this.stopBoardMomentumScroll();
+
     if (event.touches.length !== 1) {
       this.resetBoardTouchScrollingState();
       return;
@@ -2313,6 +2329,8 @@ class BoardManager {
       lastX: touch.clientX,
       lastY: touch.clientY,
       axis: null,
+      interruptedMomentum,
+      velocitySamples: [],
       columnsContainer,
       columnCardsContainer,
       cardElement: shouldTrackCardLongPress ? touchedCard : null,
@@ -2408,6 +2426,7 @@ class BoardManager {
       state.columnsContainer.scrollLeft -= deltaX;
       this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(state.columnsContainer.scrollLeft);
       this.schedulePersistBoardHorizontalScrollPosition();
+      this.recordBoardTouchVelocitySample(state, touch.clientX);
       state.lastX = touch.clientX;
       state.lastY = touch.clientY;
       return;
@@ -2416,6 +2435,7 @@ class BoardManager {
     if (state.axis === 'vertical' && state.columnCardsContainer?.isConnected) {
       event.preventDefault();
       state.columnCardsContainer.scrollTop -= deltaY;
+      this.recordBoardTouchVelocitySample(state, touch.clientY);
       state.lastX = touch.clientX;
       state.lastY = touch.clientY;
       return;
@@ -2434,11 +2454,146 @@ class BoardManager {
       });
     }
 
-    if (this.boardTouchScrollState?.cardLongPressActivated && this.boardTouchScrollState?.touchDragState?.active) {
-      await this.finishMobileTouchCardDrag(this.boardTouchScrollState);
+    const state = this.boardTouchScrollState;
+
+    if (state?.cardLongPressActivated && state?.touchDragState?.active) {
+      await this.finishMobileTouchCardDrag(state);
+    } else if (state?.axis) {
+      this.startBoardMomentumScroll(state);
+    } else if (state?.interruptedMomentum) {
+      // A tap that only stopped a fling shouldn't also open the card under it.
+      this.suppressBoardClickUntil = performance.now() + MOBILE_BOARD_MOMENTUM_TAP_SUPPRESS_MS;
     }
 
     this.resetBoardTouchScrollingState();
+  }
+
+  recordBoardTouchVelocitySample(state, position) {
+    const now = performance.now();
+    state.velocitySamples.push({ time: now, position });
+
+    while (state.velocitySamples.length > 2 &&
+      now - state.velocitySamples[0].time > MOBILE_BOARD_MOMENTUM_SAMPLE_WINDOW_MS) {
+      state.velocitySamples.shift();
+    }
+  }
+
+  getBoardTouchReleaseVelocity(state) {
+    const samples = state.velocitySamples;
+    if (!samples || samples.length < 2) {
+      return 0;
+    }
+
+    const first = samples[0];
+    const last = samples[samples.length - 1];
+    // Finger held still before lifting: no fling.
+    if (performance.now() - last.time > MOBILE_BOARD_MOMENTUM_RELEASE_MAX_IDLE_MS) {
+      return 0;
+    }
+
+    const elapsed = last.time - first.time;
+    if (elapsed <= 0) {
+      return 0;
+    }
+
+    const velocity = (last.position - first.position) / elapsed;
+    return Math.max(-MOBILE_BOARD_MOMENTUM_MAX_VELOCITY, Math.min(MOBILE_BOARD_MOMENTUM_MAX_VELOCITY, velocity));
+  }
+
+  startBoardMomentumScroll(touchState) {
+    this.stopBoardMomentumScroll();
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+
+    const isHorizontal = touchState.axis === 'horizontal';
+    const element = isHorizontal ? touchState.columnsContainer : touchState.columnCardsContainer;
+    if (!element?.isConnected) {
+      return;
+    }
+
+    const velocity = this.getBoardTouchReleaseVelocity(touchState);
+    if (Math.abs(velocity) < MOBILE_BOARD_MOMENTUM_MIN_START_VELOCITY) {
+      return;
+    }
+
+    const scrollProperty = isHorizontal ? 'scrollLeft' : 'scrollTop';
+    // Accumulate fractional pixels ourselves: scrollLeft/scrollTop may round.
+    const momentum = {
+      element,
+      scrollProperty,
+      // Finger velocity is opposite to scroll direction.
+      velocity: -velocity,
+      position: element[scrollProperty],
+      lastApplied: element[scrollProperty],
+      lastTime: performance.now(),
+      rafId: null
+    };
+
+    const step = (now) => {
+      if (this.boardMomentumState !== momentum) {
+        return;
+      }
+
+      const elapsed = Math.max(0, now - momentum.lastTime);
+      momentum.lastTime = now;
+
+      const before = momentum.element[momentum.scrollProperty];
+      // Yield if the element was removed or something else scrolled it.
+      if (!momentum.element.isConnected || Math.abs(before - momentum.lastApplied) > 1) {
+        this.stopBoardMomentumScroll();
+        return;
+      }
+
+      momentum.position += momentum.velocity * elapsed;
+      momentum.element[momentum.scrollProperty] = momentum.position;
+      const after = momentum.element[momentum.scrollProperty];
+      momentum.lastApplied = after;
+
+      // Stop when we hit an edge (browser clamps) or have slowed right down.
+      momentum.velocity *= Math.pow(MOBILE_BOARD_MOMENTUM_FRICTION_PER_FRAME, elapsed / (1000 / 60));
+      const hitEdge = elapsed > 0 && Math.abs(after - before) < 0.5 && Math.abs(momentum.position - after) >= 1;
+      if (hitEdge || Math.abs(momentum.velocity) < MOBILE_BOARD_MOMENTUM_STOP_VELOCITY) {
+        this.stopBoardMomentumScroll();
+        return;
+      }
+
+      momentum.rafId = requestAnimationFrame(step);
+    };
+
+    this.boardMomentumState = momentum;
+    momentum.rafId = requestAnimationFrame(step);
+  }
+
+  /**
+   * Cancel any in-flight momentum scroll.
+   * @returns {boolean} True if a fling was running and has been stopped.
+   */
+  stopBoardMomentumScroll() {
+    const momentum = this.boardMomentumState;
+    if (!momentum) {
+      return false;
+    }
+
+    if (momentum.rafId) {
+      cancelAnimationFrame(momentum.rafId);
+    }
+    this.boardMomentumState = null;
+    return true;
+  }
+
+  handleBoardMomentumClick(event) {
+    if (!this.suppressBoardClickUntil) {
+      return;
+    }
+
+    const shouldSuppress = performance.now() < this.suppressBoardClickUntil;
+    this.suppressBoardClickUntil = 0;
+    if (shouldSuppress) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   }
 
   handleBoardContextMenu(event) {
@@ -3485,9 +3640,11 @@ class BoardManager {
       this.container.removeEventListener('touchend', this.boardTouchEndHandler);
       this.container.removeEventListener('touchcancel', this.boardTouchEndHandler);
       this.container.removeEventListener('contextmenu', this.boardContextMenuHandler);
+      this.container.removeEventListener('click', this.boardMomentumClickHandler, true);
       this.boardTouchScrollingSetup = false;
     }
     this.resetBoardTouchScrollingState();
+    this.stopBoardMomentumScroll();
 
     if (this.viewportMetricsRafId) {
       cancelAnimationFrame(this.viewportMetricsRafId);
