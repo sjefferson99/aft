@@ -2072,15 +2072,15 @@ def get_board_scheduled_cards(board_id):
         description: Include owner reassignment candidate users when true
         enum: ['true', 'false']
         default: 'false'
-            - name: q
-                in: query
-                type: string
-                required: false
-                description: >
-                    Optional text search query (max 200 chars, max 12 OR groups, max 24 total terms,
-                    max 80 chars per term). Spaces are AND, commas are OR, quoted phrases are exact
-                    matches, and repeated double quotes inside quoted phrases escape a literal quote.
-                    Unquoted #<digits> tokens match card id only.
+      - name: q
+        in: query
+        type: string
+        required: false
+        description: >
+          Optional text search query (max 200 chars, max 12 OR groups, max 24 total terms,
+          max 80 chars per term). Spaces are AND, commas are OR, quoted phrases are exact
+          matches, and repeated double quotes inside quoted phrases escape a literal quote.
+          Unquoted #<digits> tokens match card id only.
     responses:
       200:
         description: Board with columns and scheduled cards
