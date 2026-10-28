@@ -587,6 +587,61 @@ first.** Also verify against the scroll-restoration logic
 ([board.js:1602](../www/js/board.js#L1602)) and the `contain-intrinsic-size` estimate, since
 a bad estimate causes scrollbar jitter.
 
+#### Measured before starting 2.4/2.5: not worth doing as written
+
+Measured on the 800-card seeded board by timing repeated `renderBoard()` calls (see
+`perf-tests/render_probe.py`, added with item 2.1):
+
+| Variant | First forced layout | Overflow pass + relayout | Re-render to next frame |
+|---|---|---|---|
+| Current (eager overflow pass) | ~82 ms | ~15 ms | ~346 ms |
+| `content-visibility: auto` + eager pass | ~3 ms | ~173 ms | ~455 ms |
+| `content-visibility: auto`, no pass (best case for 2.4 + 2.5) | ~3 ms | 0 | ~363–382 ms |
+
+- **2.4 on its own** can save at most the ~15 ms the eager pass costs, about 4% of a
+  re-render. It also brings a regression: `IntersectionObserver` callbacks run after paint,
+  so visible cards would render at full height and then collapse, a visible flash on every
+  render. Cards collapsed lazily would also shift the scroll-restore offsets.
+- **2.5** cuts the first layout from ~82 ms to ~3 ms, but render-to-frame does not improve,
+  even with no overflow pass at all. The caveat above is confirmed: the eager pass forces the
+  skipped cards to render (~173 ms), a clear regression.
+- 2.5 might still help drag, where layout is ~22% of the cost, or scrolling. Only the manual
+  `DRAG_MEASUREMENT.md` procedure can check that. Re-evaluate both items after 2.3, when
+  re-renders are mostly patches.
+
+### 2.9 Cache `Intl.DateTimeFormat` instances — **found while measuring 2.4** — ✅ implemented and measured
+
+A CPU profile of ten `renderBoard()` calls on the 800-card board found
+`formatTooltipDateTime()` (`www/js/utils.js`) at **~141 ms per render**, about 80% of
+`renderBoard()`'s synchronous time. Each card renders its last-updated timestamp twice
+(`data-tooltip` and `aria-label`). `toLocaleDateString()`/`toLocaleTimeString()` with an
+options object construct a new `Intl.DateTimeFormat` on every call, which is the expensive
+part. Parsing the resulting HTML costs only ~39 ms by comparison.
+
+**Implemented**: `formatWithCachedFormatter()` in `utils.js` caches formatters by locale and
+options and is used by `applyTimeFormat()` and `formatDatePart()`. For an invalid date it
+returns `'Invalid Date'`, which matches `toLocale*String`; `Intl.DateTimeFormat#format`
+would throw instead.
+- Equivalence check against the old calls: 0 mismatches over 14,736 comparisons. The inputs
+  covered 6 timezones (including DST boundaries and half-hour or 45-minute offsets), 12/24-hour,
+  with and without seconds, random dates from 1990–2037, the max date and an invalid date.
+  An invalid timezone still throws `RangeError`.
+- New UI test `test_card_timestamp_tooltip_format` compares a rendered card's tooltip and
+  `aria-label` with the old `toLocale*String` output.
+
+**Measured** (800-card board, main vs branch, same host):
+
+| Metric | Before | After | Change |
+|---|---|---|---|
+| `renderBoard()` sync, median of 20 re-renders | ~169 ms | ~58 ms | **−66%** |
+| Re-render to next frame, median of 20 | ~356 ms | ~210 ms | **−41%** |
+| Cold load, script time (harness mode B / mode A) | ~227 / ~355 ms | ~101 / ~220 ms | −55% / −38% |
+| Cold load, long-task total (mode B / mode A) | ~620 / ~880 ms | ~363 / ~610 ms | −41% / −31% |
+
+The cold-load harness is bimodal (see item 2.1), so its rows compare mode for mode. This is
+the largest per-render win found in Tier 2, and it also speeds up every other page that
+formats dates.
+
 ### 2.6 Return card counts from the server — **0.5 day**
 
 Add `card_count` / `done_count` / `total_active_count` per column in `get_board_cards`

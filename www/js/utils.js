@@ -94,6 +94,28 @@
  * @param {string} timezone - IANA timezone name
  * @returns {string} Formatted time string
  */
+// toLocaleDateString/toLocaleTimeString build a new Intl.DateTimeFormat on
+// every call, which is expensive. Board renders format two timestamps per
+// card, so at 800 cards this was most of renderBoard()'s time. Formatters
+// are cached by locale and options instead.
+const dateTimeFormatCache = new Map();
+
+function formatWithCachedFormatter(dateObj, locale, options) {
+  // Intl.DateTimeFormat#format throws on an invalid date, where the
+  // toLocale*String methods return 'Invalid Date'.
+  if (Number.isNaN(dateObj.getTime())) {
+    return 'Invalid Date';
+  }
+
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let formatter = dateTimeFormatCache.get(key);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, options);
+    dateTimeFormatCache.set(key, formatter);
+  }
+  return formatter.format(dateObj);
+}
+
 function applyTimeFormat(dateObj, timeFormat, includeSeconds, timezone = 'UTC') {
   if (timeFormat === '12') {
     const options = {
@@ -105,7 +127,7 @@ function applyTimeFormat(dateObj, timeFormat, includeSeconds, timezone = 'UTC') 
     if (includeSeconds) {
       options.second = '2-digit';
     }
-    return dateObj.toLocaleTimeString('en-US', options);
+    return formatWithCachedFormatter(dateObj, 'en-US', options);
   } else {
     const options = {
       hour: '2-digit',
@@ -116,7 +138,7 @@ function applyTimeFormat(dateObj, timeFormat, includeSeconds, timezone = 'UTC') 
     if (includeSeconds) {
       options.second = '2-digit';
     }
-    return dateObj.toLocaleTimeString('en-GB', options);
+    return formatWithCachedFormatter(dateObj, 'en-GB', options);
   }
 }
 
@@ -145,7 +167,7 @@ function getCachedTimezone() {
 }
 
 function formatDatePart(dateObj, locale = 'en-GB') {
-  return dateObj.toLocaleDateString(locale, {
+  return formatWithCachedFormatter(dateObj, locale, {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
