@@ -880,6 +880,18 @@ class BoardManager {
     this.boardTouchMoveHandler = this.handleBoardTouchMove.bind(this);
     this.boardTouchEndHandler = this.handleBoardTouchEnd.bind(this);
     this.boardContextMenuHandler = this.handleBoardContextMenu.bind(this);
+    this.boardClickHandler = this.handleBoardClick.bind(this);
+    this.boardScrollHandler = this.handleBoardScroll.bind(this);
+    this.boardMouseOverHandler = this.handleBoardMouseOver.bind(this);
+    this.boardMouseLeaveHandler = this.handleBoardMouseLeave.bind(this);
+    this.boardDragStartHandler = this.handleBoardDragStart.bind(this);
+    this.boardDragOverHandler = this.handleBoardDragOver.bind(this);
+    this.boardDropHandler = this.handleBoardDrop.bind(this);
+    this.boardDragLeaveHandler = this.handleBoardDragLeave.bind(this);
+    this.cardDragEndHandler = this.handleCardDragEnd.bind(this);
+    this.nativeDragCard = null;
+    this.nativeDragOriginalPosition = null;
+    this.nativeDragoverRafId = null;
     this.viewportMetricsRafId = null;
     this.currentLoadController = null; // Track in-flight board load requests
     this.currentViewState = null; // Track the view state for the current load
@@ -1703,6 +1715,254 @@ class BoardManager {
     this.boardTouchScrollingSetup = true;
   }
 
+  // renderBoard() rebuilds the board via innerHTML, so column and card
+  // controls are handled by listeners on the persistent container, attached
+  // once, rather than re-wired per element on every render.
+  setupBoardEventDelegation() {
+    if (!this.container || this.boardEventDelegationSetup) {
+      return;
+    }
+
+    this.container.addEventListener('click', this.boardClickHandler);
+    // scroll doesn't bubble; capture it from the column and board scrollers.
+    this.container.addEventListener('scroll', this.boardScrollHandler, { capture: true, passive: true });
+    this.container.addEventListener('mouseover', this.boardMouseOverHandler);
+    this.container.addEventListener('mouseleave', this.boardMouseLeaveHandler);
+    this.container.addEventListener('dragstart', this.boardDragStartHandler);
+    this.container.addEventListener('dragover', this.boardDragOverHandler);
+    this.container.addEventListener('drop', this.boardDropHandler);
+    this.container.addEventListener('dragleave', this.boardDragLeaveHandler);
+    this.boardEventDelegationSetup = true;
+  }
+
+  handleBoardClick(e) {
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) {
+      return;
+    }
+
+    if (target.closest('#add-column-empty-btn, #add-column-inline-btn')) {
+      this.openAddColumnModal();
+      return;
+    }
+
+    if (this.handleColumnControlClick(e, target) || this.handleCardControlClick(e, target)) {
+      return;
+    }
+
+    const card = target.closest('.card[data-card-id]');
+    if (card) {
+      this.handleCardClick(e, card);
+    }
+  }
+
+  closeColumnMenus(except = null) {
+    this.container.querySelectorAll('.column-menu-dropdown').forEach(d => {
+      if (d !== except) d.classList.remove('show');
+    });
+  }
+
+  handleColumnControlClick(e, target) {
+    const menuBtn = target.closest('.column-menu-btn');
+    if (menuBtn) {
+      e.stopPropagation();
+      const columnId = menuBtn.getAttribute('data-column-id');
+      const dropdown = this.container.querySelector(`.column-menu-dropdown[data-column-id="${columnId}"]`);
+      this.closeColumnMenus(dropdown);
+      dropdown?.classList.toggle('show');
+      return true;
+    }
+
+    const scheduled = this.currentView === 'scheduled';
+
+    const addCardBtn = target.closest('.column-add-card-btn, .add-card-btn');
+    if (addCardBtn) {
+      const columnId = parseInt(addCardBtn.getAttribute('data-column-id'));
+      // Header button adds at the top (order 0); the in-column button at the bottom (default).
+      const order = addCardBtn.classList.contains('column-add-card-btn') ? 0 : null;
+      this.openAddCardModal(columnId, order, scheduled);
+      return true;
+    }
+
+    const menuItem = target.closest('.column-menu-item');
+    if (!menuItem) {
+      return false;
+    }
+
+    const columnId = parseInt(menuItem.getAttribute('data-column-id'));
+    const currentOrder = parseInt(menuItem.getAttribute('data-order'));
+    this.closeColumnMenus();
+
+    if (menuItem.classList.contains('column-menu-add-card-btn')) {
+      this.openAddCardModal(columnId, 0, scheduled); // Add at top (order 0)
+    } else if (menuItem.classList.contains('column-menu-rename-btn')) {
+      this.openEditColumnModal(columnId, menuItem.getAttribute('data-column-name'));
+    } else if (menuItem.classList.contains('column-menu-move-left-btn')) {
+      if (currentOrder > 0) {
+        this.moveColumn(columnId, currentOrder - 1);
+      }
+    } else if (menuItem.classList.contains('column-menu-move-right-btn')) {
+      if (currentOrder < this.columns.length - 1) {
+        this.moveColumn(columnId, currentOrder + 1);
+      }
+    } else if (menuItem.classList.contains('column-move-all-cards-btn')) {
+      this.openMoveAllCardsModal(columnId);
+    } else if (menuItem.classList.contains('column-archive-all-cards-btn')) {
+      this.archiveAllCardsInColumn(columnId);
+    } else if (menuItem.classList.contains('column-unarchive-all-cards-btn')) {
+      this.unarchiveAllCardsInColumn(columnId);
+    } else if (menuItem.classList.contains('column-archive-after-btn')) {
+      this.openArchiveAfterModal(columnId);
+    } else if (menuItem.classList.contains('column-delete-cards-btn')) {
+      this.deleteAllCardsInColumn(columnId);
+    } else if (menuItem.classList.contains('column-delete-btn')) {
+      this.deleteColumn(columnId);
+    }
+    return true;
+  }
+
+  // Card controls stop propagation so the click doesn't also open the card
+  // (handled after these in handleBoardClick) or reach document-level handlers.
+  handleCardControlClick(e, target) {
+    const expandBtn = target.closest('.card-expand-btn');
+    if (expandBtn) {
+      e.stopPropagation();
+      this.toggleCardExpanded(expandBtn);
+      return true;
+    }
+
+    const checkbox = target.closest('.card-checklist-checkbox');
+    if (checkbox) {
+      e.stopPropagation();
+      this.handleCardChecklistToggle(checkbox);
+      return true;
+    }
+
+    const actionBtn = target.closest('.card-delete-btn, .card-archive-btn, .card-unarchive-btn, .card-done-btn, .card-move-btn');
+    if (!actionBtn) {
+      return false;
+    }
+
+    e.stopPropagation();
+    const cardId = parseInt(actionBtn.getAttribute('data-card-id'));
+    const cardElement = actionBtn.closest('.card');
+
+    if (actionBtn.classList.contains('card-delete-btn')) {
+      this.deleteCard(cardId, cardElement);
+    } else if (actionBtn.classList.contains('card-archive-btn')) {
+      this.archiveCard(cardId, cardElement);
+    } else if (actionBtn.classList.contains('card-unarchive-btn')) {
+      this.unarchiveCard(cardId, cardElement);
+    } else if (actionBtn.classList.contains('card-done-btn')) {
+      const currentDone = cardElement.getAttribute('data-done') === 'true';
+      this.updateCardDoneStatus(cardId, !currentDone, cardElement);
+    } else if (actionBtn.classList.contains('card-move-btn')) {
+      this.openMoveCardModal(cardId);
+    }
+    return true;
+  }
+
+  async handleCardClick(e, card) {
+    if (this.isMobileTouchViewport() && Date.now() < this.mobileTouchDragSuppressClickUntil) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
+    const cardId = parseInt(card.getAttribute('data-card-id'));
+
+    // Show loading state on the card
+    card.classList.add('updating');
+
+    // Reload card data to get latest state
+    const cardData = await this.getCardData(cardId);
+
+    // Remove loading state
+    card.classList.remove('updating');
+
+    if (cardData) {
+      this.openEditCardModal(cardId, cardData);
+    }
+    // Error toast already shown by getCardData if it failed
+  }
+
+  toggleCardExpanded(expandBtn) {
+    const card = expandBtn.closest('.card');
+    const cardId = Number(card?.getAttribute('data-card-id'));
+
+    if (card.classList.contains('collapsed')) {
+      card.classList.remove('collapsed');
+      expandBtn.textContent = 'Show less...';
+      expandBtn.setAttribute('aria-expanded', 'true');
+      if (Number.isInteger(cardId) && cardId > 0) {
+        this.expandedCardIds.add(cardId);
+      }
+    } else {
+      card.classList.add('collapsed');
+      expandBtn.textContent = 'Show more...';
+      expandBtn.setAttribute('aria-expanded', 'false');
+      if (Number.isInteger(cardId) && cardId > 0) {
+        this.expandedCardIds.delete(cardId);
+      }
+    }
+
+    this.persistExpandedCardState();
+  }
+
+  async handleCardChecklistToggle(checkbox) {
+    const itemId = parseInt(checkbox.getAttribute('data-item-id'));
+    const checked = checkbox.checked;
+    await this.updateChecklistItem(itemId, { checked });
+
+    // Update the visual state of the text
+    const label = checkbox.nextElementSibling;
+    if (checked) {
+      label.classList.add('checked');
+    } else {
+      label.classList.remove('checked');
+    }
+
+    // Update the summary
+    const card = checkbox.closest('.card');
+    const summaryElement = card.querySelector('.card-checklist-summary');
+    if (summaryElement) {
+      const allCheckboxes = card.querySelectorAll('.card-checklist-checkbox');
+      const total = allCheckboxes.length;
+      const checkedCount = Array.from(allCheckboxes).filter(cb => cb.checked).length;
+      const items = Array.from(allCheckboxes).map(cb => ({ checked: cb.checked }));
+      const percentage = calculateChecklistPercentage(items);
+      summaryElement.textContent = `${checkedCount}/${total} (${percentage}%)`;
+    }
+  }
+
+  // Track and persist per-column and horizontal board scroll state.
+  handleBoardScroll(e) {
+    const scroller = e.target instanceof Element ? e.target : null;
+    if (!scroller) {
+      return;
+    }
+
+    if (scroller.matches('.column-cards[data-column-id]')) {
+      const columnId = scroller.getAttribute('data-column-id');
+      this.updateColumnScrollPosition(columnId, scroller.scrollTop);
+      this.schedulePersistColumnScrollPositions();
+    } else if (scroller.matches('.columns-container')) {
+      this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(scroller.scrollLeft);
+      this.schedulePersistBoardHorizontalScrollPosition();
+    }
+  }
+
+  // Track which column is hovered (used by keyboard shortcuts).
+  handleBoardMouseOver(e) {
+    const column = e.target instanceof Element ? e.target.closest('.column') : null;
+    const columnId = column ? parseInt(column.getAttribute('data-column-id')) : NaN;
+    this.hoveredColumnId = isNaN(columnId) ? null : columnId;
+  }
+
+  handleBoardMouseLeave() {
+    this.hoveredColumnId = null;
+  }
+
   isMobileTouchViewport() {
     const hasTouchSupport = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
     return hasTouchSupport && window.matchMedia(`(max-width: ${MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX}px)`).matches;
@@ -2483,6 +2743,7 @@ class BoardManager {
       }
 
       this.render();
+      this.setupBoardEventDelegation();
       this.showBoardLoading();
       this.loadPersistedColumnScrollPositions();
       this.loadPersistedBoardHorizontalScrollPosition();
@@ -3463,14 +3724,6 @@ class BoardManager {
           </div>
         </div>
       `;
-      
-      // Add event listener for add column button
-      if (this.canEdit) {
-        const addColumnEmptyBtn = document.getElementById('add-column-empty-btn');
-        if (addColumnEmptyBtn) {
-          addColumnEmptyBtn.addEventListener('click', () => this.openAddColumnModal());
-        }
-      }
 
       this.setupAssigneeFilterBarListeners();
     } else {
@@ -3662,230 +3915,7 @@ class BoardManager {
         </div>
       `;
       
-      // Add event listener for add column button next to columns
-      if (this.canEdit) {
-        const addColumnBtn = document.getElementById('add-column-inline-btn');
-        if (addColumnBtn) {
-          addColumnBtn.addEventListener('click', () => this.openAddColumnModal());
-        }
-      }
-      
-      // Add hover listeners for columns to track which column is hovered
-      document.querySelectorAll('.column').forEach(column => {
-        column.addEventListener('mouseenter', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          if (!isNaN(columnId)) {
-            this.hoveredColumnId = columnId;
-          }
-        });
-        column.addEventListener('mouseleave', () => {
-          this.hoveredColumnId = null;
-        });
-      });
-      
-      // Add event listeners for column menu buttons
-      document.querySelectorAll('.column-menu-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const columnId = e.currentTarget.getAttribute('data-column-id');
-          const dropdown = document.querySelector(`.column-menu-dropdown[data-column-id="${columnId}"]`);
-          
-          // Close all other dropdowns
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => {
-            if (d !== dropdown) d.classList.remove('show');
-          });
-          
-          // Toggle this dropdown
-          dropdown.classList.toggle('show');
-        });
-      });
-      
-      // Add event listeners for edit column buttons
-      document.querySelectorAll('.column-edit-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.target.getAttribute('data-column-id'));
-          const columnName = e.target.getAttribute('data-column-name');
-          this.openEditColumnModal(columnId, columnName);
-        });
-      });
-
-      document.querySelectorAll('.column-menu-rename-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          const columnName = e.currentTarget.getAttribute('data-column-name');
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          this.openEditColumnModal(columnId, columnName);
-        });
-      });
-
       this.setupAssigneeFilterBarListeners();
-      
-      // Add event listeners for add card buttons (header and empty state)
-      document.querySelectorAll('.column-add-card-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.target.getAttribute('data-column-id'));
-          const scheduled = this.currentView === 'scheduled';
-          this.openAddCardModal(columnId, 0, scheduled); // Add at top (order 0)
-        });
-      });
-
-      document.querySelectorAll('.column-menu-add-card-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          const scheduled = this.currentView === 'scheduled';
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          this.openAddCardModal(columnId, 0, scheduled); // Add at top (order 0)
-        });
-      });
-      
-      document.querySelectorAll('.add-card-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.target.getAttribute('data-column-id'));
-          const scheduled = this.currentView === 'scheduled';
-          this.openAddCardModal(columnId, null, scheduled); // Add at bottom (default)
-        });
-      });
-      
-      // Add event listeners for delete column buttons
-      document.querySelectorAll('.column-delete-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          // Close the dropdown
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          this.deleteColumn(columnId);
-        });
-      });
-      
-      // Add event listeners for delete all cards buttons
-      document.querySelectorAll('.column-delete-cards-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          // Close the dropdown
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          this.deleteAllCardsInColumn(columnId);
-        });
-      });
-      
-      // Add event listeners for move all cards buttons
-      document.querySelectorAll('.column-move-all-cards-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          // Close the dropdown
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          this.openMoveAllCardsModal(columnId);
-        });
-      });
-      
-      // Add event listeners for archive all cards buttons
-      document.querySelectorAll('.column-archive-all-cards-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          // Close the dropdown
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          this.archiveAllCardsInColumn(columnId);
-        });
-      });
-      
-      // Add event listeners for unarchive all cards buttons
-      document.querySelectorAll('.column-unarchive-all-cards-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          // Close the dropdown
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          this.unarchiveAllCardsInColumn(columnId);
-        });
-      });
-      
-      // Add event listeners for archive after... buttons
-      document.querySelectorAll('.column-archive-after-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          // Close the dropdown
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          this.openArchiveAfterModal(columnId);
-        });
-      });
-      
-      // Add event listeners for move column buttons
-      document.querySelectorAll('.column-move-left-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.target.getAttribute('data-column-id'));
-          const currentOrder = parseInt(e.target.getAttribute('data-order'));
-          if (currentOrder > 0) {
-            this.moveColumn(columnId, currentOrder - 1);
-          }
-        });
-      });
-
-      document.querySelectorAll('.column-menu-move-left-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          const currentOrder = parseInt(e.currentTarget.getAttribute('data-order'));
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          if (currentOrder > 0) {
-            this.moveColumn(columnId, currentOrder - 1);
-          }
-        });
-      });
-      
-      document.querySelectorAll('.column-move-right-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.target.getAttribute('data-column-id'));
-          const currentOrder = parseInt(e.target.getAttribute('data-order'));
-          const maxOrder = this.columns.length - 1;
-          if (currentOrder < maxOrder) {
-            this.moveColumn(columnId, currentOrder + 1);
-          }
-        });
-      });
-
-      document.querySelectorAll('.column-menu-move-right-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          const columnId = parseInt(e.currentTarget.getAttribute('data-column-id'));
-          const currentOrder = parseInt(e.currentTarget.getAttribute('data-order'));
-          const maxOrder = this.columns.length - 1;
-          document.querySelectorAll('.column-menu-dropdown').forEach(d => d.classList.remove('show'));
-          if (currentOrder < maxOrder) {
-            this.moveColumn(columnId, currentOrder + 1);
-          }
-        });
-      });
-      
-      // Add event listeners for card clicks (open edit modal)
-      document.querySelectorAll('.card').forEach(card => {
-        card.addEventListener('click', async (e) => {
-          if (this.isMobileTouchViewport() && Date.now() < this.mobileTouchDragSuppressClickUntil) {
-            e.preventDefault();
-            e.stopPropagation();
-            return;
-          }
-
-          // Don't trigger if clicking the delete button, checklist checkbox, or expand button
-          // Use closest() to handle clicks on button content (like emoji text nodes)
-          if (e.target.closest('.card-delete-btn')) return;
-          if (e.target.closest('.card-move-btn')) return;
-          if (e.target.closest('.card-checklist-checkbox')) return;
-          if (e.target.closest('.card-expand-btn')) return;
-          if (e.target.closest('.card-archive-btn')) return;
-          if (e.target.closest('.card-unarchive-btn')) return;
-          
-          const cardId = parseInt(card.getAttribute('data-card-id'));
-          
-          // Show loading state on the card
-          card.classList.add('updating');
-          
-          // Reload card data to get latest state
-          const cardData = await this.getCardData(cardId);
-          
-          // Remove loading state
-          card.classList.remove('updating');
-          
-          if (cardData) {
-            this.openEditCardModal(cardId, cardData);
-          }
-          // Error toast already shown by getCardData if it failed
-        });
-      });
 
       // Initialize card collapse/expand functionality
       // Use requestAnimationFrame to ensure DOM is fully rendered before measuring
@@ -3924,150 +3954,6 @@ class BoardManager {
 
         this.restoreExpandedCardState();
       });
-
-      // Add event listeners for card expand buttons
-      document.querySelectorAll('.card-expand-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation(); // Prevent card click event
-          const card = e.currentTarget.closest('.card');
-          const cardId = Number(card?.getAttribute('data-card-id'));
-          
-          if (card.classList.contains('collapsed')) {
-            card.classList.remove('collapsed');
-            e.currentTarget.textContent = 'Show less...';
-            e.currentTarget.setAttribute('aria-expanded', 'true');
-            if (Number.isInteger(cardId) && cardId > 0) {
-              this.expandedCardIds.add(cardId);
-            }
-          } else {
-            card.classList.add('collapsed');
-            e.currentTarget.textContent = 'Show more...';
-            e.currentTarget.setAttribute('aria-expanded', 'false');
-            if (Number.isInteger(cardId) && cardId > 0) {
-              this.expandedCardIds.delete(cardId);
-            }
-          }
-
-          this.persistExpandedCardState();
-        });
-      });
-      
-      // Add event listeners for checklist checkboxes on cards
-      document.querySelectorAll('.card-checklist-checkbox').forEach(checkbox => {
-        checkbox.addEventListener('click', async (e) => {
-          e.stopPropagation(); // Prevent card click event
-          const itemId = parseInt(e.target.getAttribute('data-item-id'));
-          const checked = e.target.checked;
-          await this.updateChecklistItem(itemId, { checked });
-          
-          // Update the visual state of the text
-          const label = e.target.nextElementSibling;
-          if (checked) {
-            label.classList.add('checked');
-          } else {
-            label.classList.remove('checked');
-          }
-          
-          // Update the summary
-          const card = e.target.closest('.card');
-          const summaryElement = card.querySelector('.card-checklist-summary');
-          if (summaryElement) {
-            const allCheckboxes = card.querySelectorAll('.card-checklist-checkbox');
-            const total = allCheckboxes.length;
-            const checkedCount = Array.from(allCheckboxes).filter(cb => cb.checked).length;
-            const items = Array.from(allCheckboxes).map(cb => ({ checked: cb.checked }));
-            const percentage = calculateChecklistPercentage(items);
-            summaryElement.textContent = `${checkedCount}/${total} (${percentage}%)`;
-          }
-        });
-      });
-      
-      // Add event listeners for delete card buttons
-      document.querySelectorAll('.card-delete-btn').forEach(btn => {
-        btn.addEventListener('mousedown', (e) => {
-          e.stopPropagation(); // Prevent drag from starting
-        });
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation(); // Prevent card click event
-          const cardId = parseInt(e.currentTarget.getAttribute('data-card-id'));
-          const cardElement = e.currentTarget.closest('.card');
-          await this.deleteCard(cardId, cardElement);
-        });
-      });
-      
-      // Add event listeners for archive card buttons
-      document.querySelectorAll('.card-archive-btn').forEach(btn => {
-        btn.addEventListener('mousedown', (e) => {
-          e.stopPropagation(); // Prevent drag from starting
-        });
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation(); // Prevent card click event
-          const cardId = parseInt(e.currentTarget.getAttribute('data-card-id'));
-          const cardElement = e.currentTarget.closest('.card');
-          await this.archiveCard(cardId, cardElement);
-        });
-      });
-      
-      // Add event listeners for unarchive card buttons
-      document.querySelectorAll('.card-unarchive-btn').forEach(btn => {
-        btn.addEventListener('mousedown', (e) => {
-          e.stopPropagation(); // Prevent drag from starting
-        });
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation(); // Prevent card click event
-          const cardId = parseInt(e.currentTarget.getAttribute('data-card-id'));
-          const cardElement = e.currentTarget.closest('.card');
-          await this.unarchiveCard(cardId, cardElement);
-        });
-      });
-      
-      // Add event listeners for card done buttons
-      document.querySelectorAll('.card-done-btn').forEach(btn => {
-        btn.addEventListener('mousedown', (e) => {
-          e.stopPropagation(); // Prevent drag from starting
-        });
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation(); // Prevent card click event
-          const cardId = parseInt(e.currentTarget.getAttribute('data-card-id'));
-          const cardElement = e.currentTarget.closest('.card');
-          const currentDone = cardElement.getAttribute('data-done') === 'true';
-          await this.updateCardDoneStatus(cardId, !currentDone, cardElement);
-        });
-      });
-
-      // Add event listeners for card move buttons
-      document.querySelectorAll('.card-move-btn').forEach(btn => {
-        btn.addEventListener('mousedown', (e) => {
-          e.stopPropagation(); // Prevent drag from starting
-        });
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation(); // Prevent card click event
-          const cardId = parseInt(e.currentTarget.getAttribute('data-card-id'));
-          await this.openMoveCardModal(cardId);
-        });
-      });
-      
-      // Add drag and drop event listeners for cards (only in edit mode)
-      if (this.canEdit) {
-        this.setupDragAndDrop();
-      }
-
-      // Track and restore per-column scroll state after each board render.
-      document.querySelectorAll('.column-cards[data-column-id]').forEach(columnCards => {
-        columnCards.addEventListener('scroll', () => {
-          const columnId = columnCards.getAttribute('data-column-id');
-          this.updateColumnScrollPosition(columnId, columnCards.scrollTop);
-          this.schedulePersistColumnScrollPositions();
-        }, { passive: true });
-      });
-
-      const columnsContainer = this.container.querySelector('.columns-container');
-      if (columnsContainer) {
-        columnsContainer.addEventListener('scroll', () => {
-          this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(columnsContainer.scrollLeft);
-          this.schedulePersistBoardHorizontalScrollPosition();
-        }, { passive: true });
-      }
 
       this.restoreColumnScrollPositions();
       this.restoreBoardHorizontalScrollPosition();
@@ -4340,168 +4226,186 @@ class BoardManager {
     this.scheduleColumnAutoScroll(container, direction, clientY);
   }
 
-  setupDragAndDrop() {
-    const cards = document.querySelectorAll('.card');
-    const columnCards = document.querySelectorAll('.column-cards');
+  // Native (desktop) card drag-and-drop, delegated from this.container so
+  // re-renders don't need to re-wire per-card listeners. Drag state lives on
+  // the instance rather than in a per-render closure.
+  handleBoardDragStart(e) {
+    const card = e.target instanceof Element ? e.target.closest('.card[data-card-id]') : null;
+    if (!card || !this.canEdit) {
+      return;
+    }
+
+    if (this.isMobileTouchViewport()) {
+      const cardId = Number(card.getAttribute('data-card-id'));
+      this.logMobileCardLongPressDebug('native-dragstart-blocked-mobile', {
+        cardId,
+        targetClass: e.target?.className || null
+      });
+      e.preventDefault();
+      return false;
+    }
+
+    const cardId = Number(card.getAttribute('data-card-id'));
+
+    // Don't allow drag if clicking on buttons or interactive elements
+    if (e.target.closest('.card-delete-btn') || 
+        e.target.closest('.card-archive-btn') || 
+        e.target.closest('.card-unarchive-btn') ||
+        e.target.closest('.card-expand-btn') ||
+        e.target.closest('.card-checklist-checkbox') ||
+        e.target.closest('.card-action-buttons')) {
+      e.preventDefault();
+      return false;
+    }
     
-    let draggedCard = null;
-    let originalPosition = null; // Store original position before drag
-    let dragoverRafId = null;
+    e.stopPropagation(); // Prevent column from also starting to drag
+    this.nativeDragCard = card;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', card.innerHTML);
+    this.clearDragMidpointCaches();
 
-    // Card drag events
-    cards.forEach(card => {
-      card.addEventListener('dragstart', (e) => {
-        if (this.isMobileTouchViewport()) {
-          const cardId = Number(card.getAttribute('data-card-id'));
-          this.logMobileCardLongPressDebug('native-dragstart-blocked-mobile', {
-            cardId,
-            targetClass: e.target?.className || null
-          });
-          e.preventDefault();
-          return false;
-        }
+    // dragend is bound to the card itself rather than delegated: if a
+    // WebSocket-triggered re-render detaches the card mid-drag, dragend still
+    // fires on the detached node but no longer bubbles to this.container.
+    card.addEventListener('dragend', this.cardDragEndHandler, { once: true });
 
-        const cardId = Number(card.getAttribute('data-card-id'));
+    // Capture original position NOW, before any DOM manipulation
+    const oldColumnId = parseInt(card.getAttribute('data-column-id'));
+    const oldOrder = parseInt(card.getAttribute('data-order'));
+    const originalColumnContainer = document.querySelector(`[data-column-id="${oldColumnId}"] .column-cards`);
+    const actualNextSibling = card.nextElementSibling;
+    const originalIndex = Array.from(originalColumnContainer?.querySelectorAll('.card') || []).indexOf(card);
+    
+    this.nativeDragOriginalPosition = {
+      columnId: oldColumnId,
+      order: oldOrder,
+      index: originalIndex,
+      container: originalColumnContainer,
+      nextSibling: actualNextSibling
+    };
 
-        // Don't allow drag if clicking on buttons or interactive elements
-        if (e.target.closest('.card-delete-btn') || 
-            e.target.closest('.card-archive-btn') || 
-            e.target.closest('.card-unarchive-btn') ||
-            e.target.closest('.card-expand-btn') ||
-            e.target.closest('.card-checklist-checkbox') ||
-            e.target.closest('.card-action-buttons')) {
-          e.preventDefault();
-          return false;
-        }
-        
-        e.stopPropagation(); // Prevent column from also starting to drag
-        draggedCard = card;
-        card.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/html', card.innerHTML);
-        this.clearDragMidpointCaches();
-
-        // Capture original position NOW, before any DOM manipulation
-        const oldColumnId = parseInt(card.getAttribute('data-column-id'));
-        const oldOrder = parseInt(card.getAttribute('data-order'));
-        const originalColumnContainer = document.querySelector(`[data-column-id="${oldColumnId}"] .column-cards`);
-        const actualNextSibling = card.nextElementSibling;
-        const originalIndex = Array.from(originalColumnContainer?.querySelectorAll('.card') || []).indexOf(card);
-        
-        originalPosition = {
-          columnId: oldColumnId,
-          order: oldOrder,
-          index: originalIndex,
-          container: originalColumnContainer,
-          nextSibling: actualNextSibling
-        };
-
-        this.logMobileCardLongPressDebug('dragstart-state-captured', {
-          cardId,
-          oldColumnId,
-          oldOrder,
-          originalIndex
-        });
-      });
-      
-      card.addEventListener('dragend', (e) => {
-        card.classList.remove('dragging');
-        card.classList.remove('mobile-drag-armed');
-        const cardId = Number(card.getAttribute('data-card-id'));
-        this.logMobileCardLongPressDebug('dragend', {
-          cardId,
-          isMobile: this.isMobileTouchViewport()
-        });
-        draggedCard = null;
-        originalPosition = null; // Clear stored position
-        this.stopColumnAutoScroll();
-        this.clearDragMidpointCaches();
-        if (dragoverRafId) {
-          cancelAnimationFrame(dragoverRafId);
-          dragoverRafId = null;
-        }
-      });
+    this.logMobileCardLongPressDebug('dragstart-state-captured', {
+      cardId,
+      oldColumnId,
+      oldOrder,
+      originalIndex
     });
+  }
 
-    // Column drop zone events
-    columnCards.forEach(columnContainer => {
-      columnContainer.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-
-        const clientY = e.clientY;
-
-        if (dragoverRafId) return; // Already have a pending frame; let it pick up the latest clientY.
-
-        dragoverRafId = requestAnimationFrame(() => {
-          dragoverRafId = null;
-
-          const dragging = document.querySelector('.dragging');
-          if (!dragging) return;
-
-          this.placeDraggedCard(columnContainer, dragging, clientY);
-        });
-      });
-      
-      columnContainer.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        this.stopColumnAutoScroll();
-        
-        if (!draggedCard || !originalPosition) return;
-
-        // Drop is a one-off, not a hot path — force a fresh measurement before
-        // reading (so a stale cache, e.g. from a dragover frame that never
-        // got to run, can't produce the wrong final placement) and again
-        // after mutating (mirrors dragover's own post-mutation invalidation,
-        // rather than relying on dragend's clearDragMidpointCaches() always
-        // running immediately afterward).
-        this.invalidateDragMidpointCache(columnContainer);
-
-        // Re-evaluate placement at drop time so the final order reflects where
-        // the pointer is when released (important after auto-scroll movement).
-        const finalAfterElement = this.getDragAfterElement(columnContainer, e.clientY);
-        if (!finalAfterElement) {
-          const addCardBtn = columnContainer.querySelector('.add-card-btn');
-          if (addCardBtn) {
-            columnContainer.insertBefore(draggedCard, addCardBtn);
-          } else {
-            columnContainer.appendChild(draggedCard);
-          }
-        } else {
-          columnContainer.insertBefore(draggedCard, finalAfterElement);
-        }
-
-        this.invalidateDragMidpointCache(columnContainer);
-        
-        const targetColumnId = parseInt(columnContainer.getAttribute('data-column-id'));
-        const cardId = parseInt(draggedCard.getAttribute('data-card-id'));
-        const oldColumnId = originalPosition.columnId;
-        
-        // Calculate target order using neighboring order values rather than
-        // DOM index because persisted order values can contain gaps.
-        const newOrder = this.getDropOrderValue(columnContainer, draggedCard, originalPosition);
-
-        this.logMobileCardLongPressDebug('drop', {
-          cardId,
-          oldColumnId,
-          targetColumnId,
-          oldOrder: originalPosition.order,
-          newOrder
-        });
-        
-        // Only update if position or column changed
-        const oldOrder = originalPosition.order;
-        if (targetColumnId !== oldColumnId || newOrder !== oldOrder) {
-          await this.updateCardPosition(cardId, targetColumnId, newOrder, originalPosition);
-        }
-      });
-
-      columnContainer.addEventListener('dragleave', (e) => {
-        if (!columnContainer.contains(e.relatedTarget)) {
-          this.stopColumnAutoScroll();
-        }
-      });
+  handleCardDragEnd(e) {
+    const card = e.currentTarget;
+    card.classList.remove('dragging');
+    card.classList.remove('mobile-drag-armed');
+    const cardId = Number(card.getAttribute('data-card-id'));
+    this.logMobileCardLongPressDebug('dragend', {
+      cardId,
+      isMobile: this.isMobileTouchViewport()
     });
+    this.nativeDragCard = null;
+    this.nativeDragOriginalPosition = null; // Clear stored position
+    this.stopColumnAutoScroll();
+    this.clearDragMidpointCaches();
+    if (this.nativeDragoverRafId) {
+      cancelAnimationFrame(this.nativeDragoverRafId);
+      this.nativeDragoverRafId = null;
+    }
+  }
+
+  getDragColumnContainer(e) {
+    if (!this.canEdit || !(e.target instanceof Element)) {
+      return null;
+    }
+    return e.target.closest('.column-cards');
+  }
+
+  handleBoardDragOver(e) {
+    const columnContainer = this.getDragColumnContainer(e);
+    if (!columnContainer) return;
+
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const clientY = e.clientY;
+
+    if (this.nativeDragoverRafId) return; // Already have a pending frame; let it pick up the latest clientY.
+
+    this.nativeDragoverRafId = requestAnimationFrame(() => {
+      this.nativeDragoverRafId = null;
+
+      const dragging = document.querySelector('.dragging');
+      if (!dragging) return;
+
+      this.placeDraggedCard(columnContainer, dragging, clientY);
+    });
+  }
+
+  async handleBoardDrop(e) {
+    const columnContainer = this.getDragColumnContainer(e);
+    if (!columnContainer) return;
+
+    e.preventDefault();
+    this.stopColumnAutoScroll();
+    
+    const draggedCard = this.nativeDragCard;
+    const originalPosition = this.nativeDragOriginalPosition;
+
+    // A re-render mid-drag detaches the dragged card; the fresh DOM already
+    // shows the server's state, so there is nothing to place.
+    if (!draggedCard || !originalPosition || !draggedCard.isConnected) return;
+
+    // Drop is a one-off, not a hot path — force a fresh measurement before
+    // reading (so a stale cache, e.g. from a dragover frame that never
+    // got to run, can't produce the wrong final placement) and again
+    // after mutating (mirrors dragover's own post-mutation invalidation,
+    // rather than relying on dragend's clearDragMidpointCaches() always
+    // running immediately afterward).
+    this.invalidateDragMidpointCache(columnContainer);
+
+    // Re-evaluate placement at drop time so the final order reflects where
+    // the pointer is when released (important after auto-scroll movement).
+    const finalAfterElement = this.getDragAfterElement(columnContainer, e.clientY);
+    if (!finalAfterElement) {
+      const addCardBtn = columnContainer.querySelector('.add-card-btn');
+      if (addCardBtn) {
+        columnContainer.insertBefore(draggedCard, addCardBtn);
+      } else {
+        columnContainer.appendChild(draggedCard);
+      }
+    } else {
+      columnContainer.insertBefore(draggedCard, finalAfterElement);
+    }
+
+    this.invalidateDragMidpointCache(columnContainer);
+    
+    const targetColumnId = parseInt(columnContainer.getAttribute('data-column-id'));
+    const cardId = parseInt(draggedCard.getAttribute('data-card-id'));
+    const oldColumnId = originalPosition.columnId;
+    
+    // Calculate target order using neighboring order values rather than
+    // DOM index because persisted order values can contain gaps.
+    const newOrder = this.getDropOrderValue(columnContainer, draggedCard, originalPosition);
+
+    this.logMobileCardLongPressDebug('drop', {
+      cardId,
+      oldColumnId,
+      targetColumnId,
+      oldOrder: originalPosition.order,
+      newOrder
+    });
+    
+    // Only update if position or column changed
+    const oldOrder = originalPosition.order;
+    if (targetColumnId !== oldColumnId || newOrder !== oldOrder) {
+      await this.updateCardPosition(cardId, targetColumnId, newOrder, originalPosition);
+    }
+  }
+
+  handleBoardDragLeave(e) {
+    const columnContainer = this.getDragColumnContainer(e);
+    if (columnContainer && !columnContainer.contains(e.relatedTarget)) {
+      this.stopColumnAutoScroll();
+    }
   }
 
   // Shared by both the native dragover and mobile touchmove hot paths:

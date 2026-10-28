@@ -1,6 +1,6 @@
 # Performance Review: Board Updates at Scale
 
-Status: Tier 1 implemented and measured (this branch); Tier 2/3 still proposal-only
+Status: Tier 1 implemented and measured; Tier 2 items 2.1 and 2.2 implemented and measured; the rest of Tier 2 and Tier 3 still proposal-only
 Scope: the board view (`www/js/board.js`, `www/css/board.css`) and the board read/write API (`server/card_routes.py`, `server/board_routes.py`, `server/broadcasting.py`)
 Trigger: board interactions degrade sharply once columns exceed ~100 cards, including when the change is on a *different* column
 
@@ -395,7 +395,65 @@ interaction (item 2.2, Tier 2) remains the most visible unfixed cost.
 This tier is where the "moving a card on column B re-renders column A" problem actually
 gets fixed. Do Tier 1 first and measure; some of these may look different afterwards.
 
-### 2.1 Event delegation instead of per-element listeners — **1.5 days**
+### 2.1 Event delegation instead of per-element listeners — **1.5 days** — ✅ implemented and measured
+
+**Implemented** on branch `525-2-1-event-delegation`. The original proposal follows below
+the results.
+- `renderBoard()` no longer attaches any listeners. `setupBoardEventDelegation()` attaches
+  nine listeners to `#board-container` once, at init: `click`, `scroll` (capture phase,
+  because scroll doesn't bubble), `mouseover`/`mouseleave` (hovered-column tracking, which
+  replaces per-column `mouseenter`/`mouseleave`), and `dragstart`/`dragover`/`drop`/`dragleave`.
+- The listeners go on `#board-container`, not `.columns-container` as proposed below, because
+  `renderBoard()` replaces the container's `innerHTML` and `.columns-container` is recreated
+  on every render.
+- `handleBoardClick()` dispatches in a fixed order: add-column buttons, then column controls
+  (`handleColumnControlClick()`), then card controls (`handleCardControlClick()`), then the card
+  itself (`handleCardClick()`). Card controls call `stopPropagation()` as before, and so does the
+  column menu button.
+- `setupDragAndDrop()` is replaced by `handleBoardDragStart()`/`handleBoardDragOver()`/
+  `handleBoardDrop()`/`handleBoardDragLeave()`. Drag state that lived in a per-render closure
+  now sits on the instance (`nativeDragCard`, `nativeDragOriginalPosition`, `nativeDragoverRafId`).
+  `dragend` is bound to the dragged card itself with `{ once: true }` at `dragstart`. If a
+  WebSocket-triggered re-render detaches the card mid-drag, `dragend` still fires on the
+  detached node, but it no longer bubbles to the container. `drop` ignores a detached card,
+  which matches the old behaviour: the old per-render closure had already lost the drag state.
+- Two kinds of listener were dropped rather than delegated:
+  - `mousedown` `stopPropagation()` on card buttons. Its comment said it prevented a drag from
+    starting, but a mousedown listener can't do that. `dragstart` already refuses drags from
+    `.card-action-buttons`, and nothing up the tree listens for `mousedown`.
+  - The listeners for `.column-edit-btn`, `.column-move-left-btn` and `.column-move-right-btn`.
+    Nothing renders those elements; only the `.column-menu-*` equivalents exist.
+- `ui-tests/tests/test_board_interactions.py` (7 tests) covers card open, expand/collapse,
+  the checklist checkbox, the column menu, add card, delete card and a native drag between
+  columns. Each test runs after a WebSocket-triggered re-render, so it checks that the handlers
+  survive `innerHTML` being replaced. With the `setupBoardEventDelegation()` call commented
+  out, all 7 tests fail.
+
+**Measured** on the 800-card seeded board, comparing main's `board.js` against this branch on
+the same host and stack:
+
+| Metric | Before | After | Change |
+|---|---|---|---|
+| `renderBoard()` sync, median of 20 re-renders ([render_probe.py](../perf-tests/render_probe.py)) | ~176 ms | ~167 ms | ~5% faster |
+| Re-render to next frame, median of 20 | ~366 ms | ~346 ms | ~5% faster |
+| Listener registrations per render | ~9,000–10,000 (11–13 per card) | 0 (9 in total, attached once) | — |
+
+The direct speed gain is small. HTML building, `innerHTML` parsing and layout dominate a
+full render, not listener wiring. The value of this item is as the prerequisite for item 2.3,
+which can now insert or replace a card node with no wiring at all.
+
+The cold-load harness (`run_all.py`/`browser_probe.py`) can't resolve a change this small.
+Its trace metrics are **bimodal** in both versions:
+- Mode A: about 4 layouts, 6 long tasks and ~350 ms script.
+- Mode B: about 14 layouts, 4 long tasks and ~230 ms script.
+
+Which mode dominates a batch of runs changes the medians by far more than the code change
+does. Over 15 runs the "after" batch landed mostly in mode B and the "before" batch mostly in
+mode A. That made the medians look 31% faster, but within each mode the two versions differ by
+about 3%. Use `render_probe.py` for re-render cost, and compare harness runs mode for mode
+rather than by raw median.
+
+#### Original proposal
 
 [board.js:3609-3982](../www/js/board.js#L3609-L3982) attaches listeners individually across
 ~20 `document.querySelectorAll` sweeps: card click, expand button, checklist checkbox,
