@@ -19,9 +19,15 @@ import logging
 from datetime import timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
+from card_serialization import (
+    build_card_broadcast_data,
+    get_column_card_orders,
+    get_comment_counts,
+    serialize_board_card,
+)
 from database import SessionLocal
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
-from models import Board, BoardColumn, Card, CardSecondaryAssignee, Comment, User
+from models import Board, BoardColumn, Card, CardSecondaryAssignee, User
 from settings_schema import WORKING_STYLE_AGILE, get_board_working_style
 from utils import (
     MAX_DESCRIPTION_LENGTH,
@@ -419,48 +425,11 @@ def get_board_cards(board_id):
             # fetched separately when a card is opened via GET /api/cards/:id).
             # A single grouped COUNT query per column instead of loading and
             # discarding every comment row.
-            card_ids = [card.id for card in cards]
-            comment_counts = dict(
-                db.query(Comment.card_id, func.count(Comment.id))
-                .filter(Comment.card_id.in_(card_ids))
-                .group_by(Comment.card_id)
-                .all()
-            ) if card_ids else {}
+            comment_counts = get_comment_counts(db, [card.id for card in cards])
 
             # Serialize cards with checklist items and comment counts while session is active
             cards_data = [
-                {
-                    "id": card.id,
-                    "title": card.title,
-                    "description": card.description,
-                    "order": card.order,
-                    "archived": card.archived,
-                    "done": card.done,
-                    "done_datetime": serialize_datetime(card.done_datetime),
-                    "scheduled": card.scheduled,
-                    "schedule": card.schedule,
-                    "created_at": serialize_datetime(card.created_at),
-                    "updated_at": serialize_datetime(card.updated_at),
-                    "assigned_to": {
-                        "id": card.assigned_to.id,
-                        "display_name": card.assigned_to.display_name,
-                        "username": card.assigned_to.username,
-                        "profile_colour": card.assigned_to.profile_colour,
-                    } if card.assigned_to else None,
-                    "checklist_items": [
-                        {
-                            "id": item.id,
-                            "card_id": item.card_id,
-                            "name": item.name,
-                            "checked": item.checked,
-                            "order": item.order,
-                            "created_at": serialize_datetime(item.created_at),
-                            "updated_at": serialize_datetime(item.updated_at)
-                        }
-                        for item in card.checklist_items
-                    ],
-                    "comment_count": comment_counts.get(card.id, 0),
-                }
+                serialize_board_card(card, comment_counts.get(card.id, 0))
                 for card in cards
             ]
 
@@ -731,7 +700,8 @@ def create_card(column_id):
                 'board_id': board_id,
                 'column_id': column_id,
                 'card_id': card.id,
-                'card_data': result
+                'card_data': build_card_broadcast_data(db, card),
+                'column_orders': get_column_card_orders(db, [column_id], board_id),
             }, board_id, get_request_socket_id())
         else:
             logger.warning(f"Skipping card_created broadcast for card {card.id}: column {column_id} has no board_id")
@@ -1489,13 +1459,22 @@ def update_card(card_id):
         # Get board_id for WebSocket broadcast
         column = db.query(BoardColumn).filter(BoardColumn.id == card.column_id).first()
         if column:
-            _broadcast_event('card_updated', {
+            moved = old_column_id != card.column_id or old_order != card.order
+            payload = {
                 'board_id': column.board_id,
                 'card_id': card.id,
                 'column_id': card.column_id,
-                'card_data': result,
-                'moved': old_column_id != card.column_id or old_order != card.order
-            }, column.board_id, get_request_socket_id())
+                'card_data': build_card_broadcast_data(db, card),
+                'moved': moved
+            }
+            if moved:
+                payload['column_orders'] = get_column_card_orders(
+                    db, {old_column_id, card.column_id}, column.board_id
+                )
+                # Omitted when the card came from another board's column.
+                if str(old_column_id) in payload['column_orders']:
+                    payload['old_column_id'] = old_column_id
+            _broadcast_event('card_updated', payload, column.board_id, get_request_socket_id())
 
         return create_success_response({"card": result})
 
@@ -1853,7 +1832,7 @@ def archive_card(card_id):
                 'board_id': board_id,
                 'card_id': card.id,
                 'column_id': card.column_id,
-                'card_data': card_dict
+                'card_data': build_card_broadcast_data(db, card)
             }, board_id, get_request_socket_id())
 
         return jsonify({"success": True, "message": "Card archived successfully", "card": card_dict}), 200
@@ -1948,7 +1927,8 @@ def unarchive_card(card_id):
                 'board_id': board_id,
                 'card_id': card.id,
                 'column_id': card.column_id,
-                'card_data': card_dict
+                'card_data': build_card_broadcast_data(db, card),
+                'column_orders': get_column_card_orders(db, [card.column_id], board_id),
             }, board_id, get_request_socket_id())
 
         return jsonify({"success": True, "message": "Card unarchived successfully", "card": card_dict}), 200
@@ -2123,7 +2103,7 @@ def update_card_done_status(card_id):
                 'card_id': card.id,
                 'column_id': card.column_id,
                 'done': done_status,
-                'card_data': card_dict
+                'card_data': build_card_broadcast_data(db, card)
             }, board_id, get_request_socket_id())
 
         return jsonify({

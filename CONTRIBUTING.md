@@ -770,6 +770,14 @@ change on a large seeded board rather than guessing.
   `get_request_socket_id()` (`server/utils.py`) and pass it as `skip_sid` —
   otherwise the client that made the change also receives its own change
   back over the socket and does a redundant reload.
+- **Card broadcasts carry the board card shape.** Build a card event's
+  `card_data` with `build_card_broadcast_data()` (`server/card_serialization.py`),
+  so clients can patch the card in place. If the change renumbers other cards
+  (create, move, reorder, unarchive), also send `column_orders` from
+  `get_column_card_orders()` for every affected column. Without it, clients
+  hold stale orders and later drags compute the wrong position. A new field
+  on board cards goes in `serialize_board_card()`, so the board endpoint and
+  the broadcasts stay in step.
 
 ### Client: `www/js/board.js` rendering and DOM code
 
