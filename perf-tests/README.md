@@ -95,7 +95,21 @@ This:
 easy to diff later. Pass `--headed` to watch the browser phase run instead
 of headless.
 
-### 3. Check payload/compression separately
+### 3. Measure re-render cost
+
+```sh
+.venv/Scripts/python.exe perf-tests/render_probe.py 1 20
+```
+
+Loads the board once, then calls `renderBoard()` repeatedly (20 times by default,
+after 3 warm-up calls). It reports the synchronous render time and the time to the
+next painted frame. Every WebSocket card update re-runs `renderBoard()`, so this is
+the cost a change to the render path actually moves. The cold-load trace in step 2
+is bimodal from run to run and can hide small changes. To compare before and after,
+run it against each version of `www/js/board.js`. `www` is bind-mounted, so no
+rebuild is needed.
+
+### 4. Check payload/compression separately
 
 ```sh
 .venv/Scripts/python.exe perf-tests/payload_check.py --board-id 1
@@ -106,12 +120,12 @@ currently sending `Content-Encoding: gzip` for the board JSON endpoint plus
 `board.js`/`board.css`. Useful in isolation when validating item 1.4
 (enable gzip in nginx) without re-running the full suite.
 
-### 4. Measure drag performance (manual)
+### 5. Measure drag performance (manual)
 
 Follow [DRAG_MEASUREMENT.md](DRAG_MEASUREMENT.md) — a ~3 minute manual
 procedure using Chrome DevTools' Performance panel on a real drag gesture.
 
-### 5. Compare runs
+### 6. Compare runs
 
 Each JSON file in `perf-tests/results/` is self-contained (host specs +
 metrics). `history.md` is a running table — diff two rows to see the delta
@@ -125,6 +139,7 @@ from a change.
 | `host_specs.py` | Collects CPU/RAM/OS/Docker/DB version info |
 | `api_probe.py` | Repeats the board-endpoint GET and reads back `PERF_PROBE` log lines |
 | `browser_probe.py` | Playwright + raw CDP trace of a board load |
+| `render_probe.py` | Times repeated `renderBoard()` calls on a loaded board (re-render cost) |
 | `payload_check.py` | Payload size / gzip ratio / actual `Content-Encoding` check |
 | `run_all.py` | Orchestrates host specs + API + browser measurement; writes `results/` |
 | `DRAG_MEASUREMENT.md` | Manual Chrome DevTools procedure for drag timing |
