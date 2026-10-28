@@ -3902,13 +3902,7 @@ class BoardManager {
         ? (canCreateCardsInTaskView && canCreateSchedules)
         : canCreateCardsInTaskView;
       const canUpdateColumns = this.canEdit || this.canCallPermissionEndpoint('PATCH', '/api/columns/:id');
-      const canArchiveCard = this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/archive');
-      const canUnarchiveCard = this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/unarchive');
-      const canDeleteCard = this.canCallPermissionEndpoint('DELETE', '/api/cards/:id');
-      const canToggleDone = this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/done');
-      const canMoveCard = this.canEdit || this.canCallPermissionEndpoint('PATCH', '/api/cards/:id');
-      const canShowCardActions = canArchiveCard || canUnarchiveCard || canDeleteCard || canMoveCard ||
-        (this.workingStyle === 'agile' && canToggleDone);
+      const cardPermissions = this.getCardRenderPermissions();
       const canShowColumnMenu = this.canShowColumnMenu();
 
       this.container.innerHTML = `
@@ -4002,77 +3996,7 @@ class BoardManager {
               </div>
               <div class="column-cards" data-column-id="${column.id}">
                 ${column.cards && column.cards.length > 0 ? 
-                  column.cards.map(card => `
-                    <div class="card ${card.archived ? 'archived-card' : ''} ${this.currentView === 'scheduled' && !card.schedule ? 'no-schedule' : ''} ${card.assigned_to ? 'card--has-assignee' : ''}" draggable="${!card.archived && this.canEdit}" data-card-id="${card.id}" data-column-id="${column.id}" data-order="${card.order}" data-archived="${card.archived}" data-done="${card.done || false}">
-                      ${canShowCardActions ? `<div class="card-action-buttons" draggable="false">`  : '<div class="card-action-buttons readonly-hidden" draggable="false">'}
-                        ${this.currentView === 'scheduled' ? '' : 
-                          card.archived ? 
-                            `${canUnarchiveCard ? `<button class="card-unarchive-btn" data-card-id="${card.id}" title="Unarchive card" draggable="false">
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-                                <line x1="3" y1="10" x2="21" y2="10"></line>
-                                <path d="M12 14v-2"></path>
-                                <path d="M9 14l3 2 3-2"></path>
-                              </svg>
-                            </button>` : ''}` :
-                            `${this.workingStyle === 'agile' ? 
-                              `${canToggleDone ? `<button class="card-done-btn" data-card-id="${card.id}" title="${card.done ? 'Mark as not done' : 'Mark as done'}" draggable="false">
-                                ${card.done ? '○' : '✓'}
-                              </button>` : ''}` :
-                              `${canArchiveCard ? `<button class="card-archive-btn" data-card-id="${card.id}" title="Archive card" draggable="false">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                  <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-                                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                                  <path d="M12 14v2"></path>
-                                  <path d="M9 16l3-2 3 2"></path>
-                                </svg>
-                              </button>` : ''}`
-                            }`
-                        }
-                        ${!card.archived && canMoveCard ? '<button class="card-move-btn" data-card-id="' + card.id + '" title="Move card" draggable="false">↔</button>' : ''}
-                        ${canDeleteCard ? '<button class="card-delete-btn" data-card-id="' + card.id + '" title="Delete card" draggable="false">×</button>' : ''}
-                      </div>
-                      <div class="card-content-wrapper" id="card-content-${card.id}">
-                        <h5 class="card-title">${linkifyUrls(this.escapeHtml(card.title))}</h5>
-                        <p class="card-description">${linkifyUrls(this.escapeHtml(card.description))}</p>
-                        ${card.updated_at || (card.comment_count > 0) ? `
-                          <div class="card-meta-row">
-                            ${card.comment_count > 0 ? `
-                              <div class="card-comments-indicator">
-                                💬 ${card.comment_count} ${card.comment_count === 1 ? 'comment' : 'comments'}
-                              </div>
-                            ` : ''}
-                            ${card.updated_at ? `
-                              <div class="card-timestamp" data-tooltip="${formatTooltipDateTime(card.updated_at)}" aria-label="Last updated ${formatTooltipDateTime(card.updated_at)}" tabindex="0">
-                                ${formatTimeAgo(card.updated_at)}
-                              </div>
-                            ` : ''}
-                          </div>
-                        ` : ''}
-                        ${card.checklist_items && card.checklist_items.length > 0 ? `
-                          <div class="card-checklist">
-                            <div class="card-checklist-summary">
-                              ${card.checklist_items.filter(i => i.checked).length}/${card.checklist_items.length} (${calculateChecklistPercentage(card.checklist_items)}%)
-                            </div>
-                            ${card.checklist_items.map(item => `
-                              <div class="card-checklist-item">
-                                <input 
-                                  type="checkbox" 
-                                  class="card-checklist-checkbox" 
-                                  data-item-id="${item.id}"
-                                  ${item.checked ? 'checked' : ''}
-                                  ${!this.canEdit ? 'disabled' : ''}
-                                >
-                                <span class="card-checklist-name ${item.checked ? 'checked' : ''}">${linkifyUrls(this.escapeHtml(item.name))}</span>
-                              </div>
-                            `).join('')}
-                          </div>
-                        ` : ''}
-                      </div>
-                      <button class="card-expand-btn" data-card-id="${card.id}" role="button" aria-expanded="false" aria-controls="card-content-${card.id}">Show more...</button>
-                      ${card.assigned_to ? `<div class="card-assignee-avatar" style="background-color:${this.escapeHtml(card.assigned_to.profile_colour || '#90A4AE')}" title="${this.escapeHtml(card.assigned_to.display_name || card.assigned_to.username || '')}" aria-label="Assigned to ${this.escapeHtml(card.assigned_to.display_name || card.assigned_to.username || '')}">${this.escapeHtml(this.getInitials(card.assigned_to.display_name || card.assigned_to.username || ''))}</div>` : ''}
-                    </div>
-                  `).join('') : ''
+                  column.cards.map(card => this.renderCardHtml(card, column.id, cardPermissions)).join('') : ''
                 }
                 ${!this.showArchived && canCreateCardsInCurrentView ? `<button class="btn btn-secondary add-card-btn" data-column-id="${column.id}">+ Add Card</button>` : ''}
               </div>
@@ -4132,6 +4056,98 @@ class BoardManager {
       // Apply permission-based rendering (if PermissionManager is initialized)
       this.applyPermissionBasedRendering();
     }
+  }
+
+  // Per-card permission flags, computed once per render rather than per card.
+  getCardRenderPermissions() {
+    const canArchiveCard = this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/archive');
+    const canUnarchiveCard = this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/unarchive');
+    const canDeleteCard = this.canCallPermissionEndpoint('DELETE', '/api/cards/:id');
+    const canToggleDone = this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/done');
+    const canMoveCard = this.canEdit || this.canCallPermissionEndpoint('PATCH', '/api/cards/:id');
+    const canShowCardActions = canArchiveCard || canUnarchiveCard || canDeleteCard || canMoveCard ||
+      (this.workingStyle === 'agile' && canToggleDone);
+    return { canShowCardActions, canArchiveCard, canUnarchiveCard, canDeleteCard, canToggleDone, canMoveCard };
+  }
+
+  // Markup for one card, shared by renderBoard() and renderCard().
+  renderCardHtml(card, columnId, permissions) {
+    return `<div class="card ${card.archived ? 'archived-card' : ''} ${this.currentView === 'scheduled' && !card.schedule ? 'no-schedule' : ''} ${card.assigned_to ? 'card--has-assignee' : ''}" draggable="${!card.archived && this.canEdit}" data-card-id="${card.id}" data-column-id="${columnId}" data-order="${card.order}" data-archived="${card.archived}" data-done="${card.done || false}">
+        ${permissions.canShowCardActions ? `<div class="card-action-buttons" draggable="false">`  : '<div class="card-action-buttons readonly-hidden" draggable="false">'}
+          ${this.currentView === 'scheduled' ? '' : 
+            card.archived ? 
+              `${permissions.canUnarchiveCard ? `<button class="card-unarchive-btn" data-card-id="${card.id}" title="Unarchive card" draggable="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                  <line x1="3" y1="10" x2="21" y2="10"></line>
+                  <path d="M12 14v-2"></path>
+                  <path d="M9 14l3 2 3-2"></path>
+                </svg>
+              </button>` : ''}` :
+              `${this.workingStyle === 'agile' ? 
+                `${permissions.canToggleDone ? `<button class="card-done-btn" data-card-id="${card.id}" title="${card.done ? 'Mark as not done' : 'Mark as done'}" draggable="false">
+                  ${card.done ? '○' : '✓'}
+                </button>` : ''}` :
+                `${permissions.canArchiveCard ? `<button class="card-archive-btn" data-card-id="${card.id}" title="Archive card" draggable="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                    <path d="M12 14v2"></path>
+                    <path d="M9 16l3-2 3 2"></path>
+                  </svg>
+                </button>` : ''}`
+              }`
+          }
+          ${!card.archived && permissions.canMoveCard ? '<button class="card-move-btn" data-card-id="' + card.id + '" title="Move card" draggable="false">↔</button>' : ''}
+          ${permissions.canDeleteCard ? '<button class="card-delete-btn" data-card-id="' + card.id + '" title="Delete card" draggable="false">×</button>' : ''}
+        </div>
+        <div class="card-content-wrapper" id="card-content-${card.id}">
+          <h5 class="card-title">${linkifyUrls(this.escapeHtml(card.title))}</h5>
+          <p class="card-description">${linkifyUrls(this.escapeHtml(card.description))}</p>
+          ${card.updated_at || (card.comment_count > 0) ? `
+            <div class="card-meta-row">
+              ${card.comment_count > 0 ? `
+                <div class="card-comments-indicator">
+                  💬 ${card.comment_count} ${card.comment_count === 1 ? 'comment' : 'comments'}
+                </div>
+              ` : ''}
+              ${card.updated_at ? `
+                <div class="card-timestamp" data-tooltip="${formatTooltipDateTime(card.updated_at)}" aria-label="Last updated ${formatTooltipDateTime(card.updated_at)}" tabindex="0">
+                  ${formatTimeAgo(card.updated_at)}
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
+          ${card.checklist_items && card.checklist_items.length > 0 ? `
+            <div class="card-checklist">
+              <div class="card-checklist-summary">
+                ${card.checklist_items.filter(i => i.checked).length}/${card.checklist_items.length} (${calculateChecklistPercentage(card.checklist_items)}%)
+              </div>
+              ${card.checklist_items.map(item => `
+                <div class="card-checklist-item">
+                  <input 
+                    type="checkbox" 
+                    class="card-checklist-checkbox" 
+                    data-item-id="${item.id}"
+                    ${item.checked ? 'checked' : ''}
+                    ${!this.canEdit ? 'disabled' : ''}
+                  >
+                  <span class="card-checklist-name ${item.checked ? 'checked' : ''}">${linkifyUrls(this.escapeHtml(item.name))}</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+        <button class="card-expand-btn" data-card-id="${card.id}" role="button" aria-expanded="false" aria-controls="card-content-${card.id}">Show more...</button>
+        ${card.assigned_to ? `<div class="card-assignee-avatar" style="background-color:${this.escapeHtml(card.assigned_to.profile_colour || '#90A4AE')}" title="${this.escapeHtml(card.assigned_to.display_name || card.assigned_to.username || '')}" aria-label="Assigned to ${this.escapeHtml(card.assigned_to.display_name || card.assigned_to.username || '')}">${this.escapeHtml(this.getInitials(card.assigned_to.display_name || card.assigned_to.username || ''))}</div>` : ''}
+      </div>`;
+  }
+
+  // One card as a detached element, for patching a single card into the board.
+  renderCard(card, columnId, permissions = this.getCardRenderPermissions()) {
+    const template = document.createElement('template');
+    template.innerHTML = this.renderCardHtml(card, columnId, permissions).trim();
+    return template.content.firstElementChild;
   }
 
   /**
