@@ -1,0 +1,195 @@
+{
+  "label": "after-tier2-2.1",
+  "board_id": 172,
+  "timestamp": "2026-10-28T16:35:53.679630+00:00",
+  "host": {
+    "python_version": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+    "logical_processors": 16,
+    "total_physical_memory_gb": 31.2,
+    "cpu_model": "AMD Ryzen 7 7800X3D 8-Core Processor",
+    "system_model": "System Product Name / ASUS",
+    "docker_server_version": "29.9.2",
+    "docker_resources": "16 CPUs / 16353800192 bytes RAM allocated to Docker",
+    "mysql_version": "mysql  Ver 9.5.0 for Linux on x86_64 (MySQL Community Server - GPL)",
+    "server_container_python_version": "3.14.10"
+  },
+  "api": {
+    "endpoint": "/api/boards/172/cards",
+    "response_bytes": 1314786,
+    "probe_enabled": true,
+    "client_observed_ms": {
+      "min": 100.2,
+      "median": 101.4,
+      "max": 106.5,
+      "n": 5
+    },
+    "server_ms": {
+      "min": 84.5,
+      "median": 86.4,
+      "max": 88.7,
+      "n": 5
+    },
+    "query_counts": {
+      "min": 38,
+      "median": 38,
+      "max": 38,
+      "n": 5
+    }
+  },
+  "browser": {
+    "runs": [
+      {
+        "layout_count": 14,
+        "recalc_style_count": 17,
+        "script_time_ms": 259.7,
+        "long_task_count": 4,
+        "long_task_total_ms": 689.8,
+        "raw_event_count": 9202
+      },
+      {
+        "layout_count": 6,
+        "recalc_style_count": 11,
+        "script_time_ms": 337.2,
+        "long_task_count": 6,
+        "long_task_total_ms": 818.5,
+        "raw_event_count": 9095
+      },
+      {
+        "layout_count": 13,
+        "recalc_style_count": 15,
+        "script_time_ms": 223.3,
+        "long_task_count": 4,
+        "long_task_total_ms": 626.4,
+        "raw_event_count": 8984
+      },
+      {
+        "layout_count": 5,
+        "recalc_style_count": 10,
+        "script_time_ms": 340.4,
+        "long_task_count": 6,
+        "long_task_total_ms": 831.7,
+        "raw_event_count": 8736
+      },
+      {
+        "layout_count": 15,
+        "recalc_style_count": 18,
+        "script_time_ms": 230.6,
+        "long_task_count": 4,
+        "long_task_total_ms": 616.3,
+        "raw_event_count": 9120
+      },
+      {
+        "layout_count": 4,
+        "recalc_style_count": 8,
+        "script_time_ms": 353.1,
+        "long_task_count": 6,
+        "long_task_total_ms": 863.7,
+        "raw_event_count": 8744
+      },
+      {
+        "layout_count": 15,
+        "recalc_style_count": 18,
+        "script_time_ms": 228.6,
+        "long_task_count": 4,
+        "long_task_total_ms": 673.3,
+        "raw_event_count": 9215
+      },
+      {
+        "layout_count": 4,
+        "recalc_style_count": 9,
+        "script_time_ms": 344.5,
+        "long_task_count": 6,
+        "long_task_total_ms": 848.4,
+        "raw_event_count": 8818
+      },
+      {
+        "layout_count": 14,
+        "recalc_style_count": 16,
+        "script_time_ms": 228.6,
+        "long_task_count": 4,
+        "long_task_total_ms": 616.5,
+        "raw_event_count": 9085
+      },
+      {
+        "layout_count": 4,
+        "recalc_style_count": 9,
+        "script_time_ms": 342.0,
+        "long_task_count": 6,
+        "long_task_total_ms": 843.7,
+        "raw_event_count": 8738
+      },
+      {
+        "layout_count": 14,
+        "recalc_style_count": 16,
+        "script_time_ms": 227.5,
+        "long_task_count": 4,
+        "long_task_total_ms": 645.0,
+        "raw_event_count": 9260
+      },
+      {
+        "layout_count": 17,
+        "recalc_style_count": 19,
+        "script_time_ms": 226.8,
+        "long_task_count": 4,
+        "long_task_total_ms": 617.6,
+        "raw_event_count": 9212
+      },
+      {
+        "layout_count": 15,
+        "recalc_style_count": 18,
+        "script_time_ms": 237.6,
+        "long_task_count": 4,
+        "long_task_total_ms": 637.2,
+        "raw_event_count": 9175
+      },
+      {
+        "layout_count": 15,
+        "recalc_style_count": 17,
+        "script_time_ms": 255.5,
+        "long_task_count": 4,
+        "long_task_total_ms": 696.2,
+        "raw_event_count": 8948
+      },
+      {
+        "layout_count": 12,
+        "recalc_style_count": 15,
+        "script_time_ms": 227.1,
+        "long_task_count": 4,
+        "long_task_total_ms": 623.8,
+        "raw_event_count": 9118
+      }
+    ],
+    "layout_count": {
+      "min": 4,
+      "median": 14,
+      "max": 17,
+      "n": 15
+    },
+    "recalc_style_count": {
+      "min": 8,
+      "median": 16,
+      "max": 19,
+      "n": 15
+    },
+    "script_time_ms": {
+      "min": 223.3,
+      "median": 237.6,
+      "max": 353.1,
+      "n": 15
+    },
+    "long_task_count": {
+      "min": 4,
+      "median": 4,
+      "max": 6,
+      "n": 15
+    },
+    "long_task_total_ms": {
+      "min": 616.3,
+      "median": 673.3,
+      "max": 863.7,
+      "n": 15
+    }
+  }
+}
