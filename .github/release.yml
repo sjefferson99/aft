@@ -1,0 +1,40 @@
+# Groups merged PRs by label when release notes are generated, either with
+# "Generate release notes" on the GitHub release page or with
+# `gh release create --generate-notes`.
+# Each PR is listed once, under the FIRST category whose labels it matches, so
+# order matters. Labelling rules: CONTRIBUTING.md "Labels and Release Notes".
+changelog:
+  exclude:
+    labels:
+      - skip-release-notes
+  categories:
+    - title: ⚠️ Breaking changes
+      labels:
+        - breaking-change
+    - title: ⚠️ Upgrade notes
+      labels:
+        - upgrade-note
+    - title: Performance
+      labels:
+        - performance
+    - title: Enhancements
+      labels:
+        - enhancement
+    - title: Bug fixes
+      labels:
+        - bug
+    - title: Security
+      labels:
+        - security
+    - title: Dependencies
+      labels:
+        - dependencies
+    - title: Housekeeping
+      labels:
+        - documentation
+        - maintenance
+        - tests
+        - CI/CD
+    - title: Other changes
+      labels:
+        - "*"
