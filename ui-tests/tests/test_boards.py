@@ -2,6 +2,7 @@
 import uuid
 
 import pytest
+from playwright.sync_api import expect
 
 
 @pytest.mark.ui
@@ -43,3 +44,45 @@ def test_delete_board_removes_it_from_list(logged_in_page, board):
     page.click("#appModalConfirmBtn")
 
     board_card.wait_for(state="detached", timeout=5000)
+
+
+BOARD_ACTION_BUTTONS = (
+    ".board-export-btn",
+    ".board-edit-btn",
+    ".board-delete-btn",
+    ".board-archive-btn",
+)
+
+
+@pytest.mark.ui
+def test_board_card_actions_hidden_until_hover_on_desktop(logged_in_page, board):
+    """On a pointer device the card's action buttons stay hidden until hover."""
+    page = logged_in_page
+    page.goto("/index.html")
+
+    board_card = page.locator(f'.board-card[data-board-id="{board["id"]}"]')
+    board_card.wait_for(state="visible", timeout=5000)
+    page.mouse.move(0, 0)
+
+    for selector in BOARD_ACTION_BUTTONS:
+        expect(board_card.locator(selector)).to_have_css("opacity", "0")
+
+    board_card.hover()
+    for selector in BOARD_ACTION_BUTTONS:
+        expect(board_card.locator(selector)).to_have_css("opacity", "1")
+
+
+@pytest.mark.ui
+@pytest.mark.browser_context_args(has_touch=True, is_mobile=True, viewport={"width": 412, "height": 915})
+def test_board_card_actions_visible_on_touch_devices(logged_in_page, board):
+    """Touch devices can't hover, so the tappable action buttons must always
+    be visible rather than invisible-but-active (#535)."""
+    page = logged_in_page
+    page.goto("/index.html")
+
+    board_card = page.locator(f'.board-card[data-board-id="{board["id"]}"]')
+    board_card.wait_for(state="visible", timeout=5000)
+
+    assert page.evaluate("matchMedia('(hover: none)').matches")
+    for selector in BOARD_ACTION_BUTTONS:
+        expect(board_card.locator(selector)).to_have_css("opacity", "1")

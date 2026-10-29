@@ -166,7 +166,9 @@
 }
 
 .board-card:hover .board-archive-btn,
-.board-card:hover .board-unarchive-btn {
+.board-card:hover .board-unarchive-btn,
+.board-card:focus-within .board-archive-btn,
+.board-card:focus-within .board-unarchive-btn {
   opacity: 1;
 }
 
@@ -196,7 +198,8 @@
   opacity: 0;
 }
 
-.board-card:hover .board-edit-btn {
+.board-card:hover .board-edit-btn,
+.board-card:focus-within .board-edit-btn {
   opacity: 1;
 }
 
@@ -259,13 +262,26 @@
   opacity: 0;
 }
 
-.board-card:hover .board-delete-btn {
+.board-card:hover .board-delete-btn,
+.board-card:focus-within .board-delete-btn {
   opacity: 1;
 }
 
 .board-delete-btn:hover {
   background-color: var(--error-color);
   color: white;
+}
+
+/* Touch devices can't hover to reveal the action buttons, but invisible
+   buttons still take taps, so show them all the time (#535). */
+@media (hover: none) {
+  .board-archive-btn,
+  .board-unarchive-btn,
+  .board-edit-btn,
+  .board-export-btn,
+  .board-delete-btn {
+    opacity: 1;
+  }
 }
 
 .empty-state-panel {
