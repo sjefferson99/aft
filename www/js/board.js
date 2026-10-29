@@ -69,6 +69,50 @@ function setupModalBackgroundClose(modal, closeHandler) {
 }
 
 /**
+ * Make a textarea behave like a single-line text input that wraps long text
+ * Grows to fit its content, submits the form on Enter, and turns pasted
+ * newlines into spaces so the value stays a single line
+ * @param {HTMLTextAreaElement} textarea - The title textarea
+ */
+function setupWrappingTitleInput(textarea) {
+  const resize = () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight + textarea.offsetHeight - textarea.clientHeight}px`;
+  };
+
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      if (!textarea.readOnly && textarea.form) {
+        textarea.form.requestSubmit();
+      }
+    }
+  });
+
+  textarea.addEventListener('input', () => {
+    if (/[\r\n]/.test(textarea.value)) {
+      const caret = textarea.selectionStart;
+      textarea.value = textarea.value.replace(/\r\n|[\r\n]/g, ' ');
+      textarea.setSelectionRange(caret, caret);
+    }
+    resize();
+  });
+
+  // Recalculate when the modal width changes (e.g. phone rotation)
+  if (typeof ResizeObserver !== 'undefined') {
+    let lastWidth = textarea.clientWidth;
+    new ResizeObserver(() => {
+      if (textarea.clientWidth !== lastWidth) {
+        lastWidth = textarea.clientWidth;
+        resize();
+      }
+    }).observe(textarea);
+  }
+
+  resize();
+}
+
+/**
  * Convert URLs in text to clickable hyperlinks
  * @param {string} text - Text that may contain URLs
  * @returns {string} HTML with URLs converted to links
@@ -6807,7 +6851,7 @@ class BoardManager {
           <form id="add-card-form">
             <div class="form-group">
               <label for="card-title">Title:</label>
-              <input type="text" id="card-title" name="card-title" required>
+              <textarea id="card-title" name="card-title" class="title-textarea" rows="1" required></textarea>
             </div>
             <div class="form-group">
               <label for="card-description">Description:</label>
@@ -6846,6 +6890,7 @@ class BoardManager {
     const form = document.getElementById('add-card-form');
     const cancelBtn = document.getElementById('cancel-card-btn');
     const titleInput = document.getElementById('card-title');
+    setupWrappingTitleInput(titleInput);
     const checklistHeaderContainer = document.getElementById('checklist-header-container');
     const checklistContentContainer = document.getElementById('checklist-content-container');
     const checklistContainer = document.getElementById('new-card-checklist-items');
@@ -7201,7 +7246,7 @@ class BoardManager {
           <form id="edit-card-form">
             <div class="form-group">
               <label for="edit-card-title">Title:</label>
-              <input type="text" id="edit-card-title" name="edit-card-title" value="${this.escapeHtml(cardData.title)}" required ${readonlyAttr}>
+              <textarea id="edit-card-title" name="edit-card-title" class="title-textarea" rows="1" required ${readonlyAttr}>${this.escapeHtml(cardData.title)}</textarea>
             </div>
             <div class="form-group">
               <label for="edit-card-description">Description:</label>
@@ -7330,6 +7375,7 @@ class BoardManager {
     const moveCardDetailBtn = document.getElementById('move-card-detail-btn');
     const viewPlannerBtn = document.getElementById('view-planner-btn');
     const titleInput = document.getElementById('edit-card-title');
+    setupWrappingTitleInput(titleInput);
 
     // Focus title only when editable; otherwise focus Close for accessibility.
     if (isReadOnly) {
