@@ -5,6 +5,7 @@ from sqlalchemy import func
 from datetime import datetime, timedelta
 from typing import Any
 
+from card_serialization import build_card_broadcast_data
 from database import SessionLocal
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
 from models import BoardColumn, Card, ChecklistItem, Comment, ScheduledCard
@@ -858,6 +859,7 @@ def create_checklist_item(card_id):
             broadcast_event('checklist_item_added', {
                 'board_id': column.board_id,
                 'card_id': card_id,
+                'card_data': build_card_broadcast_data(db, card),
                 'item_id': checklist_item.id,
                 'item_data': {
                     'id': checklist_item.id,
@@ -1010,6 +1012,7 @@ def update_checklist_item(item_id):
             broadcast_event('checklist_item_updated', {
                 'board_id': board_id,
                 'card_id': checklist_item.card_id,
+                'card_data': build_card_broadcast_data(db, card),
                 'item_id': checklist_item.id,
                 'item_data': result
             }, board_id, get_request_socket_id())
@@ -1067,6 +1070,15 @@ def delete_checklist_item(item_id):
             card.updated_at = utc_now()
 
         db.commit()
+
+        if card and card.column:
+            board_id = card.column.board_id
+            broadcast_event('checklist_item_deleted', {
+                'board_id': board_id,
+                'card_id': card_id,
+                'card_data': build_card_broadcast_data(db, card),
+                'item_id': item_id
+            }, board_id, get_request_socket_id())
 
         return jsonify({"success": True, "message": "Checklist item deleted successfully"}), 200
 

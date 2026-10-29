@@ -586,6 +586,32 @@ noise) as the more reliable numbers.
 
 This is the core fix for the reported symptom.
 
+**Correction (found when starting 2.3):** the claim in the next paragraph was wrong. The
+broadcast `card_data` lacked `checklist_items`, `comment_count` and `assigned_to`, which the
+board renders. Creating, moving or unarchiving a card also renumbers its siblings' `order`,
+and the payloads didn't include that; a patched DOM with stale `data-order` values breaks
+drag-drop order calculation. Checklist item deletion didn't broadcast at all. 2.3 is therefore
+split into phases (tracked in issue #525):
+
+- **2.3a (server, implemented).** `server/card_serialization.py` holds one card serializer,
+  used by `GET /api/boards/:id/cards`; the output is byte-identical to before, checked on the
+  800-card board. `card_created`, `card_updated`, `card_archived`, `card_unarchived`,
+  `card_done_status_changed` and the `checklist_item_*` events now carry that card shape as
+  `card_data`. A new `checklist_item_deleted` broadcast is added. Events that renumber cards
+  (create, move or reorder, unarchive) also carry `column_orders`
+  (`{"<column_id>": {"<card_id>": order}}` for every card in each affected column on the
+  broadcast's board), and a card moved within its board carries `old_column_id`. A card moved
+  in from another board gets neither for its source column, so that board's cards aren't
+  exposed. Covered by
+  `server/tests/test_api_card_broadcasts.py`, which listens on a real Socket.IO connection.
+  Not yet enriched: broadcasts from `schedule_routes.py` schedule create/delete and the card
+  scheduler. Clients should fall back to a full reload for any event without the full card
+  shape.
+- **2.3b** extracts `renderCard()`, **2.3c** patches the DOM from these payloads, and **2.3d**
+  patches checklist changes.
+
+The original proposal follows.
+
 The broadcasts **already carry everything needed**: `card_updated` sends the full
 `card_data` ([card_routes.py:1484](../server/card_routes.py#L1484)), as do `card_created`
 ([card_routes.py:722](../server/card_routes.py#L722)) and `card_archived`

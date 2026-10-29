@@ -8,6 +8,10 @@ sqlalchemy==2.1.6
 pymysql==1.2.3
 pytest==9.1.1
 requests==2.34.2
+# Socket.IO client for broadcast payload tests (websocket transport: the
+# server runs several workers, so polling needs sticky sessions it doesn't have)
+python-socketio==5.17.0
+websocket-client==1.9.2
 
 # Code quality tools (optional but recommended)
 pylint==4.1.3
