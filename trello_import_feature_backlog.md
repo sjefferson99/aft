@@ -88,14 +88,14 @@ These AFT features exist in the application today but are not fully covered by t
 - **Card `done_datetime`** is restored on import. Done cards with no source timestamp get the import time.
 - **Board `is_public`** is exported for information only. Imports are always private and `public_slug` is never exported, because a carried-over slug could collide or publish a board without anyone choosing to. When the source board was public, `import_meta.warnings` says so. The import modal doesn't show post-import warnings yet.
 
-### 1. Primary and secondary assignees — user mapping
+### 1. Primary and secondary assignees — user mapping (#585)
 
 **AFT feature**: `Card.assigned_to_id` and the `CardSecondaryAssignee` table. Both are exported as raw user IDs, and AFT imports ignore them on purpose, because IDs collide across instances.
 **Current state**: Import meta returns `"assignee_mapping": "not_mapped"` with `ignored_primary_assignees_count` and `ignored_secondary_assignees_count`.
 **What's needed**: Export a `users` block (source ID, username, display name) and reuse the Trello `member_map` flow in the import modal to map source users to local ones.
 **Trello**: Already supported. `idMembers` map to primary and secondary assignees through `member_map`.
 
-### 2. Board roles and permissions
+### 2. Board roles and permissions (#585)
 
 **AFT feature**: Board-scoped roles via `UserRole`/`Role`.
 **Export gap**: Not exported. The imported board is owned by the importing user, with no other role assignments.
