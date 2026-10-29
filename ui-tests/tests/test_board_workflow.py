@@ -86,7 +86,26 @@ def test_long_card_title_wraps_in_edit_modal_on_mobile(logged_in_page, api_sessi
     title = page.locator("#edit-card-title")
     title.wait_for(state="visible", timeout=5000)
     assert title.input_value() == LONG_TITLE
+    _assert_title_wraps(title)
 
+
+@pytest.mark.ui
+def test_long_title_wraps_in_template_schedule_modal_on_mobile(logged_in_page, column):
+    """The add template + schedule modal's title wraps the same way (#432)."""
+    page = logged_in_page
+    page.set_viewport_size({"width": 375, "height": 740})
+    page.goto(f"/board.html?id={column['board_id']}")
+    page.locator(f'.column-cards[data-column-id="{column["id"]}"]').wait_for(state="attached", timeout=5000)
+    page.evaluate("columnId => window.boardManager.openAddTemplateWithScheduleModal(columnId)", column["id"])
+
+    title = page.locator("#template-title")
+    title.wait_for(state="visible", timeout=5000)
+    title.fill(LONG_TITLE)
+    _assert_title_wraps(title)
+
+
+def _assert_title_wraps(title):
+    """Assert a title field shows every line of a long title within a 375px viewport."""
     sizes = title.evaluate(
         "el => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth,"
         " scrollHeight: el.scrollHeight, clientHeight: el.clientHeight,"

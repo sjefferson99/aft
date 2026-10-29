@@ -5819,7 +5819,7 @@ class BoardManager {
           <form id="add-template-schedule-form">
             <div class="form-group">
               <label for="template-title">Title:</label>
-              <input type="text" id="template-title" name="template-title" required>
+              <textarea id="template-title" name="template-title" class="title-textarea" rows="1" required></textarea>
             </div>
             <div class="form-group">
               <label for="template-description">Description:</label>
@@ -5910,6 +5910,7 @@ class BoardManager {
     const form = document.getElementById('add-template-schedule-form');
     const cancelBtn = document.getElementById('cancel-template-schedule-btn');
     const titleInput = document.getElementById('template-title');
+    setupWrappingTitleInput(titleInput);
     const runEveryInput = document.getElementById('template-schedule-run-every');
     const unitSelect = document.getElementById('template-schedule-unit');
     const startDatetimeInput = document.getElementById('template-schedule-start-datetime');
