@@ -103,8 +103,8 @@ class ThemeBuilder {
    * Show error toast notification
    */
   showErrorToast(message) {
-    if (window.header && typeof window.header.showErrorToast === 'function') {
-      window.header.showErrorToast(message);
+    if (window.header && typeof window.header.showHeaderToast === 'function') {
+      window.header.showHeaderToast(message, true);
     } else {
       this.showStatus(message, 'error');
     }
@@ -114,8 +114,8 @@ class ThemeBuilder {
    * Show success toast notification
    */
   showSuccessToast(message) {
-    if (window.header && typeof window.header.showSuccessToast === 'function') {
-      window.header.showSuccessToast(message);
+    if (window.header && typeof window.header.showHeaderToast === 'function') {
+      window.header.showHeaderToast(message);
     } else {
       this.showStatus(message, 'success');
     }
@@ -571,7 +571,7 @@ class ThemeBuilder {
   
   async applyTheme() {
     if (!this.currentTheme || !this.currentThemeData) {
-      this.showStatus('No theme selected', 'error');
+      this.showErrorToast('No theme selected');
       return;
     }
     
