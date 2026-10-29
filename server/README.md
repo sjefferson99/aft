@@ -126,7 +126,7 @@ alembic upgrade head
 ```bash
 python app.py
 # Or with gunicorn:
-gunicorn -w 4 -b 0.0.0.0:5000 app:app
+gunicorn --config gunicorn.conf.py app:app  # reads GUNICORN_WORKERS / GUNICORN_THREADS
 ```
 
 ### Testing

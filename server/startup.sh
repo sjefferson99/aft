@@ -42,8 +42,7 @@ echo "Running database migrations..."
 alembic upgrade head
 
 echo "Starting application..."
-# Use gthread workers for Flask-SocketIO in threading mode.
-# Sync workers can be killed by Gunicorn when handling long-lived websocket requests.
+# Settings live in gunicorn.conf.py. Worker and thread counts come from
+# GUNICORN_WORKERS and GUNICORN_THREADS in .env.
 # Redis message queue keeps Socket.IO broadcasts synchronized across worker processes.
-# Timeout remains high for long operations like large database restores.
-exec gunicorn --bind 0.0.0.0:5000 --worker-class gthread --workers 4 --threads 8 --timeout 1800 app:app
+exec gunicorn --config gunicorn.conf.py app:app
