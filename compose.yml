@@ -14,7 +14,16 @@ services:
     image: mysql:9.5.0
     container_name: aft-db
     restart: unless-stopped
-    command: --max_allowed_packet=128M
+    # MySQL memory tuning, defaulted for small self-hosted installs. Each value can be
+    # overridden in .env with the MYSQL_* variable shown; see README "Database memory tuning":
+    # https://github.com/sjefferson99/aft#database-memory-tuning
+    command:
+      - --max_allowed_packet=${MYSQL_MAX_ALLOWED_PACKET:-128M}
+      - --performance_schema=${MYSQL_PERFORMANCE_SCHEMA:-OFF}
+      - --innodb_buffer_pool_size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-32M}
+      - --innodb_log_buffer_size=${MYSQL_INNODB_LOG_BUFFER_SIZE:-4M}
+      - --table_open_cache=${MYSQL_TABLE_OPEN_CACHE:-200}
+      - --max_connections=${MYSQL_MAX_CONNECTIONS:-100}
     env_file: .env
     security_opt:
       - no-new-privileges:true

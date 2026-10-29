@@ -479,6 +479,43 @@ By default, the stack now enforces secure session cookies and redirects direct H
 
 This keeps direct deployments secure by default while still supporting external reverse proxies and certificate resolvers.
 
+### Database memory tuning
+The `db` service runs MySQL with settings sized for small self-hosted installs. Stock MySQL defaults suit a dedicated database server, and in AFT they used 450–600 MB at idle. With the defaults below, idle memory is about 130 MB.
+
+Every setting can be overridden in `.env` with the variable shown. Each is commented out in [.env.example](.env.example), and `compose.yml` / `compose.example.yml` pass them to MySQL as command-line options with these defaults:
+
+| `.env` variable | MySQL option | Default | MySQL stock | What it does / when to change it |
+|---|---|---|---|---|
+| `MYSQL_INNODB_BUFFER_POOL_SIZE` | `innodb_buffer_pool_size` | `32M` | `128M` | Caches table and index data in memory. 32 MB holds a typical AFT database. If your data is larger, raise it to at least the data size (see the query below) so reads come from memory. This is the main setting for larger installs. |
+| `MYSQL_MAX_CONNECTIONS` | `max_connections` | `100` | `151` | Maximum concurrent client connections. Each gunicorn worker process can open up to 15 (SQLAlchemy pool of 5 plus overflow of 10), and backups and restores open a few more. Keep it above `15 × workers + 10`. If you see `Too many connections` errors, raise it. |
+| `MYSQL_MAX_ALLOWED_PACKET` | `max_allowed_packet` | `128M` | `64M` | Largest single SQL statement or row MySQL accepts. Backups are restored as SQL, so if a restore fails with a `Got a packet bigger than 'max_allowed_packet'` error, raise it (for example to `256M`). |
+| `MYSQL_INNODB_LOG_BUFFER_SIZE` | `innodb_log_buffer_size` | `4M` | `64M` | Buffers redo-log writes before they reach disk. AFT's writes are small. Raise it only if very large imports or restores are slow. |
+| `MYSQL_TABLE_OPEN_CACHE` | `table_open_cache` | `200` | `4000` | Number of open table handles cached across sessions. AFT has under 20 tables, so 200 leaves plenty of headroom. You should not need to change it. |
+| `MYSQL_PERFORMANCE_SCHEMA` | `performance_schema` | `OFF` | `ON` | MySQL's internal instrumentation, and the largest single memory consumer (~190 MB). AFT does not use it. Set it to `ON` only to diagnose MySQL performance problems. |
+
+To check your data size, from the docker host:
+
+```sh
+docker exec aft-db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024) AS size_mb FROM information_schema.tables WHERE table_schema = \"$MYSQL_DATABASE\";"'
+```
+
+Example `.env` overrides for a larger install running 4 gunicorn workers:
+
+```sh
+MYSQL_INNODB_BUFFER_POOL_SIZE=256M
+MYSQL_MAX_CONNECTIONS=150
+```
+
+Apply changes by recreating the database container with `docker compose up -d db`. A plain `docker compose restart` does not pick up `.env` changes. The settings need no data migration, so existing data directories are unaffected. To confirm the values in effect:
+
+```sh
+docker exec aft-db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT @@innodb_buffer_pool_size, @@max_connections, @@max_allowed_packet, @@innodb_log_buffer_size, @@table_open_cache, @@performance_schema;"'
+```
+
+If `aft-db` keeps restarting after a change, a value is probably invalid (for example `100O` instead of `100`). MySQL names the bad option in its log, which you can see with `docker compose logs db`. Fix the value in `.env` and run `docker compose up -d db` again.
+
+> **Upgrading from an older compose file:** these options live in the `command:` list of the `db` service. Merge that block from the latest `compose.example.yml` into your `compose.yml`, or the `.env` variables have no effect.
+
 ### Backup Storage
 Automatic backups are stored on the host filesystem at `./backups/` (relative to the docker-compose.yml location). This directory is automatically created by Docker and persists across container restarts. You can include this directory in your host backup solution for additional data protection.
 
