@@ -802,14 +802,20 @@ change on a large seeded board rather than guessing.
   handlers if it can be avoided — snapshot positions once at the start of
   the interaction and reuse them, or throttle to one update per
   `requestAnimationFrame`.
-- **A WebSocket event handler updating one card/column does not need to
-  reload the whole board.** The socket payload for `card_updated`,
-  `card_created`, etc. already carries the changed data — prefer patching
-  the affected DOM node directly over calling `loadBoard()`. Where a full
-  reload genuinely is needed (structural changes, reconnect), route it
-  through `scheduleBoardReload()` rather than calling `loadBoard()`
-  directly, so a burst of events coalesces into one reload instead of one
-  per event.
+- **A WebSocket event handler updating one card does not need to reload the
+  whole board.** Card broadcasts carry the full board card as `card_data`
+  (plus `column_orders` when siblings are renumbered). Pass it to
+  `boardManager.patchCard(card_data, column_orders)`, or call
+  `boardManager.removeCard(card_id)` when only the id is known. Both return
+  false when patching isn't safe: outside the unfiltered task view, while a
+  board load is pending or in flight, for a partial card, or when the patched
+  columns fail the DOM/data consistency check. When they return false, call
+  `scheduleBoardReload()`. A patch keeps `columns`/`originalColumns`, card
+  counts, `data-order`, drag caches and collapse state in sync, so update it
+  if you add per-card state to the board. Where a full reload genuinely is
+  needed (column changes, `cards_moved`, reconnect), route it through
+  `scheduleBoardReload()` rather than calling `loadBoard()` directly, so a
+  burst of events coalesces into one reload instead of one per event.
 
 ### Measuring your change
 

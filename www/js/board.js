@@ -611,7 +611,10 @@ class WebSocketManager {
     this.socket.on('card_unarchived', (data) => {
       this.handleCardUnarchived(data);
     });
-    
+    this.socket.on('card_done_status_changed', (data) => {
+      this.handleCardDoneStatusChanged(data);
+    });
+
     // Theme room events
     this.socket.on('theme_changed', (data) => {
       this.handleThemeChanged(data);
@@ -722,28 +725,23 @@ class WebSocketManager {
   }
 
   // Handle incoming events from other clients.
-  // All of these debounce through boardManager.scheduleBoardReload() rather
-  // than calling loadBoard() directly: a burst of events (e.g. a batch
-  // archive or "move all cards" broadcasting several updates in quick
-  // succession) would otherwise trigger one full board reload per event,
-  // each aborting the previous in-flight request.
-  handleCardCreated(data) {
-    // A new card was created on another client
-    if (this.boardManager) {
+  // Card events are patched into the board in place where possible (see
+  // BoardManager.patchCard()). Everything else debounces through
+  // boardManager.scheduleBoardReload() rather than calling loadBoard()
+  // directly: a burst of events (e.g. a batch archive or "move all cards"
+  // broadcasting several updates in quick succession) would otherwise
+  // trigger one full board reload per event, each aborting the previous
+  // in-flight request.
+  patchCardOrReload(data) {
+    if (!this.boardManager.patchCard(data.card_data, data.column_orders)) {
       this.boardManager.scheduleBoardReload();
     }
   }
 
-  handleCardUpdated(data) {
-    // A card was updated on another client
-    // Always reload the board to ensure consistency
-    // Even if only the title changed, reloading guarantees the UI matches the server state
-    this.boardManager.scheduleBoardReload();
-  }
-
-  handleCardDeleted(data) {
-    // A card was deleted on another client
-    const cardElement = document.querySelector(`[data-card-id="${data.card_id}"]`);
+  // Fallback for a removed card that can't be patched: drop its node now,
+  // then reload for counts and order.
+  removeCardElementAndReload(cardId) {
+    const cardElement = document.querySelector(`[data-card-id="${cardId}"]`);
     if (cardElement) {
       const container = cardElement.closest('.column-cards');
       cardElement.remove();
@@ -754,7 +752,31 @@ class WebSocketManager {
         this.boardManager.invalidateDragMidpointCache(container);
       }
     }
-    this.boardManager.refreshPlannerIfVisible();
+    this.boardManager.scheduleBoardReload();
+  }
+
+  handleCardCreated(data) {
+    // A new card was created on another client
+    if (this.boardManager) {
+      this.patchCardOrReload(data);
+    }
+  }
+
+  handleCardUpdated(data) {
+    // A card was edited or moved on another client
+    this.patchCardOrReload(data);
+  }
+
+  handleCardDoneStatusChanged(data) {
+    // A card was marked done or not done on another client
+    this.patchCardOrReload(data);
+  }
+
+  handleCardDeleted(data) {
+    // A card was deleted on another client
+    if (!this.boardManager.removeCard(data.card_id)) {
+      this.removeCardElementAndReload(data.card_id);
+    }
   }
 
   handleCardMoved(data) {
@@ -813,25 +835,14 @@ class WebSocketManager {
 
   handleCardArchived(data) {
     // A card was archived on another client
-    // Remove the card from the DOM if it's displayed
-    const cardElement = document.querySelector(`[data-card-id="${data.card_id}"]`);
-    if (cardElement) {
-      const container = cardElement.closest('.column-cards');
-      cardElement.remove();
-      // Same reasoning as handleCardDeleted: invalidate immediately, don't
-      // wait for the debounced reload below.
-      if (container) {
-        this.boardManager.invalidateDragMidpointCache(container);
-      }
+    if (!this.boardManager.patchCard(data.card_data)) {
+      this.removeCardElementAndReload(data.card_id);
     }
-    // Reload to update card count and ensure consistency
-    this.boardManager.scheduleBoardReload();
   }
 
   handleCardUnarchived(data) {
     // A card was unarchived on another client
-    // Reload board to show the restored card
-    this.boardManager.scheduleBoardReload();
+    this.patchCardOrReload(data);
   }
 
   handleThemeChanged(data) {
@@ -1684,15 +1695,19 @@ class BoardManager {
         return;
       }
 
-      const expandBtn = cardElement.querySelector('.card-expand-btn');
-      if (!expandBtn) {
-        return;
-      }
-
-      cardElement.classList.remove('collapsed');
-      expandBtn.textContent = 'Show less...';
-      expandBtn.setAttribute('aria-expanded', 'true');
+      this.expandCardElement(cardElement);
     });
+  }
+
+  expandCardElement(cardElement) {
+    const expandBtn = cardElement.querySelector('.card-expand-btn');
+    if (!expandBtn) {
+      return;
+    }
+
+    cardElement.classList.remove('collapsed');
+    expandBtn.textContent = 'Show less...';
+    expandBtn.setAttribute('aria-expanded', 'true');
   }
 
   handleBeforeUnload() {
@@ -3248,6 +3263,237 @@ class BoardManager {
     }, BOARD_RELOAD_DEBOUNCE_MS);
   }
 
+  // Incremental card patching (issue #525 item 2.3c). Card broadcasts carry
+  // the full board card (server/card_serialization.py), so one changed card
+  // is patched into the board instead of refetching and re-rendering it all.
+  // patchCard() and removeCard() return false when a patch isn't safe; the
+  // caller then falls back to scheduleBoardReload(), and that full reload
+  // overwrites anything a failed patch had already changed.
+
+  canPatchBoard() {
+    return this.hasLoadedBoardData
+      && !this.isPublicMode
+      && this.currentView === 'task'
+      && !this.showArchived
+      // Search and assignee filters run on the server, so the client can't
+      // tell whether a changed card still matches them.
+      && !this.searchQueryDebounced
+      && this.assigneeFilterSelectedUserIds.size === 0
+      && !this.assigneeFilterIncludeUnassigned
+      // A board response fetched before this event would overwrite the patch.
+      && !this.currentLoadController
+      && !this.boardReloadDebounceTimeoutId;
+  }
+
+  // Some broadcasts (card scheduler, schedule routes) carry partial cards.
+  isFullBoardCard(card) {
+    return !!card
+      && Number.isInteger(card.id)
+      && Number.isInteger(card.column_id)
+      && Array.isArray(card.checklist_items)
+      && typeof card.comment_count === 'number';
+  }
+
+  // Cards the task view's request returns: GET /api/boards/:id/cards?archived=false.
+  isActiveBoardCard(card) {
+    return !card.archived && !card.scheduled;
+  }
+
+  // processBoard()'s agile done filter, applied on top of isActiveBoardCard().
+  isCardShownInTaskView(card) {
+    if (this.workingStyle !== 'agile') {
+      return true;
+    }
+    return this.showDone ? !!card.done : !card.done;
+  }
+
+  getColumnCardsContainer(columnId) {
+    return this.container.querySelector(`.column-cards[data-column-id="${columnId}"]`);
+  }
+
+  getDraggingCardId() {
+    const dragging = this.container.querySelector('.card.dragging[data-card-id]');
+    return dragging ? Number(dragging.getAttribute('data-card-id')) : null;
+  }
+
+  // Remove the card from this.columns and this.originalColumns; returns the
+  // ids of the columns it was in.
+  removeCardFromColumnData(cardId) {
+    const columnIds = new Set();
+    for (const columns of [this.columns, this.originalColumns]) {
+      for (const column of columns) {
+        const index = (column.cards || []).findIndex((card) => card.id === cardId);
+        if (index !== -1) {
+          column.cards.splice(index, 1);
+          columnIds.add(column.id);
+        }
+      }
+    }
+    return columnIds;
+  }
+
+  insertCardByOrder(cards, card) {
+    const index = cards.findIndex((other) => other.order > card.order);
+    if (index === -1) {
+      cards.push(card);
+    } else {
+      cards.splice(index, 0, card);
+    }
+  }
+
+  // Apply a broadcast's column_orders ({"<column_id>": {"<card_id>": order}})
+  // to the card data and to each card node's data-order, which drag-drop
+  // reads to compute drop positions. Returns the ids of the columns it covers.
+  applyColumnOrders(columnOrders, cardElements) {
+    const columnIds = new Set();
+    if (!columnOrders || typeof columnOrders !== 'object') {
+      return columnIds;
+    }
+
+    Object.entries(columnOrders).forEach(([columnKey, orders]) => {
+      const columnId = Number(columnKey);
+      if (!Number.isInteger(columnId) || !orders || typeof orders !== 'object') {
+        return;
+      }
+      columnIds.add(columnId);
+
+      for (const columns of [this.columns, this.originalColumns]) {
+        const column = columns.find((candidate) => candidate.id === columnId);
+        if (!column || !column.cards) continue;
+        column.cards.forEach((card) => {
+          const order = orders[card.id];
+          if (Number.isInteger(order)) {
+            card.order = order;
+          }
+        });
+        column.cards.sort((a, b) => a.order - b.order);
+      }
+
+      Object.entries(orders).forEach(([cardKey, order]) => {
+        const cardElement = cardElements.get(Number(cardKey));
+        if (cardElement && Number.isInteger(order)) {
+          cardElement.setAttribute('data-order', String(order));
+        }
+      });
+    });
+    return columnIds;
+  }
+
+  // Consistency check: the column's card nodes are in the same order as its
+  // card data. The card being dragged is skipped, since the drag moves its
+  // node ahead of the data.
+  isColumnDomInSync(columnId, draggingCardId) {
+    const column = this.columns.find((candidate) => candidate.id === columnId);
+    const container = this.getColumnCardsContainer(columnId);
+    if (!column || !container) {
+      return false;
+    }
+
+    const domIds = Array.from(container.querySelectorAll('.card[data-card-id]'))
+      .map((cardElement) => Number(cardElement.getAttribute('data-card-id')))
+      .filter((cardId) => cardId !== draggingCardId);
+    const dataIds = (column.cards || [])
+      .map((card) => card.id)
+      .filter((cardId) => cardId !== draggingCardId);
+    return domIds.length === dataIds.length && domIds.every((cardId, index) => cardId === dataIds[index]);
+  }
+
+  // Shared tail of patchCard()/removeCard() for every column the patch touched.
+  finishCardPatch(columnIds, draggingCardId) {
+    for (const columnId of columnIds) {
+      if (!this.isColumnDomInSync(columnId, draggingCardId)) {
+        return false;
+      }
+    }
+
+    columnIds.forEach((columnId) => {
+      const index = this.columns.findIndex((column) => column.id === columnId);
+      const countElement = this.container.querySelector(`.column[data-column-id="${columnId}"] .card-count`);
+      if (index !== -1 && countElement) {
+        countElement.textContent = `(${this.getColumnCardCount(this.columns[index], index)})`;
+      }
+      // A patch can land mid-drag; this column's cached midpoints are stale.
+      this.invalidateDragMidpointCache(this.getColumnCardsContainer(columnId));
+    });
+
+    this.refreshPlannerIfVisible();
+    return true;
+  }
+
+  // Insert, replace, move or remove one card from a full card broadcast.
+  // Inserting above a column's visible cards relies on the browser's scroll
+  // anchoring to keep the visible cards in place.
+  patchCard(card, columnOrders = null) {
+    if (!this.canPatchBoard() || !this.isFullBoardCard(card)) {
+      return false;
+    }
+
+    const draggingCardId = this.getDraggingCardId();
+    const targetColumn = this.columns.find((column) => column.id === card.column_id);
+    const targetContainer = this.getColumnCardsContainer(card.column_id);
+    if (card.id === draggingCardId || !targetColumn || !targetContainer) {
+      return false;
+    }
+
+    const cardElements = new Map(
+      Array.from(this.container.querySelectorAll('.card[data-card-id]'), (cardElement) => [
+        Number(cardElement.getAttribute('data-card-id')),
+        cardElement
+      ])
+    );
+
+    const columnIds = this.removeCardFromColumnData(card.id);
+    columnIds.add(card.column_id);
+    cardElements.get(card.id)?.remove();
+    cardElements.delete(card.id);
+    this.applyColumnOrders(columnOrders, cardElements).forEach((columnId) => columnIds.add(columnId));
+
+    if (this.isActiveBoardCard(card)) {
+      const originalColumn = this.originalColumns.find((column) => column.id === card.column_id);
+      if (!originalColumn) {
+        return false;
+      }
+      this.insertCardByOrder(originalColumn.cards, structuredClone(card));
+    }
+
+    if (this.isActiveBoardCard(card) && this.isCardShownInTaskView(card)) {
+      this.insertCardByOrder(targetColumn.cards, card);
+
+      const nextCard = targetColumn.cards
+        .slice(targetColumn.cards.indexOf(card) + 1)
+        .find((other) => other.id !== draggingCardId);
+      const nextElement = nextCard
+        ? cardElements.get(nextCard.id)
+        : targetContainer.querySelector(':scope > .add-card-btn');
+      if (nextCard && (!nextElement || nextElement.parentNode !== targetContainer)) {
+        return false;
+      }
+
+      const cardElement = this.renderCard(card, card.column_id);
+      targetContainer.insertBefore(cardElement, nextElement || null);
+      requestAnimationFrame(() => {
+        if (!cardElement.isConnected || !this.collapseOverflowingCards([cardElement])) {
+          return;
+        }
+        if (cardElement.classList.contains('has-overflow') && this.expandedCardIds.has(card.id)) {
+          this.expandCardElement(cardElement);
+        }
+      });
+    }
+
+    return this.finishCardPatch(columnIds, draggingCardId);
+  }
+
+  removeCard(cardId) {
+    if (!this.canPatchBoard() || !Number.isInteger(cardId)) {
+      return false;
+    }
+
+    const columnIds = this.removeCardFromColumnData(cardId);
+    this.container.querySelector(`.card[data-card-id="${cardId}"]`)?.remove();
+    return this.finishCardPatch(columnIds, this.getDraggingCardId());
+  }
+
   async loadBoard() {
     // Ignore duplicate startup reloads while the first board request is still in flight.
     if (this.isBootstrappingBoard && this.currentLoadController && !this.hasLoadedBoardData) {
@@ -4013,39 +4259,9 @@ class BoardManager {
       // Initialize card collapse/expand functionality
       // Use requestAnimationFrame to ensure DOM is fully rendered before measuring
       requestAnimationFrame(() => {
-        // Get the collapse threshold from CSS custom property
-        const collapseHeightStr = getComputedStyle(document.documentElement)
-          .getPropertyValue('--card-collapse-height')
-          .trim();
-        const collapseHeight = parseInt(collapseHeightStr);
-        
-        if (!collapseHeight || isNaN(collapseHeight)) {
-          console.error('Card collapse height not defined in CSS. Skipping card collapse logic.');
-          return;
+        if (this.collapseOverflowingCards(document.querySelectorAll('.card'))) {
+          this.restoreExpandedCardState();
         }
-        
-        // Two passes to avoid layout thrash: reading scrollHeight forces a
-        // synchronous layout, and writing has-overflow/collapsed classes
-        // invalidates it again — interleaving read/write per card (as a
-        // single forEach would) forces one reflow per card. Collecting all
-        // overflowing cards first, then applying every class change in a
-        // second pass, forces at most one reflow for the whole batch.
-        const overflowingCards = [];
-        document.querySelectorAll('.card').forEach(card => {
-          const contentWrapper = card.querySelector('.card-content-wrapper');
-          const expandBtn = card.querySelector('.card-expand-btn');
-
-          if (contentWrapper && expandBtn && contentWrapper.scrollHeight > collapseHeight) {
-            overflowingCards.push(card);
-          }
-        });
-
-        overflowingCards.forEach(card => {
-          card.classList.add('has-overflow');
-          card.classList.add('collapsed');
-        });
-
-        this.restoreExpandedCardState();
       });
 
       this.restoreColumnScrollPositions();
@@ -4056,6 +4272,42 @@ class BoardManager {
       // Apply permission-based rendering (if PermissionManager is initialized)
       this.applyPermissionBasedRendering();
     }
+  }
+
+  // Mark cards whose content is taller than --card-collapse-height as
+  // overflowing and collapse them. Returns false if the CSS variable is missing.
+  collapseOverflowingCards(cardElements) {
+    const collapseHeightStr = getComputedStyle(document.documentElement)
+      .getPropertyValue('--card-collapse-height')
+      .trim();
+    const collapseHeight = parseInt(collapseHeightStr);
+
+    if (!collapseHeight || isNaN(collapseHeight)) {
+      console.error('Card collapse height not defined in CSS. Skipping card collapse logic.');
+      return false;
+    }
+
+    // Two passes to avoid layout thrash: reading scrollHeight forces a
+    // synchronous layout, and writing has-overflow/collapsed classes
+    // invalidates it again — interleaving read/write per card (as a
+    // single forEach would) forces one reflow per card. Collecting all
+    // overflowing cards first, then applying every class change in a
+    // second pass, forces at most one reflow for the whole batch.
+    const overflowingCards = [];
+    cardElements.forEach(card => {
+      const contentWrapper = card.querySelector('.card-content-wrapper');
+      const expandBtn = card.querySelector('.card-expand-btn');
+
+      if (contentWrapper && expandBtn && contentWrapper.scrollHeight > collapseHeight) {
+        overflowingCards.push(card);
+      }
+    });
+
+    overflowingCards.forEach(card => {
+      card.classList.add('has-overflow');
+      card.classList.add('collapsed');
+    });
+    return true;
   }
 
   // Per-card permission flags, computed once per render rather than per card.
