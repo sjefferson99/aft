@@ -1,6 +1,6 @@
 # Performance Review: Board Updates at Scale
 
-Status: Tier 1 implemented and measured; Tier 2 items 2.1, 2.2, 2.9 and 2.3a-c implemented and measured; 2.4/2.5 measured and deferred until after 2.3; the rest of Tier 2 and Tier 3 still proposal-only
+Status: Tier 1 implemented and measured; Tier 2 items 2.1, 2.2, 2.3 and 2.9 implemented and measured; 2.4/2.5 measured and deferred until after 2.3; the rest of Tier 2 and Tier 3 still proposal-only
 Scope: the board view (`www/js/board.js`, `www/css/board.css`) and the board read/write API (`server/card_routes.py`, `server/board_routes.py`, `server/broadcasting.py`)
 Trigger: board interactions degrade sharply once columns exceed ~100 cards, including when the change is on a *different* column
 
@@ -628,8 +628,12 @@ split into phases (tracked in issue #525):
   (−91%), with **0** `loadBoard()`/`renderBoard()` calls per edit instead of 1. About 33 ms of
   the 43 ms is the two animation frames the probe waits for. Covered by the patching tests in
   `ui-tests/tests/test_board_interactions.py`.
-- **2.3d** patches checklist changes. The `checklist_item_*` events already carry the full
-  card, so they can go through `patchCard()` like a non-move `card_updated`.
+- **2.3d (client, implemented).** `checklist_item_added`, `checklist_item_updated` and
+  `checklist_item_deleted` carry the full card, so they go through `patchCard()` like a
+  non-move `card_updated`: the card node is replaced, refreshing its checklist block and
+  summary and re-running the collapse check. An open card modal was never refreshed by the
+  old full reload either, so nothing is lost there. Covered by
+  `test_checklist_events_are_patched`.
 
 The original proposal follows.
 
