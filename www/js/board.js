@@ -733,7 +733,7 @@ class WebSocketManager {
   // trigger one full board reload per event, each aborting the previous
   // in-flight request.
   patchCardOrReload(data) {
-    if (!this.boardManager.patchCard(data.card_data, data.column_orders)) {
+    if (!this.boardManager.patchCard(data.card_data, data.column_orders, data.column_counts)) {
       this.boardManager.scheduleBoardReload();
     }
   }
@@ -774,7 +774,7 @@ class WebSocketManager {
 
   handleCardDeleted(data) {
     // A card was deleted on another client
-    if (!this.boardManager.removeCard(data.card_id)) {
+    if (!this.boardManager.removeCard(data.card_id, data.column_counts)) {
       this.removeCardElementAndReload(data.card_id);
     }
   }
@@ -834,7 +834,7 @@ class WebSocketManager {
 
   handleCardArchived(data) {
     // A card was archived on another client
-    if (!this.boardManager.patchCard(data.card_data)) {
+    if (!this.boardManager.patchCard(data.card_data, null, data.column_counts)) {
       this.removeCardElementAndReload(data.card_id);
     }
   }
@@ -882,7 +882,6 @@ class BoardManager {
     this.publicBoardShareUrl = null;
     this.boardName = '';
     this.columns = [];
-    this.originalColumns = []; // Store original unfiltered columns for accurate card counting
     this.hoveredColumnId = null;
     this.lastUsedColumnId = null;
     this.showArchived = false; // Track whether to show archived or active cards
@@ -3315,20 +3314,40 @@ class BoardManager {
     return dragging ? Number(dragging.getAttribute('data-card-id')) : null;
   }
 
-  // Remove the card from this.columns and this.originalColumns; returns the
-  // ids of the columns it was in.
+  // Remove the card from this.columns; returns the ids of the columns it was in.
   removeCardFromColumnData(cardId) {
     const columnIds = new Set();
-    for (const columns of [this.columns, this.originalColumns]) {
-      for (const column of columns) {
-        const index = (column.cards || []).findIndex((card) => card.id === cardId);
-        if (index !== -1) {
-          column.cards.splice(index, 1);
-          columnIds.add(column.id);
-        }
+    for (const column of this.columns) {
+      const index = (column.cards || []).findIndex((card) => card.id === cardId);
+      if (index !== -1) {
+        column.cards.splice(index, 1);
+        columnIds.add(column.id);
       }
     }
     return columnIds;
+  }
+
+  // Apply a broadcast's column_counts ({"<column_id>": {total, done}}) to
+  // each column's card_counts. Returns false unless it covers every column
+  // in requiredColumnIds: the board doesn't hold done cards in the agile task
+  // view, so it can't recount a column itself.
+  applyColumnCounts(columnCounts, requiredColumnIds) {
+    if (!columnCounts || typeof columnCounts !== 'object') {
+      return false;
+    }
+    for (const columnId of requiredColumnIds) {
+      if (!columnCounts[columnId]) {
+        return false;
+      }
+    }
+
+    Object.entries(columnCounts).forEach(([columnKey, counts]) => {
+      const column = this.columns.find((candidate) => candidate.id === Number(columnKey));
+      if (column && counts && Number.isInteger(counts.total) && Number.isInteger(counts.done)) {
+        column.card_counts = { total: counts.total, done: counts.done };
+      }
+    });
+    return true;
   }
 
   insertCardByOrder(cards, card) {
@@ -3356,9 +3375,8 @@ class BoardManager {
       }
       columnIds.add(columnId);
 
-      for (const columns of [this.columns, this.originalColumns]) {
-        const column = columns.find((candidate) => candidate.id === columnId);
-        if (!column || !column.cards) continue;
+      const column = this.columns.find((candidate) => candidate.id === columnId);
+      if (column && column.cards) {
         column.cards.forEach((card) => {
           const order = orders[card.id];
           if (Number.isInteger(order)) {
@@ -3406,10 +3424,10 @@ class BoardManager {
     }
 
     columnIds.forEach((columnId) => {
-      const index = this.columns.findIndex((column) => column.id === columnId);
+      const column = this.columns.find((candidate) => candidate.id === columnId);
       const countElement = this.container.querySelector(`.column[data-column-id="${columnId}"] .card-count`);
-      if (index !== -1 && countElement) {
-        countElement.textContent = `(${this.getColumnCardCount(this.columns[index], index)})`;
+      if (column && countElement) {
+        countElement.textContent = `(${this.getColumnCardCount(column)})`;
       }
       // A patch can land mid-drag; this column's cached midpoints are stale.
       this.invalidateDragMidpointCache(this.getColumnCardsContainer(columnId));
@@ -3422,7 +3440,7 @@ class BoardManager {
   // Insert, replace, move or remove one card from a full card broadcast.
   // Inserting above a column's visible cards relies on the browser's scroll
   // anchoring to keep the visible cards in place.
-  patchCard(card, columnOrders = null) {
+  patchCard(card, columnOrders = null, columnCounts = null) {
     if (!this.canPatchBoard() || !this.isFullBoardCard(card)) {
       return false;
     }
@@ -3443,17 +3461,13 @@ class BoardManager {
 
     const columnIds = this.removeCardFromColumnData(card.id);
     columnIds.add(card.column_id);
+    if (!this.applyColumnCounts(columnCounts, columnIds)) {
+      return false;
+    }
+    Object.keys(columnCounts).forEach((columnKey) => columnIds.add(Number(columnKey)));
     cardElements.get(card.id)?.remove();
     cardElements.delete(card.id);
     this.applyColumnOrders(columnOrders, cardElements).forEach((columnId) => columnIds.add(columnId));
-
-    if (this.isActiveBoardCard(card)) {
-      const originalColumn = this.originalColumns.find((column) => column.id === card.column_id);
-      if (!originalColumn) {
-        return false;
-      }
-      this.insertCardByOrder(originalColumn.cards, structuredClone(card));
-    }
 
     if (this.isActiveBoardCard(card) && this.isCardShownInTaskView(card)) {
       this.insertCardByOrder(targetColumn.cards, card);
@@ -3483,12 +3497,16 @@ class BoardManager {
     return this.finishCardPatch(columnIds, draggingCardId);
   }
 
-  removeCard(cardId) {
+  removeCard(cardId, columnCounts = null) {
     if (!this.canPatchBoard() || !Number.isInteger(cardId)) {
       return false;
     }
 
     const columnIds = this.removeCardFromColumnData(cardId);
+    if (!this.applyColumnCounts(columnCounts, columnIds)) {
+      return false;
+    }
+    Object.keys(columnCounts).forEach((columnKey) => columnIds.add(Number(columnKey)));
     this.container.querySelector(`.card[data-card-id="${cardId}"]`)?.remove();
     return this.finishCardPatch(columnIds, this.getDraggingCardId());
   }
@@ -3675,10 +3693,8 @@ class BoardManager {
         Array.from(this.assigneeFilterSelectedUserIds).filter((userId) => eligibleUserIds.has(userId))
       );
 
-      // Store the original unfiltered columns for counting purposes.
-      // structuredClone avoids a full JSON.stringify+parse round-trip of
-      // the whole board payload on every load.
-      this.originalColumns = structuredClone(board.columns);
+      // Column header counts come from the server (card_counts), so the
+      // filtered columns below are all the board keeps.
       this.columns = board.columns;
       
       // Store edit permission flag (default to true for backwards compatibility)
@@ -3943,34 +3959,28 @@ class BoardManager {
   /**
    * Get the card count display for a column.
   * In agile mode:
-   *   - Task view: shows "done/total" format using original unfiltered data
+   *   - Task view: shows "done/total" format from the server's card_counts,
+   *     which count done cards even when the view doesn't list them
    *   - Done view: shows only count of done cards
    * Otherwise, shows just the total count.
    * 
    * All counts exclude archived and scheduled template cards.
    * 
-   * @param {Object} column - The column object with cards array
-   * @param {number} columnIndex - The index of the column in the columns array
+   * @param {Object} column - The column object with cards array and card_counts
    * @returns {string} Card count display string
    */
-  getColumnCardCount(column, columnIndex) {
+  getColumnCardCount(column) {
     if (!column.cards) return '0';
     
-    if (this.workingStyle === 'agile') {
-      // Use original unfiltered column data for accurate counts
-      const originalColumn = this.originalColumns[columnIndex];
-      if (!originalColumn || !originalColumn.cards) return '0';
-      
-      // Count all active cards (non-archived, non-scheduled) in the original data
-      const allActiveCards = originalColumn.cards.filter(card => !card.archived && !card.scheduled);
-      const doneCards = allActiveCards.filter(card => card.done);
-      
+    // The scheduled view's endpoint sends no card_counts.
+    const counts = column.card_counts;
+    if (this.workingStyle === 'agile' && counts) {
       if (this.currentView === 'task' && !this.showArchived) {
         // Task view: show done/total format
-        return `${doneCards.length}/${allActiveCards.length}`;
+        return `${counts.done}/${counts.total}`;
       } else if (this.showDone) {
         // Done view: show only done count
-        return doneCards.length.toString();
+        return counts.done.toString();
       }
     }
     
@@ -4158,7 +4168,7 @@ class BoardManager {
             <div class="column" data-column-id="${column.id}" data-board-id="${this.escapeHtml(String(this.boardId))}" data-order="${column.order}">
               <div class="column-header">
                 <div class="column-title-group">
-                  <h4>${this.escapeHtml(column.name)} <span class="card-count">(${this.getColumnCardCount(column, index)})</span></h4>
+                  <h4>${this.escapeHtml(column.name)} <span class="card-count">(${this.getColumnCardCount(column)})</span></h4>
                 </div>
                 <div class="column-actions">
                   ${!this.showArchived && canCreateCardsInCurrentView ? `<button class="column-add-card-btn" data-column-id="${column.id}" title="Add card">+</button>` : ''}
@@ -9353,11 +9363,10 @@ class BoardManager {
     }
   }
 
+  // Relative to the cards the board shows: this.columns leaves out the done
+  // cards the agile task view hides.
   computeMoveCardOrder(targetColumnId, position, cardId) {
-    const sourceColumns = Array.isArray(this.originalColumns) && this.originalColumns.length > 0
-      ? this.originalColumns
-      : this.columns;
-    const targetColumn = sourceColumns.find(c => c.id === targetColumnId);
+    const targetColumn = this.columns.find(c => c.id === targetColumnId);
     const targetCards = (targetColumn?.cards || [])
       .filter(c => !c.archived && c.id !== cardId)
       .map(c => Number(c.order))
@@ -9387,14 +9396,10 @@ class BoardManager {
       return;
     }
 
-    const sourceColumns = Array.isArray(this.originalColumns) && this.originalColumns.length > 0
-      ? this.originalColumns
-      : this.columns;
-
     let sourceCard = null;
     let sourceColumn = null;
 
-    sourceColumns.some((column) => {
+    this.columns.some((column) => {
       const card = (column.cards || []).find(c => c.id === cardId);
       if (card) {
         sourceCard = card;
@@ -9431,7 +9436,7 @@ class BoardManager {
       boards = [{ id: this.boardId, name: this.boardName }];
     }
 
-    const currentBoardColumns = sourceColumns.filter(c => c.id !== sourceColumn.id);
+    const currentBoardColumns = this.columns.filter(c => c.id !== sourceColumn.id);
 
     const buildColumnOptions = (columns) =>
       columns.length === 0

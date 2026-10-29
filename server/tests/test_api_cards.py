@@ -2135,3 +2135,42 @@ class TestCrossBoardCardMove:
         assert response.status_code == 200
         assert response.json()['success'] is True
 
+
+
+@pytest.mark.api
+class TestBoardCardCounts:
+    """Per-column card_counts on GET /api/boards/:id/cards (issue #525 item 2.6)."""
+
+    def _counts(self, api_client, session, board_id, query="archived=false"):
+        response = session.get(f'{api_client}/api/boards/{board_id}/cards?{query}')
+        assert response.status_code == 200, response.text
+        return {column['id']: column['card_counts'] for column in response.json()['board']['columns']}
+
+    def test_counts_active_and_done_cards(self, api_client, authenticated_session, sample_board, sample_column):
+        empty = authenticated_session.post(f'{api_client}/api/boards/{sample_board["id"]}/columns', json={
+            'name': 'Empty Column'
+        }).json()['column']
+        cards = [
+            authenticated_session.post(f'{api_client}/api/columns/{sample_column["id"]}/cards', json={
+                'title': f'Count card {i}'
+            }).json()['card']
+            for i in range(4)
+        ]
+        assert authenticated_session.patch(
+            f'{api_client}/api/cards/{cards[0]["id"]}/done', json={'done': True}
+        ).status_code == 200
+        assert authenticated_session.patch(f'{api_client}/api/cards/{cards[1]["id"]}/archive').status_code == 200
+
+        counts = self._counts(api_client, authenticated_session, sample_board['id'])
+        assert counts[sample_column['id']] == {'total': 3, 'done': 1}
+        assert counts[empty['id']] == {'total': 0, 'done': 0}
+
+        archived_counts = self._counts(api_client, authenticated_session, sample_board['id'], 'archived=true')
+        assert archived_counts[sample_column['id']] == {'total': 1, 'done': 0}
+
+    def test_counts_follow_search_filter(self, api_client, authenticated_session, sample_board, sample_column):
+        for title in ('Alpha match', 'Alpha other', 'Beta'):
+            authenticated_session.post(f'{api_client}/api/columns/{sample_column["id"]}/cards', json={'title': title})
+
+        counts = self._counts(api_client, authenticated_session, sample_board['id'], 'archived=false&q=Alpha')
+        assert counts[sample_column['id']] == {'total': 2, 'done': 0}

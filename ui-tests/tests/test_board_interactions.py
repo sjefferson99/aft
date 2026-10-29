@@ -23,6 +23,11 @@ def board_with_cards(api_session, ui_base_url):
     )
     assert board_resp.status_code == 201
     board = board_resp.json()["board"]
+    # New boards take the user's default working style, which other test runs may change.
+    style_resp = api_session.put(
+        f"{base}/api/boards/{board['id']}/settings/working-style", json={"value": "kanban"}
+    )
+    assert style_resp.status_code == 200
 
     columns = []
     for name in ("Column A", "Column B"):

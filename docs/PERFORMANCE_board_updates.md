@@ -751,7 +751,22 @@ The cold-load harness is bimodal (see item 2.1), so its rows compare mode for mo
 the largest per-render win found in Tier 2, and it also speeds up every other page that
 formats dates.
 
-### 2.6 Return card counts from the server — **0.5 day**
+### 2.6 Return card counts from the server — **0.5 day** — ✅ implemented
+
+**Implemented:** each column in `GET /api/boards/:id/cards` and the public board endpoint
+carries `card_counts: {"total", "done"}`. These count active cards (not archived per the
+view's `archived` filter, never scheduled templates) under the view's search and assignee
+filters, from one grouped COUNT for the whole board (`count_cards_by_column()` in
+`server/card_serialization.py`). Every card and checklist broadcast carries `column_counts`
+(`{"<column_id>": {"total", "done"}}`, unfiltered) for each affected column on the board.
+The client drops `originalColumns` and its per-load `structuredClone` of the whole board:
+`getColumnCardCount()` reads `card_counts`, and `patchCard()`/`removeCard()` fall back to a
+reload unless the broadcast has counts for every column the patch touches. The move-card
+modal's top/bottom order is now computed from the cards the board shows. The public agile
+task view, fetched with `done=false`, now shows the real done/total instead of `0/total`.
+
+#### Original proposal
+
 
 Add `card_count` / `done_count` / `total_active_count` per column in `get_board_cards`
 (grouped `COUNT(*)`, not by loading rows). Lets the client delete `originalColumns` (item
