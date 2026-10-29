@@ -763,7 +763,19 @@ public endpoint already accepts a `done` query param
 ([board_routes.py:2793](../server/board_routes.py#L2793)) — mirror it on the authenticated
 endpoint. Depends on 2.6 for the counts, which is why it is not in Tier 1.
 
-### 2.8 Bulk UPDATE for move-all-cards — **0.5 day**
+### 2.8 Bulk UPDATE for move-all-cards — **0.5 day** — ✅ implemented and measured
+
+**Implemented:** `move_all_cards_in_column()` loads only card ids and renumbers each group
+with one `UPDATE ... SET order = CASE id ... END` (`_renumber_cards()` in
+`server/card_routes.py`), instead of loading ORM instances and flushing one UPDATE per card.
+A plain `order = order + n` shift, as below, would not reproduce the existing dense
+renumbering of target cards when their stored orders have gaps or ties, so the CASE form keeps
+the result identical (pinned by `test_move_all_cards_to_top_renumbers_target_with_gaps`).
+Measured on the dev stack, moving 100 cards into a column of 100, median of 5:
+**top 46 → 20 ms (−57%)**, **bottom 31 → 16 ms (−48%)**.
+
+#### Original proposal
+
 
 [card_routes.py:969-989](../server/card_routes.py#L969-L989) reassigns `card.order` in a
 Python loop over ORM instances, producing one UPDATE per row on flush. Moving 100 cards into

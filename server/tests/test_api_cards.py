@@ -1314,6 +1314,41 @@ class TestCardsAPI:
         assert target_result[4]['title'] == 'Target Card 1'
         assert target_result[4]['order'] == 4
     
+    def test_move_all_cards_to_top_renumbers_target_with_gaps(self, api_client, authenticated_session, sample_board):
+        """Moving to the top renumbers target cards densely after the moved cards, closing order gaps."""
+        col1 = authenticated_session.post(f'{api_client}/api/boards/{sample_board["id"]}/columns', json={
+            'name': 'Gap Source'
+        }).json()['column']
+        col2 = authenticated_session.post(f'{api_client}/api/boards/{sample_board["id"]}/columns', json={
+            'name': 'Gap Target'
+        }).json()['column']
+
+        for i in range(2):
+            authenticated_session.post(f'{api_client}/api/columns/{col1["id"]}/cards', json={
+                'title': f'Source Card {i}'
+            })
+        for title, order in (('Target Card 0', 5), ('Target Card 1', 10)):
+            created = authenticated_session.post(f'{api_client}/api/columns/{col2["id"]}/cards', json={
+                'title': title, 'order': order
+            })
+            assert created.status_code == 201
+            assert created.json()['card']['order'] == order
+
+        response = authenticated_session.post(f'{api_client}/api/columns/{col1["id"]}/cards/move', json={
+            'target_column_id': col2['id'],
+            'position': 'top'
+        })
+        assert response.status_code == 200
+        assert response.json()['moved_count'] == 2
+
+        target_result = authenticated_session.get(f'{api_client}/api/columns/{col2["id"]}/cards').json()['cards']
+        assert [(card['title'], card['order']) for card in target_result] == [
+            ('Source Card 0', 0),
+            ('Source Card 1', 1),
+            ('Target Card 0', 2),
+            ('Target Card 1', 3),
+        ]
+
     def test_move_all_cards_empty_source(self, api_client, authenticated_session, sample_board):
         """Test moving cards when source column is empty."""
         # Create two columns
