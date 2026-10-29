@@ -499,7 +499,7 @@ To check your data size, from the docker host:
 docker exec aft-db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024) AS size_mb FROM information_schema.tables WHERE table_schema = \"$MYSQL_DATABASE\";"'
 ```
 
-Example `.env` overrides for a larger install running 4 gunicorn workers:
+Example `.env` overrides for a larger install running 4 gunicorn workers (`GUNICORN_WORKERS=4`, see [Server workers and threads](#server-workers-and-threads)):
 
 ```sh
 MYSQL_INNODB_BUFFER_POOL_SIZE=256M
@@ -515,6 +515,29 @@ docker exec aft-db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT @@inn
 If `aft-db` keeps restarting after a change, a value is probably invalid (for example `100O` instead of `100`). MySQL names the bad option in its log, which you can see with `docker compose logs db`. Fix the value in `.env` and run `docker compose up -d db` again.
 
 > **Upgrading from an older compose file:** these options live in the `command:` list of the `db` service. Merge that block from the latest `compose.example.yml` into your `compose.yml`, or the `.env` variables have no effect.
+
+### Server workers and threads
+The `server` container runs gunicorn with **1 worker process and 32 threads** by default. Idle memory is about 110 MB; the previous fixed setting of 4 workers × 8 threads used about 340 MB. You can change both values in `.env`:
+
+| `.env` variable | Default | Allowed | What it does / when to change it |
+|---|---|---|---|
+| `GUNICORN_THREADS` | `32` | 1–128 | Threads per worker. Every open board or theme-builder tab keeps a live WebSocket connection that holds one thread for as long as it's open, and normal API requests share the rest. The thread count is therefore roughly the number of tabs one worker can serve at once. Threads cost very little memory (1 × 64 idles at the same ~110 MB as 1 × 32). If you regularly have more than about 25 tabs open, raise this first. |
+| `GUNICORN_WORKERS` | `1` | 1–16 | Worker processes. Each extra worker adds about 80 MB, and it multiplies the thread count (workers × threads). One worker handles a typical self-hosted install. Add workers only if one worker's CPU becomes a bottleneck, for example many concurrent active users. Python runs only one thread at a time per process, so extra workers add CPU parallelism and extra threads don't. |
+
+**If you add workers, check MySQL's connection limit.** Each worker can open up to 15 database connections, so `MYSQL_MAX_CONNECTIONS` must be above `15 × GUNICORN_WORKERS + 10` (see [Database memory tuning](#database-memory-tuning)). The default limit of 100 covers up to 6 workers. If the limit is too low, the server logs a warning at startup that gives the value to set.
+
+Example `.env` for a busier install:
+
+```sh
+GUNICORN_WORKERS=2
+GUNICORN_THREADS=64
+```
+
+Apply changes with `docker compose up -d server`. Invalid values, such as `0`, `abc` or anything outside the allowed range, stop the server from starting. The reason appears in `docker compose logs server`, for example `Invalid gunicorn setting: GUNICORN_WORKERS must be a whole number between 1 and 16, got '4O'`.
+
+Multi-worker support is unchanged. Socket.IO broadcasts go through Redis, and the schedulers use file and database locks, so raising `GUNICORN_WORKERS` needs no other configuration.
+
+**During a large database restore** with a single worker, other requests can slow to a few seconds while the backup file is read and validated, because that work runs in the same process. Requests return `503` while the database itself is being reloaded, whatever the worker count. In testing, a 75 MB restore took about 25 seconds in total.
 
 ### Backup Storage
 Automatic backups are stored on the host filesystem at `./backups/` (relative to the docker-compose.yml location). This directory is automatically created by Docker and persists across container restarts. You can include this directory in your host backup solution for additional data protection.

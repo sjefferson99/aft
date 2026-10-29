@@ -74,6 +74,7 @@ Non-obvious behaviour that is easy to break:
   - `POST /api/boards/import/preview` shows the impact without writing anything.
   - `GET /api/boards/import/csv-template` returns a template CSV and needs no auth.
 - **MySQL memory tuning**: the `db` service's `command:` list sets MySQL options from `MYSQL_*` env vars with small-install defaults (see README "Database memory tuning"). Keep `compose.yml`, `compose.example.yml`, `.env.example` and the README table in sync when adding or changing one. `max_connections` must stay above 15 × gunicorn workers (SQLAlchemy pool 5 + overflow 10) plus backup/restore headroom.
+- **Gunicorn workers/threads**: `server/gunicorn.conf.py` reads `GUNICORN_WORKERS` (default 1) and `GUNICORN_THREADS` (default 32), validated in `server/gunicorn_settings.py` (unit tests in `server/tests/test_gunicorn_settings.py`). Every open Socket.IO WebSocket holds a gthread thread for its lifetime, so a low thread count starves the whole app: 1 × 8 hung with 7 open tabs. Don't lower the default thread count without re-measuring. Keep the multi-worker safety mechanisms (Redis Socket.IO queue, scheduler locks) intact.
 - **Frontend modals**: reuse the existing modal structure and styles, and use the CSS variables so themes work. Don't hardcode colours. Use danger styling only for destructive actions.
 
 ## PR review workflow
