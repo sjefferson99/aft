@@ -512,6 +512,8 @@ Apply changes by recreating the database container with `docker compose up -d db
 docker exec aft-db sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SELECT @@innodb_buffer_pool_size, @@max_connections, @@max_allowed_packet, @@innodb_log_buffer_size, @@table_open_cache, @@performance_schema;"'
 ```
 
+If `aft-db` keeps restarting after a change, a value is probably invalid (for example `100O` instead of `100`). MySQL names the bad option in its log, which you can see with `docker compose logs db`. Fix the value in `.env` and run `docker compose up -d db` again.
+
 > **Upgrading from an older compose file:** these options live in the `command:` list of the `db` service. Merge that block from the latest `compose.example.yml` into your `compose.yml`, or the `.env` variables have no effect.
 
 ### Backup Storage
