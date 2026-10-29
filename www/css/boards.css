@@ -160,7 +160,8 @@
 }
 
 .board-archive-btn svg,
-.board-unarchive-btn svg {
+.board-unarchive-btn svg,
+.board-export-btn svg {
   width: 16px;
   height: 16px;
 }
