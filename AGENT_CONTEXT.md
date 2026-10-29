@@ -73,6 +73,7 @@ Non-obvious behaviour that is easy to break:
   - CSV has two target modes. `new_board` creates a new board. `existing_board` requires `target_board_id` and a `conflict_strategy` of `duplicate` or `overwrite`.
   - `POST /api/boards/import/preview` shows the impact without writing anything.
   - `GET /api/boards/import/csv-template` returns a template CSV and needs no auth.
+- **MySQL memory tuning**: the `db` service's `command:` list sets MySQL options from `MYSQL_*` env vars with small-install defaults (see README "Database memory tuning"). Keep `compose.yml`, `compose.example.yml`, `.env.example` and the README table in sync when adding or changing one. `max_connections` must stay above 15 × gunicorn workers (SQLAlchemy pool 5 + overflow 10) plus backup/restore headroom.
 - **Frontend modals**: reuse the existing modal structure and styles, and use the CSS variables so themes work. Don't hardcode colours. Use danger styling only for destructive actions.
 
 ## PR review workflow
