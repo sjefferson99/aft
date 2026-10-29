@@ -111,7 +111,7 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
 - **Import Boards** - Import boards from AFT JSON exports, Trello JSON exports, or CSV files via the Import Board button on the boards list
 
 ### 📥 Board Import
-- **AFT JSON** - Re-import any board exported from AFT, including columns, cards, checklists, comments, scheduled cards, and assignees
+- **AFT JSON** - Re-import any board exported from AFT, including columns, cards, card start/end dates, checklists, comments and scheduled cards. Assignees are not carried over, because user IDs differ between instances. Imported boards are always private, even if the source board was public
 - **Trello JSON** - Import Trello board exports; labels are prepended to descriptions, URL attachments are appended, checklists and dates are mapped, member mapping is supported
 - **CSV Import** - Import cards from a spreadsheet-style CSV with columns: `title`, `column`, `assignee`, `description`, `checklist_items` (pipe-separated; append `[done]` to mark checked), `start_date`, `end_date` (YYYY-MM-DD)
   - **Download Template** - A template CSV is available from the import modal hint text before selecting a file

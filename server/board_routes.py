@@ -64,6 +64,8 @@ _APP_VERSION = "unknown"
 # Board import/export constants
 MAX_BOARD_IMPORT_FILE_SIZE_MB = 25
 BOARD_EXPORT_FORMAT = "aft-board"
+# Bump the minor version for additive fields; the importer only rejects a different major.
+BOARD_EXPORT_FORMAT_VERSION = "1.1"
 PUBLIC_SLUG_LENGTH = 12
 PUBLIC_SLUG_ALPHABET = string.ascii_lowercase + string.digits
 PUBLIC_SLUG_PATTERN = re.compile(rf"^[a-z0-9]{{{PUBLIC_SLUG_LENGTH}}}$")
@@ -1003,7 +1005,7 @@ def export_board(board_id):
         export_payload = {
             "export": {
                 "format": BOARD_EXPORT_FORMAT,
-                "format_version": "1.0",
+                "format_version": BOARD_EXPORT_FORMAT_VERSION,
                 "app_version": _APP_VERSION,
                 "exported_at": serialize_datetime(utc_now()),
                 "exported_by_user_id": g.user.id,
@@ -1024,6 +1026,8 @@ def export_board(board_id):
                 "name": board.name,
                 "description": board.description,
                 "archived": bool(board.archived),
+                # Informational only: imports are always private and public_slug is never exported.
+                "is_public": bool(board.is_public),
                 "owner_id": board.owner_id,
                 "created_at": serialize_datetime(board.created_at),
                 "updated_at": serialize_datetime(board.updated_at),
@@ -1060,6 +1064,8 @@ def export_board(board_id):
                     "schedule": card.schedule,
                     "done": card.done,
                     "done_datetime": serialize_datetime(card.done_datetime),
+                    "start_date": serialize_datetime(card.start_date),
+                    "end_date": serialize_datetime(card.end_date),
                     "created_by_id": card.created_by_id,
                     "assigned_to_id": card.assigned_to_id,
                     "created_at": serialize_datetime(card.created_at),
@@ -1868,6 +1874,10 @@ def import_board_from_export():
                 else None
             )
 
+            card_done = coerce_bool(card.get("done"), default=False)
+            # Done cards always carry a completion time, matching marking a card done in the app.
+            done_datetime = (parse_iso_datetime(card.get("done_datetime")) or utc_now()) if card_done else None
+
             new_card = Card(
                 column_id=old_to_new_column_id[source_column_id],
                 title=title,
@@ -1875,7 +1885,8 @@ def import_board_from_export():
                 order=card_order,
                 archived=coerce_bool(card.get("archived"), default=False),
                 scheduled=coerce_bool(card.get("scheduled"), default=False),
-                done=coerce_bool(card.get("done"), default=False),
+                done=card_done,
+                done_datetime=done_datetime,
                 schedule=None,
                 created_by_id=created_by_id,
                 assigned_to_id=assigned_to_id,

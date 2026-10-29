@@ -205,11 +205,19 @@ class AFTBoardImportHandler(BoardImportHandler):
     def parse(self, payload, options=None) -> dict:
         """Normalize payload with safe defaults for optional collections."""
         export_meta = payload.get("export") or {}
+        board = payload.get("board") or {}
+
+        warnings = []
+        if board.get("is_public") is True:
+            warnings.append(
+                "The source board was public. The imported board is private; "
+                "make it public from the board settings if needed."
+            )
 
         return {
             "import_format": export_meta.get("format", self.FORMAT),
             "import_format_version": export_meta.get("format_version", "1.0"),
-            "board": payload.get("board") or {},
+            "board": board,
             "board_settings": payload.get("board_settings") or [],
             "columns": payload.get("columns") or [],
             "cards": payload.get("cards") or [],
@@ -217,6 +225,7 @@ class AFTBoardImportHandler(BoardImportHandler):
             "checklists": payload.get("checklists") or [],
             "comments": payload.get("comments") or [],
             "scheduled_cards": payload.get("scheduled_cards") or [],
+            "warnings": warnings,
         }
 
 
