@@ -1,6 +1,6 @@
 # Performance Review: Board Updates at Scale
 
-Status: Tier 1 implemented and measured; Tier 2 items 2.1, 2.2, 2.3 and 2.9 implemented and measured; 2.4/2.5 measured and deferred until after 2.3; the rest of Tier 2 and Tier 3 still proposal-only
+Status: Tier 1 implemented and measured; Tier 2 items 2.1, 2.2, 2.3, 2.6, 2.7, 2.8 and 2.9 implemented and measured; 2.4/2.5 measured and not done (see their section); Tier 3 still proposal-only
 Scope: the board view (`www/js/board.js`, `www/css/board.css`) and the board read/write API (`server/card_routes.py`, `server/board_routes.py`, `server/broadcasting.py`)
 Trigger: board interactions degrade sharply once columns exceed ~100 cards, including when the change is on a *different* column
 
@@ -664,7 +664,7 @@ them for the 95% case.
 
 Do 2.1 first — patching a node in is only cheap if listeners are delegated.
 
-### 2.4 Lazy overflow measurement via IntersectionObserver — **0.5 day**
+### 2.4 Lazy overflow measurement via IntersectionObserver — **0.5 day** — ❌ not done (see below)
 
 Supersedes item 1.6. Instead of measuring all 800 cards up front, use an
 `IntersectionObserver` to measure and classify each card the first time it scrolls into
@@ -673,7 +673,7 @@ view, then `unobserve` it. Off-screen cards are never measured.
 This also unblocks item 2.5, which is otherwise incompatible with the eager measurement
 pass.
 
-### 2.5 `content-visibility` on cards — **0.5 day**
+### 2.5 `content-visibility` on cards — **0.5 day** — ❌ not done (see below)
 
 `.column-cards` is a scrolling flex container ([board.css:547](../www/css/board.css#L547))
 with no containment hints, so the browser lays out and paints all 100 cards in a column even
@@ -717,6 +717,21 @@ Measured on the 800-card seeded board by timing repeated `renderBoard()` calls (
 - 2.5 might still help drag, where layout is ~22% of the cost, or scrolling. Only the manual
   `DRAG_MEASUREMENT.md` procedure can check that. Re-evaluate both items after 2.3, when
   re-renders are mostly patches.
+
+#### Re-evaluated after 2.3: closed
+
+With 2.3 in, card and checklist events no longer call `renderBoard()`. A patch renders and
+measures one card, and a card edit from another client settles in ~39 ms instead of ~487 ms
+(`perf-tests/patch_probe.py`, 800 cards). A full render now runs only on load, view and filter
+changes, column events and fallback reloads. That removes the case both items were aimed at:
+
+- **2.4:** the most it can save is still the ~15 ms eager pass of a full render, which now runs
+  rarely. Patched cards are measured one at a time already. The flash (cards painted at full
+  height, then collapsed) and the scroll-restore shifts would remain. Not worth it.
+- **2.5:** render-to-frame didn't improve even in its best case, and without 2.4 it regresses
+  by ~173 ms. Any drag or scroll benefit is unmeasured and can only be checked by hand. If drag
+  on very large columns becomes a problem again, measure it with `DRAG_MEASUREMENT.md` first,
+  and consider 3.1 (virtualisation) alongside it.
 
 ### 2.9 Cache `Intl.DateTimeFormat` instances — **found while measuring 2.4** — ✅ implemented and measured
 
