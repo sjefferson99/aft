@@ -47,6 +47,7 @@ from utils import (
     validate_string_length,
 )
 from board_import_handlers import ImportHandlerFactory, TrelloBoardImportHandler
+from card_serialization import count_cards_by_column
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
 from security_validators import validate_json_import_payload_size
 from settings_schema import get_user_default_working_style
@@ -2782,6 +2783,18 @@ def get_public_board(slug):
         if default_theme:
             result["default_theme"] = default_theme.to_dict()
 
+        # Column header counts ignore the done filter, so the agile task view
+        # can show done/total while listing only cards that aren't done.
+        counts_query = db.query(Card).filter(
+            Card.column_id.in_([column.id for column in columns]),
+            Card.scheduled.is_(False),
+        )
+        if archived_param == "true":
+            counts_query = counts_query.filter(Card.archived.is_(True))
+        elif archived_param == "false":
+            counts_query = counts_query.filter(Card.archived.is_(False))
+        column_card_counts = count_cards_by_column(counts_query)
+
         for column in columns:
             cards_query = db.query(Card).filter(
                 Card.column_id == column.id,
@@ -2849,6 +2862,7 @@ def get_public_board(slug):
                     "created_at": serialize_datetime(column.created_at),
                     "updated_at": serialize_datetime(column.updated_at),
                     "cards": cards_data,
+                    "card_counts": column_card_counts.get(column.id, {"total": 0, "done": 0}),
                 }
             )
 

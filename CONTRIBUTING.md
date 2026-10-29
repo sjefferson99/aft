@@ -775,7 +775,9 @@ change on a large seeded board rather than guessing.
   so clients can patch the card in place. If the change renumbers other cards
   (create, move, reorder, unarchive), also send `column_orders` from
   `get_column_card_orders()` for every affected column. Without it, clients
-  hold stale orders and later drags compute the wrong position. A new field
+  hold stale orders and later drags compute the wrong position. Every card
+  event also sends `column_counts` from `get_column_card_counts()` for each
+  column whose counts it can change (for a move, both columns). A new field
   on board cards goes in `serialize_board_card()`, so the board endpoint and
   the broadcasts stay in step.
 
@@ -803,16 +805,19 @@ change on a large seeded board rather than guessing.
   the interaction and reuse them, or throttle to one update per
   `requestAnimationFrame`.
 - **A WebSocket event handler updating one card does not need to reload the
-  whole board.** Card broadcasts carry the full board card as `card_data`
-  (plus `column_orders` when siblings are renumbered). Pass it to
-  `boardManager.patchCard(card_data, column_orders)`, or call
-  `boardManager.removeCard(card_id)` when only the id is known. Both return
-  false when patching isn't safe: outside the unfiltered task view, while a
-  board load is pending or in flight, for a partial card, or when the patched
-  columns fail the DOM/data consistency check. When they return false, call
-  `scheduleBoardReload()`. A patch keeps `columns`/`originalColumns`, card
+  whole board.** Card broadcasts carry the full board card as `card_data`,
+  the affected columns' `column_counts`, and `column_orders` when siblings
+  are renumbered. Pass them to `boardManager.patchCard(card_data,
+  column_orders, column_counts)`, or call `boardManager.removeCard(card_id,
+  column_counts)` when only the id is known. Both return false when patching
+  isn't safe: outside the unfiltered task view, while a board load is pending
+  or in flight, for a partial card, without counts for every affected column,
+  or when the patched columns fail the DOM/data consistency check. When they
+  return false, call `scheduleBoardReload()`. A patch keeps `columns`, card
   counts, `data-order`, drag caches and collapse state in sync, so update it
-  if you add per-card state to the board. Where a full reload genuinely is
+  if you add per-card state to the board. Column header counts come from the
+  server (`card_counts` per column, `column_counts` in broadcasts), never
+  from counting the cards the client holds. Where a full reload genuinely is
   needed (column changes, `cards_moved`, reconnect), route it through
   `scheduleBoardReload()` rather than calling `loadBoard()` directly, so a
   burst of events coalesces into one reload instead of one per event.

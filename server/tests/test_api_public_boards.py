@@ -330,6 +330,30 @@ class TestPublicBoardsAPI:
         delete_board_response = requests.delete(f"{api_client}/api/boards/{sample_board['id']}")
         assert delete_board_response.status_code == 401
 
+    def test_public_board_card_counts_ignore_done_filter(
+        self, api_client, authenticated_session, sample_board, sample_column
+    ):
+        """card_counts count done cards even when the done filter leaves them out (issue #525 item 2.6)."""
+        cards = [
+            authenticated_session.post(
+                f"{api_client}/api/columns/{sample_column['id']}/cards", json={"title": f"Public count {i}"}
+            ).json()["card"]
+            for i in range(3)
+        ]
+        assert authenticated_session.patch(
+            f"{api_client}/api/cards/{cards[0]['id']}/done", json={"done": True}
+        ).status_code == 200
+        response = authenticated_session.patch(f"{api_client}/api/boards/{sample_board['id']}", json={"is_public": True})
+        assert response.status_code == 200, response.text
+        slug = response.json()["board"]["public_slug"]
+
+        public_response = requests.get(f"{api_client}/api/public/boards/{slug}?archived=false&done=false")
+        assert public_response.status_code == 200
+        column = public_response.json()["board"]["columns"][0]
+        assert len(column["cards"]) == 2
+        assert column["card_counts"] == {"total": 3, "done": 1}
+
+
 @pytest.mark.api
 class TestPublicCardAPI:
     """Test cases for the public single-card read endpoint."""

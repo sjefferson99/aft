@@ -21,6 +21,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 from card_serialization import (
     build_card_broadcast_data,
+    count_cards_by_column,
+    get_column_card_counts,
     get_column_card_orders,
     get_comment_counts,
     serialize_board_card,
@@ -309,6 +311,18 @@ def get_board_cards(board_id):
                       order:
                         type: integer
                         example: 0
+                      card_counts:
+                        type: object
+                        description: >
+                          Active cards in the column (never scheduled templates) under the
+                          archived, search and assignee filters, and how many of them are done.
+                        properties:
+                          total:
+                            type: integer
+                            example: 12
+                          done:
+                            type: integer
+                            example: 4
                       cards:
                         type: array
                         items:
@@ -393,22 +407,15 @@ def get_board_cards(board_id):
         eligible_users = _get_board_assignee_users(db, board_id)
         result["assignee_filter_users"] = [_user_summary(u) for u in eligible_users]
 
-        for column in columns:
-            # Get cards for this column with archived filter
+        def apply_view_filters(cards_query):
             # Always filter out scheduled template cards (scheduled=True) from task views
-            cards_query = db.query(Card).filter(Card.column_id == column.id).filter(Card.scheduled.is_(False))
-            cards_query = cards_query.options(
-                selectinload(Card.assigned_to),
-                selectinload(Card.checklist_items),
-            )
-
+            cards_query = cards_query.filter(Card.scheduled.is_(False))
             cards_query = _apply_assignee_card_filters(
                 cards_query,
                 selected_assignee_ids,
                 include_unassigned,
                 include_secondary_assignees,
             )
-
             cards_query = _apply_text_search_filter(cards_query, text_query, parsed_groups=parsed_text_query)
 
             # Apply archived filter
@@ -417,6 +424,20 @@ def get_board_cards(board_id):
             elif archived_param == 'false':
                 cards_query = cards_query.filter(Card.archived.is_(False))
             # If 'both', don't add archived filter
+            return cards_query
+
+        # Per-column card and done counts for the column headers, in one
+        # grouped query for the whole board.
+        column_card_counts = count_cards_by_column(
+            apply_view_filters(db.query(Card).filter(Card.column_id.in_([column.id for column in columns])))
+        )
+
+        for column in columns:
+            cards_query = apply_view_filters(db.query(Card).filter(Card.column_id == column.id))
+            cards_query = cards_query.options(
+                selectinload(Card.assigned_to),
+                selectinload(Card.checklist_items),
+            )
 
             cards = cards_query.order_by(Card.order).all()
 
@@ -440,6 +461,7 @@ def get_board_cards(board_id):
                 "created_at": serialize_datetime(column.created_at),
                 "updated_at": serialize_datetime(column.updated_at),
                 "cards": cards_data,
+                "card_counts": column_card_counts.get(column.id, {"total": 0, "done": 0}),
             }
             result["columns"].append(column_data)
 
@@ -702,6 +724,7 @@ def create_card(column_id):
                 'card_id': card.id,
                 'card_data': build_card_broadcast_data(db, card),
                 'column_orders': get_column_card_orders(db, [column_id], board_id),
+                'column_counts': get_column_card_counts(db, [column_id], board_id),
             }, board_id, get_request_socket_id())
         else:
             logger.warning(f"Skipping card_created broadcast for card {card.id}: column {column_id} has no board_id")
@@ -1465,7 +1488,10 @@ def update_card(card_id):
                 'card_id': card.id,
                 'column_id': card.column_id,
                 'card_data': build_card_broadcast_data(db, card),
-                'moved': moved
+                'moved': moved,
+                'column_counts': get_column_card_counts(
+                    db, {old_column_id, card.column_id}, column.board_id
+                ),
             }
             if moved:
                 payload['column_orders'] = get_column_card_orders(
@@ -1555,6 +1581,7 @@ def delete_card(card_id):
 
         db.delete(card)
         db.commit()
+        column_counts = get_column_card_counts(db, [column_id], board_id) if board_id else {}
         db.close()
 
         # Broadcast card deletion
@@ -1562,7 +1589,8 @@ def delete_card(card_id):
             _broadcast_event('card_deleted', {
                 'board_id': board_id,
                 'card_id': card_id,
-                'column_id': column_id
+                'column_id': column_id,
+                'column_counts': column_counts,
             }, board_id, socket_id)
         else:
             logger.warning(f"⚠️  Failed to broadcast card_deleted for card {card_id}: column or board_id not found")
@@ -1832,7 +1860,8 @@ def archive_card(card_id):
                 'board_id': board_id,
                 'card_id': card.id,
                 'column_id': card.column_id,
-                'card_data': build_card_broadcast_data(db, card)
+                'card_data': build_card_broadcast_data(db, card),
+                'column_counts': get_column_card_counts(db, [card.column_id], board_id),
             }, board_id, get_request_socket_id())
 
         return jsonify({"success": True, "message": "Card archived successfully", "card": card_dict}), 200
@@ -1929,6 +1958,7 @@ def unarchive_card(card_id):
                 'column_id': card.column_id,
                 'card_data': build_card_broadcast_data(db, card),
                 'column_orders': get_column_card_orders(db, [card.column_id], board_id),
+                'column_counts': get_column_card_counts(db, [card.column_id], board_id),
             }, board_id, get_request_socket_id())
 
         return jsonify({"success": True, "message": "Card unarchived successfully", "card": card_dict}), 200
@@ -2103,7 +2133,8 @@ def update_card_done_status(card_id):
                 'card_id': card.id,
                 'column_id': card.column_id,
                 'done': done_status,
-                'card_data': build_card_broadcast_data(db, card)
+                'card_data': build_card_broadcast_data(db, card),
+                'column_counts': get_column_card_counts(db, [card.column_id], board_id),
             }, board_id, get_request_socket_id())
 
         return jsonify({

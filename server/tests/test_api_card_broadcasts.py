@@ -2,8 +2,10 @@
 
 Card broadcasts carry the card in the same shape as `GET /api/boards/:id/cards`
 (`card_data`) and, for changes that renumber sibling cards, the order of every
-card in the affected columns (`column_orders`). Clients patch the board from
-these payloads instead of refetching it.
+card in the affected columns (`column_orders`). They also carry each affected
+column's active card counts (`column_counts`, issue #525 item 2.6), matching
+the board endpoint's `card_counts`. Clients patch the board from these
+payloads instead of refetching it.
 
 A real Socket.IO client connects through nginx with the test session's cookies
 and joins the board room. Requests from the test session carry no socket id,
@@ -106,6 +108,16 @@ def _assert_orders_match_board(api_client, session, board_id, column_orders, col
     assert column_orders == expected
 
 
+def _assert_counts_match_board(api_client, session, board_id, column_counts, column_ids):
+    """column_counts must hold each column's card_counts from a fresh task-view board fetch."""
+    assert set(column_counts) == {str(column_id) for column_id in column_ids}
+    response = session.get(f"{api_client}/api/boards/{board_id}/cards?archived=false")
+    assert response.status_code == 200, response.text
+    board_counts = {str(column["id"]): column["card_counts"] for column in response.json()["board"]["columns"]}
+    for column_key, counts in column_counts.items():
+        assert counts == board_counts[column_key], f"column {column_key}"
+
+
 @pytest.mark.api
 class TestCardBroadcastPayloads:
 
@@ -127,6 +139,10 @@ class TestCardBroadcastPayloads:
             api_client, authenticated_session, sample_board["id"], data["column_orders"], [sample_column["id"]]
         )
         assert data["column_orders"][str(sample_column["id"])] == {str(top["id"]): 0, str(first["id"]): 1}
+        assert data["column_counts"] == {str(sample_column["id"]): {"total": 2, "done": 0}}
+        _assert_counts_match_board(
+            api_client, authenticated_session, sample_board["id"], data["column_counts"], [sample_column["id"]]
+        )
 
     def test_card_updated_without_move_has_no_column_orders(
         self, api_client, authenticated_session, sample_board, sample_card, board_events
@@ -141,6 +157,9 @@ class TestCardBroadcastPayloads:
         assert "column_orders" not in data
         assert data["card_data"]["title"] == "Renamed"
         _assert_matches_board(api_client, authenticated_session, sample_board["id"], data["card_data"])
+        _assert_counts_match_board(
+            api_client, authenticated_session, sample_board["id"], data["column_counts"], [sample_card["column_id"]]
+        )
 
     def test_card_moved_between_columns_carries_both_column_orders(
         self, api_client, authenticated_session, sample_board, sample_column, second_column, board_events
@@ -165,6 +184,10 @@ class TestCardBroadcastPayloads:
         )
         assert data["column_orders"][str(sample_column["id"])] == {str(staying["id"]): 0}
         assert data["column_orders"][str(second_column["id"])] == {str(moving["id"]): 0, str(target["id"]): 1}
+        assert data["column_counts"] == {
+            str(sample_column["id"]): {"total": 1, "done": 0},
+            str(second_column["id"]): {"total": 2, "done": 0},
+        }
 
     def test_card_reordered_within_column_carries_column_orders(
         self, api_client, authenticated_session, sample_board, sample_column, board_events
@@ -206,6 +229,7 @@ class TestCardBroadcastPayloads:
         assert data["moved"] is True
         assert "old_column_id" not in data
         assert data["column_orders"] == {str(sample_column["id"]): {str(moving["id"]): 0}}
+        assert data["column_counts"] == {str(sample_column["id"]): {"total": 1, "done": 0}}
 
     def test_card_archived_and_unarchived(
         self, api_client, authenticated_session, sample_board, sample_card, board_events
@@ -215,6 +239,7 @@ class TestCardBroadcastPayloads:
         archived = board_events.wait_for("card_archived", sample_card["id"])
         assert archived["card_data"]["archived"] is True
         _assert_matches_board(api_client, authenticated_session, sample_board["id"], archived["card_data"])
+        assert archived["column_counts"] == {str(sample_card["column_id"]): {"total": 0, "done": 0}}
 
         response = authenticated_session.patch(f"{api_client}/api/cards/{sample_card['id']}/unarchive")
         assert response.status_code == 200
@@ -225,6 +250,7 @@ class TestCardBroadcastPayloads:
             api_client, authenticated_session, sample_board["id"], unarchived["column_orders"],
             [sample_card["column_id"]],
         )
+        assert unarchived["column_counts"] == {str(sample_card["column_id"]): {"total": 1, "done": 0}}
 
     def test_card_done_status_changed_carries_board_card(
         self, api_client, authenticated_session, sample_board, sample_card, board_events
@@ -237,6 +263,23 @@ class TestCardBroadcastPayloads:
         assert data["done"] is True
         assert data["card_data"]["done"] is True
         _assert_matches_board(api_client, authenticated_session, sample_board["id"], data["card_data"])
+        assert data["column_counts"] == {str(sample_card["column_id"]): {"total": 1, "done": 1}}
+
+    def test_card_deleted_carries_column_counts(
+        self, api_client, authenticated_session, sample_board, sample_column, board_events
+    ):
+        doomed = _create_card(api_client, authenticated_session, sample_column["id"], "Doomed")
+        _create_card(api_client, authenticated_session, sample_column["id"], "Kept")
+
+        response = authenticated_session.delete(f"{api_client}/api/cards/{doomed['id']}")
+        assert response.status_code == 200
+        data = board_events.wait_for("card_deleted", doomed["id"])
+
+        assert data["column_id"] == sample_column["id"]
+        assert data["column_counts"] == {str(sample_column["id"]): {"total": 1, "done": 0}}
+        _assert_counts_match_board(
+            api_client, authenticated_session, sample_board["id"], data["column_counts"], [sample_column["id"]]
+        )
 
     def test_card_data_includes_assignee_and_comment_count(
         self, api_client, authenticated_session, sample_board, sample_card, board_events
@@ -277,6 +320,7 @@ class TestChecklistBroadcastPayloads:
         added = board_events.wait_for("checklist_item_added", sample_card["id"])
         assert added["item_id"] == item_id
         assert [item["id"] for item in added["card_data"]["checklist_items"]] == [item_id]
+        assert added["column_counts"] == {str(sample_card["column_id"]): {"total": 1, "done": 0}}
         _assert_matches_board(api_client, authenticated_session, sample_board["id"], added["card_data"])
 
         response = authenticated_session.patch(
@@ -285,6 +329,7 @@ class TestChecklistBroadcastPayloads:
         assert response.status_code == 200
         updated = board_events.wait_for("checklist_item_updated", sample_card["id"])
         assert updated["card_data"]["checklist_items"][0]["checked"] is True
+        assert updated["column_counts"] == {str(sample_card["column_id"]): {"total": 1, "done": 0}}
         _assert_matches_board(api_client, authenticated_session, sample_board["id"], updated["card_data"])
 
         response = authenticated_session.delete(f"{api_client}/api/checklist-items/{item_id}")
@@ -292,4 +337,5 @@ class TestChecklistBroadcastPayloads:
         deleted = board_events.wait_for("checklist_item_deleted", sample_card["id"])
         assert deleted["item_id"] == item_id
         assert deleted["card_data"]["checklist_items"] == []
+        assert deleted["column_counts"] == {str(sample_card["column_id"]): {"total": 1, "done": 0}}
         _assert_matches_board(api_client, authenticated_session, sample_board["id"], deleted["card_data"])
