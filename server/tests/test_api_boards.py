@@ -726,6 +726,117 @@ class TestBoardsAPI:
         response = second_user_session.get(f'{api_client}/api/boards/{sample_board["id"]}/export')
         assert response.status_code == 403
 
+    def test_export_import_round_trip_preserves_card_dates(
+        self, api_client, authenticated_session, sample_board, sample_column
+    ):
+        """Card start/end dates and done time survive an AFT export then import."""
+        # Only agile boards record done_datetime when a card is marked done.
+        style_response = authenticated_session.put(
+            f'{api_client}/api/boards/{sample_board["id"]}/settings/working-style',
+            json={'value': 'agile'},
+        )
+        assert style_response.status_code == 200, style_response.text
+
+        card_response = authenticated_session.post(
+            f'{api_client}/api/columns/{sample_column["id"]}/cards',
+            json={
+                'title': 'Dated card',
+                'start_date': '2026-11-02T09:00:00',
+                'end_date': '2026-11-06T17:00:00',
+            },
+        )
+        assert card_response.status_code == 201, card_response.text
+        card_id = card_response.json()['card']['id']
+        done_response = authenticated_session.patch(
+            f'{api_client}/api/cards/{card_id}/done', json={'done': True}
+        )
+        assert done_response.status_code == 200, done_response.text
+
+        export_response = authenticated_session.get(f'{api_client}/api/boards/{sample_board["id"]}/export')
+        assert export_response.status_code == 200
+        source_export = export_response.json()
+        assert source_export['export']['format_version'] == '1.1'
+        source_card = next(c for c in source_export['cards'] if c['id'] == card_id)
+        assert source_card['start_date'] is not None
+        assert source_card['end_date'] is not None
+        assert source_card['done'] is True
+        assert source_card['done_datetime'] is not None
+
+        import_response = authenticated_session.post(
+            f'{api_client}/api/boards/import',
+            data={'duplicate_strategy': 'append_suffix'},
+            files={'file': ('board-export.json', json.dumps(source_export), 'application/json')},
+        )
+        assert import_response.status_code == 201, import_response.text
+        imported_board_id = import_response.json()['board']['id']
+
+        reexport_response = authenticated_session.get(f'{api_client}/api/boards/{imported_board_id}/export')
+        assert reexport_response.status_code == 200
+        imported_cards = reexport_response.json()['cards']
+        assert len(imported_cards) == 1
+        imported_card = imported_cards[0]
+        for field_name in ('start_date', 'end_date', 'done', 'done_datetime'):
+            assert imported_card[field_name] == source_card[field_name], field_name
+
+    def test_import_board_done_datetime_kept_only_for_done_cards(
+        self, api_client, authenticated_session
+    ):
+        """done_datetime is copied for done cards, and dropped for cards not done."""
+        payload = build_minimal_board_import_payload(f'Done Card Import {uuid.uuid4().hex[:8]}')
+        payload['cards'][0]['done'] = True
+        payload['cards'][0]['done_datetime'] = '2026-03-27T12:30:00Z'
+        not_done_card = dict(payload['cards'][0], id=101, order=1, done=False)
+        payload['cards'].append(not_done_card)
+
+        import_response = authenticated_session.post(
+            f'{api_client}/api/boards/import',
+            data={'duplicate_strategy': 'cancel'},
+            files={'file': ('board-import.json', json.dumps(payload), 'application/json')},
+        )
+        assert import_response.status_code == 201, import_response.text
+        imported_board_id = import_response.json()['board']['id']
+
+        export_response = authenticated_session.get(f'{api_client}/api/boards/{imported_board_id}/export')
+        assert export_response.status_code == 200
+        done_card, not_done_card = sorted(
+            export_response.json()['cards'], key=lambda card: card['order']
+        )
+        assert done_card['done'] is True
+        assert done_card['done_datetime'].startswith('2026-03-27T12:30:00')
+        assert not_done_card['done'] is False
+        assert not_done_card['done_datetime'] is None
+
+    def test_import_board_public_source_imported_as_private_with_warning(
+        self, api_client, authenticated_session, sample_board
+    ):
+        """Public boards export is_public but no slug, and always import as private."""
+        public_response = authenticated_session.patch(
+            f'{api_client}/api/boards/{sample_board["id"]}',
+            json={'is_public': True},
+        )
+        assert public_response.status_code == 200, public_response.text
+
+        export_response = authenticated_session.get(f'{api_client}/api/boards/{sample_board["id"]}/export')
+        assert export_response.status_code == 200
+        source_export = export_response.json()
+        assert source_export['board']['is_public'] is True
+        assert 'public_slug' not in source_export['board']
+
+        import_response = authenticated_session.post(
+            f'{api_client}/api/boards/import',
+            data={'duplicate_strategy': 'append_suffix'},
+            files={'file': ('board-export.json', json.dumps(source_export), 'application/json')},
+        )
+        assert import_response.status_code == 201, import_response.text
+        import_data = import_response.json()
+        assert any('public' in warning for warning in import_data['import_meta']['warnings'])
+
+        reexport_response = authenticated_session.get(
+            f'{api_client}/api/boards/{import_data["board"]["id"]}/export'
+        )
+        assert reexport_response.status_code == 200
+        assert reexport_response.json()['board']['is_public'] is False
+
     def test_import_board_success_and_assignees_not_mapped(self, api_client, authenticated_session):
         """Import succeeds and imported assignees are intentionally not mapped."""
         unique_board_name = f'Imported Board Success {uuid.uuid4().hex[:8]}'

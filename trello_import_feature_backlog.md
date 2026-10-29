@@ -3,7 +3,7 @@
 This document tracks two related sets of work:
 
 1. **Trello-specific features** that have no current AFT equivalent and are dropped or warned on import — to be revisited when those AFT features land.
-2. **Native AFT import/export gaps** — features that exist in AFT today but are not yet covered by the `aft-board` v1.0 export/import format. Each of these also has implications for the Trello importer.
+2. **Native AFT import/export gaps** — features that exist in AFT today but are not yet covered by the `aft-board` export/import format (currently v1.1). Each of these also has implications for the Trello importer.
 
 When implementing any item in either section, update `TrelloBoardImportHandler` in `server/board_import_handlers.py` to take advantage of the new capability.
 
@@ -25,8 +25,8 @@ These are straightforward mappings that the initial Trello importer should imple
 | `cards[].desc` | `cards[].description` | Direct; label tags and URL attachments appended here too |
 | `cards[].closed` | `cards[].archived` | Direct; modal option controls whether archived cards are included |
 | `cards[].dueComplete` | `cards[].done` | Direct — `true` maps to done |
-| `cards[].due` | `cards[].end_date` | Depends on native format gap (Part 2, item 1) being closed |
-| `cards[].start` | `cards[].start_date` | Depends on native format gap (Part 2, item 1) being closed |
+| `cards[].due` | `cards[].end_date` | Direct |
+| `cards[].start` | `cards[].start_date` | Direct |
 | `cards[].pos` | `cards[].order` | Re-index per list by sort position |
 | `checklists[].checkItems[].name` | `checklists[].name` | Prefixed with group name: `"GroupName: Item"` when card has multiple checklists |
 | `checklists[].checkItems[].state` | `checklists[].checked` | `"complete"` → `true` |
@@ -80,41 +80,26 @@ These are straightforward mappings that the initial Trello importer should imple
 
 ## Part 2: Native AFT Import/Export — Existing features not yet in the format
 
-These AFT features exist in the application today but are absent from the `aft-board` v1.0 export/import format. They should each be raised as a native import/export backlog item. The Trello importer depends on some of these being resolved (noted inline).
+These AFT features exist in the application today but are not fully covered by the `aft-board` export/import format.
 
-### 1. Card start_date and end_date
+### Closed in format v1.1 (#494)
 
-**AFT feature**: `Card.start_date` and `Card.end_date` columns, added in migration `033_add_start_end_date_to_cards.py`, used by the Planner.  
-**Export gap**: Neither field appears in the `cards[]` export block (`board_routes.py` ~lines 1050–1066).  
-**Import gap**: Neither field is parsed or written on import.  
-**Trello implication**: The Trello importer maps `due` → `end_date` and `start` → `start_date`. These mappings will silently no-op until this native gap is closed. Close this native gap first, then the Trello importer will pick them up automatically.
+- **Card `start_date`/`end_date`** are exported and imported. Trello `due`/`start` and CSV dates already used the same import path.
+- **Card `done_datetime`** is restored on import for done cards. Kanban boards don't record one, so it can be empty.
+- **Board `is_public`** is exported for information only. Imports are always private and `public_slug` is never exported, because a carried-over slug could collide or publish a board without anyone choosing to. When the source board was public, `import_meta.warnings` says so. The import modal doesn't show post-import warnings yet.
 
-### 2. Primary assignee — user mapping
+### 1. Primary and secondary assignees — user mapping (#585)
 
-**AFT feature**: `Card.assigned_to_id`. The field is exported but the importer explicitly sets it to `None`, pending a cross-instance user-mapping solution.  
-**Current state**: Import meta returns `"assignee_mapping": "not_mapped"`. The count of ignored assignees is logged.  
-**What's needed**: A user-mapping step — either a pre-import mapping table in the modal, or a post-import reassignment UI — to resolve exported user IDs to users in the target instance.  
-**Trello implication**: Trello `idMembers` (card members) would map to the primary assignee once this is resolved. Currently dropped on Trello import for the same reason.
+**AFT feature**: `Card.assigned_to_id` and the `CardSecondaryAssignee` table. Both are exported as raw user IDs, and AFT imports ignore them on purpose, because IDs collide across instances.
+**Current state**: Import meta returns `"assignee_mapping": "not_mapped"` with `ignored_primary_assignees_count` and `ignored_secondary_assignees_count`.
+**What's needed**: Export a `users` block (source ID, username, display name) and reuse the Trello `member_map` flow in the import modal to map source users to local ones.
+**Trello**: Already supported. `idMembers` map to primary and secondary assignees through `member_map`.
 
-### 3. Secondary assignees — user mapping
+### 2. Board roles and permissions (#585)
 
-**AFT feature**: `CardSecondaryAssignee` table. Exported but silently discarded on import (same user-mapping problem as above).  
-**What's needed**: The same user-mapping solution as primary assignee; handle both in the same implementation pass.  
-**Trello implication**: Same as above — Trello has no direct secondary assignee concept, but resolving this unblocks full assignee support in the native format.
-
-### 4. Board public visibility
-
-**AFT feature**: `Board.is_public` and `Board.public_slug`, added in migration `027_add_public_board_visibility.py`.  
-**Export gap**: Neither field appears in the exported board object.  
-**Import behaviour**: All imported boards are always created as private regardless of the source board's setting.  
-**Decision needed when implementing**: Whether imported boards should ever carry over a public flag (probably not — private is the safer default, the user can publish after import).
-
-### 5. Board roles and permissions
-
-**AFT feature**: Board-scoped roles and permissions via `UserRole`/`Role` tables.  
-**Export gap**: Not exported.  
-**Import behaviour**: The imported board is owned by the importing user; no other role assignments are preserved.  
-**Note**: This shares the cross-instance user identity problem with assignee mapping (items 2–3 above) and is likely lower priority until that is resolved.
+**AFT feature**: Board-scoped roles via `UserRole`/`Role`.
+**Export gap**: Not exported. The imported board is owned by the importing user, with no other role assignments.
+**Note**: This has the same cross-instance user identity problem as item 1, so implement it with the same user mapping.
 
 ---
 
