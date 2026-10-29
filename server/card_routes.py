@@ -17,7 +17,7 @@ Extracted from app.py – all card-related endpoints:
 from flask import Blueprint, jsonify, request, g
 import logging
 from datetime import timedelta
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import selectinload
 from card_serialization import (
     build_card_broadcast_data,
@@ -115,6 +115,24 @@ def _normalize_column_name(column_name):
 def _is_done_like_column_name(column_name):
     normalized = _normalize_column_name(column_name)
     return normalized in DONE_COLUMN_NAME_SYNONYMS
+
+
+def _renumber_cards(db, card_ids, first_order, values=None):
+    """Set the cards' order to first_order, first_order + 1, ... in list order.
+
+    One UPDATE with a CASE on the card id, instead of one UPDATE per card.
+    `values` adds further columns to set on every card.
+    """
+    if not card_ids:
+        return
+    update_values = {
+        Card.order: case(
+            {card_id: first_order + index for index, card_id in enumerate(card_ids)},
+            value=Card.id,
+        )
+    }
+    update_values.update(values or {})
+    db.query(Card).filter(Card.id.in_(card_ids)).update(update_values, synchronize_session=False)
 
 
 # ---------------------------------------------------------------------------
@@ -949,45 +967,37 @@ def move_all_cards_in_column(source_column_id):
         if not target_board:
             return jsonify({"success": False, "message": "Access denied to target board"}), 403
 
-        # Get cards from source column, optionally filtering out archived cards
-        source_query = db.query(Card).filter(Card.column_id == source_column_id)
+        # Get cards from source column, optionally filtering out archived cards.
+        # Only ids are loaded: the moves below are bulk UPDATEs.
+        source_query = db.query(Card.id).filter(Card.column_id == source_column_id)
         if not include_archived:
             source_query = source_query.filter(Card.archived.is_(False))
-        source_cards = source_query.order_by(Card.order).all()
+        source_card_ids = [card_id for (card_id,) in source_query.order_by(Card.order).all()]
 
-        if not source_cards:
+        if not source_card_ids:
             return jsonify({"success": True, "message": "No cards to move", "moved_count": 0}), 200
 
         # Get cards in target column to calculate new order values
-        target_cards = (
-            db.query(Card)
+        target_card_ids = [
+            card_id for (card_id,) in db.query(Card.id)
             .filter(Card.column_id == target_column_id)
             .order_by(Card.order)
             .all()
-        )
+        ]
 
         # Calculate new order values based on position
-        target_is_done_like = _is_done_like_column_name(target_column.name)
+        moved_values = {Card.column_id: target_column_id}
+        if _is_done_like_column_name(target_column.name):
+            moved_values[Card.done_datetime] = utc_now()
         if position == "top":
             # Move existing target cards down to make room
-            for i, card in enumerate(target_cards):
-                card.order = i + len(source_cards)
-
+            _renumber_cards(db, target_card_ids, len(source_card_ids))
             # Place source cards at top (maintain original order)
-            for i, card in enumerate(source_cards):
-                card.column_id = target_column_id
-                card.order = i
-                if target_is_done_like:
-                    card.done_datetime = utc_now()
+            _renumber_cards(db, source_card_ids, 0, moved_values)
         else:  # bottom
             # Target cards keep their order
             # Source cards go after target cards
-            start_order = len(target_cards)
-            for i, card in enumerate(source_cards):
-                card.column_id = target_column_id
-                card.order = start_order + i
-                if target_is_done_like:
-                    card.done_datetime = utc_now()
+            _renumber_cards(db, source_card_ids, len(target_card_ids), moved_values)
 
         db.commit()
 
@@ -997,7 +1007,7 @@ def move_all_cards_in_column(source_column_id):
                 'board_id': source_column.board_id,
                 'source_column_id': source_column_id,
                 'target_column_id': target_column_id,
-                'moved_count': len(source_cards),
+                'moved_count': len(source_card_ids),
                 'position': position
             }, source_column.board_id, get_request_socket_id())
 
@@ -1005,8 +1015,8 @@ def move_all_cards_in_column(source_column_id):
             jsonify(
                 {
                     "success": True,
-                    "message": f"Moved {len(source_cards)} cards",
-                    "moved_count": len(source_cards),
+                    "message": f"Moved {len(source_card_ids)} cards",
+                    "moved_count": len(source_card_ids),
                 }
             ),
             200,

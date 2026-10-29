@@ -449,12 +449,11 @@ def test_patched_cards_keep_collapse_state(logged_in_page, api_session, ui_base_
 
     _assert_no_reload(page)
 
-    # A card taller than the collapse height arrives collapsed. Build it while
-    # archived (checklist events still reload), then patch it in by unarchiving.
+    # A card that grows past the collapse height as checklist items are added
+    # becomes collapsed.
     resp = api_session.post(f"{ui_base_url}/api/columns/{data['col_b']['id']}/cards", json={"title": "Tall card"})
     assert resp.status_code == 201
     new_id = resp.json()["card"]["id"]
-    assert api_session.patch(f"{ui_base_url}/api/cards/{new_id}/archive").status_code == 200
     for i in range(CHECKLIST_ITEM_COUNT):
         item_resp = api_session.post(
             f"{ui_base_url}/api/cards/{new_id}/checklist-items",
@@ -462,19 +461,40 @@ def test_patched_cards_keep_collapse_state(logged_in_page, api_session, ui_base_
         )
         assert item_resp.status_code == 201
     page.wait_for_function(
-        "() => !window.boardManager.boardReloadDebounceTimeoutId && !window.boardManager.currentLoadController",
-        timeout=8000,
-    )
-    page.wait_for_timeout(RELOAD_SETTLE_MS)
-    page.evaluate("() => { window.__aftLoadBoardCalls = 0; window.__aftRenderBoardCalls = 0; }")
-
-    assert api_session.patch(f"{ui_base_url}/api/cards/{new_id}/unarchive").status_code == 200
-    page.wait_for_function(
         "id => document.querySelector(`.card[data-card-id=\"${id}\"]`)?.classList.contains('collapsed')",
         arg=new_id,
         timeout=8000,
     )
     _assert_no_reload(page)
+
+
+@pytest.mark.ui
+def test_checklist_events_are_patched(logged_in_page, api_session, ui_base_url, board_with_cards):
+    page = logged_in_page
+    data = board_with_cards
+    _open_board_for_patching(page, data["board"]["id"])
+
+    card_id = data["short_card"]["id"]
+    summary = _card(page, card_id).locator(".card-checklist-summary")
+
+    resp = api_session.post(
+        f"{ui_base_url}/api/cards/{card_id}/checklist-items", json={"name": "Patched item", "checked": False}
+    )
+    assert resp.status_code == 201
+    item_id = resp.json()["checklist_item"]["id"]
+    summary.filter(has_text="0/1 (0%)").wait_for(timeout=8000)
+    _assert_no_reload(page)
+
+    resp = api_session.patch(f"{ui_base_url}/api/checklist-items/{item_id}", json={"checked": True})
+    assert resp.status_code == 200
+    summary.filter(has_text="1/1 (100%)").wait_for(timeout=8000)
+    assert _card(page, card_id).locator(".card-checklist-checkbox").is_checked()
+    _assert_no_reload(page)
+
+    assert api_session.delete(f"{ui_base_url}/api/checklist-items/{item_id}").status_code == 200
+    _card(page, card_id).locator(".card-checklist").wait_for(state="detached", timeout=8000)
+    _assert_no_reload(page)
+    _assert_board_matches_api(page, api_session, ui_base_url, data["board"]["id"])
 
 
 @pytest.mark.ui

@@ -1,6 +1,6 @@
 # Performance Review: Board Updates at Scale
 
-Status: Tier 1 implemented and measured; Tier 2 items 2.1, 2.2, 2.9 and 2.3a-c implemented and measured; 2.4/2.5 measured and deferred until after 2.3; the rest of Tier 2 and Tier 3 still proposal-only
+Status: Tier 1 implemented and measured; Tier 2 items 2.1, 2.2, 2.3 and 2.9 implemented and measured; 2.4/2.5 measured and deferred until after 2.3; the rest of Tier 2 and Tier 3 still proposal-only
 Scope: the board view (`www/js/board.js`, `www/css/board.css`) and the board read/write API (`server/card_routes.py`, `server/board_routes.py`, `server/broadcasting.py`)
 Trigger: board interactions degrade sharply once columns exceed ~100 cards, including when the change is on a *different* column
 
@@ -628,8 +628,12 @@ split into phases (tracked in issue #525):
   (−91%), with **0** `loadBoard()`/`renderBoard()` calls per edit instead of 1. About 33 ms of
   the 43 ms is the two animation frames the probe waits for. Covered by the patching tests in
   `ui-tests/tests/test_board_interactions.py`.
-- **2.3d** patches checklist changes. The `checklist_item_*` events already carry the full
-  card, so they can go through `patchCard()` like a non-move `card_updated`.
+- **2.3d (client, implemented).** `checklist_item_added`, `checklist_item_updated` and
+  `checklist_item_deleted` carry the full card, so they go through `patchCard()` like a
+  non-move `card_updated`: the card node is replaced, refreshing its checklist block and
+  summary and re-running the collapse check. An open card modal was never refreshed by the
+  old full reload either, so nothing is lost there. Covered by
+  `test_checklist_events_are_patched`.
 
 The original proposal follows.
 
@@ -778,7 +782,19 @@ public endpoint already accepts a `done` query param
 ([board_routes.py:2793](../server/board_routes.py#L2793)) — mirror it on the authenticated
 endpoint. Depends on 2.6 for the counts, which is why it is not in Tier 1.
 
-### 2.8 Bulk UPDATE for move-all-cards — **0.5 day**
+### 2.8 Bulk UPDATE for move-all-cards — **0.5 day** — ✅ implemented and measured
+
+**Implemented:** `move_all_cards_in_column()` loads only card ids and renumbers each group
+with one `UPDATE ... SET order = CASE id ... END` (`_renumber_cards()` in
+`server/card_routes.py`), instead of loading ORM instances and flushing one UPDATE per card.
+A plain `order = order + n` shift, as below, would not reproduce the existing dense
+renumbering of target cards when their stored orders have gaps or ties, so the CASE form keeps
+the result identical (pinned by `test_move_all_cards_to_top_renumbers_target_with_gaps`).
+Measured on the dev stack, moving 100 cards into a column of 100, median of 5:
+**top 46 → 20 ms (−57%)**, **bottom 31 → 16 ms (−48%)**.
+
+#### Original proposal
+
 
 [card_routes.py:969-989](../server/card_routes.py#L969-L989) reassigns `card.order` in a
 Python loop over ORM instances, producing one UPDATE per row on flush. Moving 100 cards into
