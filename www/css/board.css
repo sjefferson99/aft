@@ -1169,6 +1169,14 @@
   color: var(--text-color);
 }
 
+/* Card title textarea: looks like a single-line input but wraps long titles */
+.form-group textarea.title-textarea {
+  padding: 10px 12px;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
 .form-group textarea:focus {
   outline: none;
   border-color: var(--primary-color);
