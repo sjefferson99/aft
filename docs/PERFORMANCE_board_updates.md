@@ -1,6 +1,6 @@
 # Performance Review: Board Updates at Scale
 
-Status: Tier 1 implemented and measured; Tier 2 items 2.1, 2.2 and 2.9 implemented and measured; 2.4/2.5 measured and deferred until after 2.3; the rest of Tier 2 and Tier 3 still proposal-only
+Status: Tier 1 implemented and measured; Tier 2 items 2.1, 2.2, 2.9 and 2.3a-c implemented and measured; 2.4/2.5 measured and deferred until after 2.3; the rest of Tier 2 and Tier 3 still proposal-only
 Scope: the board view (`www/js/board.js`, `www/css/board.css`) and the board read/write API (`server/card_routes.py`, `server/board_routes.py`, `server/broadcasting.py`)
 Trigger: board interactions degrade sharply once columns exceed ~100 cards, including when the change is on a *different* column
 
@@ -607,8 +607,29 @@ split into phases (tracked in issue #525):
   Not yet enriched: broadcasts from `schedule_routes.py` schedule create/delete and the card
   scheduler. Clients should fall back to a full reload for any event without the full card
   shape.
-- **2.3b** extracts `renderCard()`, **2.3c** patches the DOM from these payloads, and **2.3d**
-  patches checklist changes.
+- **2.3b (client, implemented).** Extracts `renderCard()` from `renderBoard()`.
+- **2.3c (client, implemented).** `card_created`, `card_updated` (edit or move),
+  `card_deleted`, `card_archived`, `card_unarchived` and `card_done_status_changed` are
+  patched into the board by `BoardManager.patchCard()` / `removeCard()` in `www/js/board.js`.
+  A patch updates `columns` and `originalColumns`, applies `column_orders` to the card data
+  and every node's `data-order`, inserts the node by order, rewrites the affected columns'
+  counts, invalidates their drag-midpoint caches, collapses an overflowing node (keeping it
+  expanded if the user had expanded it) and refreshes the planner. It falls back to
+  `scheduleBoardReload()` outside the unfiltered task view (public board, scheduled or
+  archived view, search or assignee filter active), while a board load is pending or in
+  flight, for an event without the full card shape, for the card being dragged, and when a
+  consistency check fails: after patching, each affected column's card nodes must be in the
+  same order as its card data. Other clients now also see done toggles; nothing listened for
+  `card_done_status_changed` before. Inserting above the visible cards relies on the
+  browser's scroll anchoring (Chromium and Firefox) to keep the column in place; without it
+  the content shifts, as it already did on a full reload.
+  Measured with `perf-tests/patch_probe.py` on the 800-card board (one title edit by another
+  client, 15 edits, Chromium headless): broadcast to settled board **489 ms → 43 ms median**
+  (−91%), with **0** `loadBoard()`/`renderBoard()` calls per edit instead of 1. About 33 ms of
+  the 43 ms is the two animation frames the probe waits for. Covered by the patching tests in
+  `ui-tests/tests/test_board_interactions.py`.
+- **2.3d** patches checklist changes. The `checklist_item_*` events already carry the full
+  card, so they can go through `patchCard()` like a non-move `card_updated`.
 
 The original proposal follows.
 

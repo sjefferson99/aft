@@ -109,6 +109,17 @@ is bimodal from run to run and can hide small changes. To compare before and aft
 run it against each version of `www/js/board.js`. `www` is bind-mounted, so no
 rebuild is needed.
 
+To time a single card change from another client instead:
+
+```sh
+.venv/Scripts/python.exe perf-tests/patch_probe.py 1 10
+```
+
+Edits a card's title through the API 10 times and reports how long the page takes
+to settle after each `card_updated` broadcast, plus `loadBoard()`/`renderBoard()`
+calls per edit. It runs once with in-place patching and once with patching
+disabled (the full-reload fallback), on the same page.
+
 ### 4. Check payload/compression separately
 
 ```sh
@@ -140,6 +151,7 @@ from a change.
 | `api_probe.py` | Repeats the board-endpoint GET and reads back `PERF_PROBE` log lines |
 | `browser_probe.py` | Playwright + raw CDP trace of a board load |
 | `render_probe.py` | Times repeated `renderBoard()` calls on a loaded board (re-render cost) |
+| `patch_probe.py` | Times a board settling after another client edits a card, patched vs full reload |
 | `payload_check.py` | Payload size / gzip ratio / actual `Content-Encoding` check |
 | `run_all.py` | Orchestrates host specs + API + browser measurement; writes `results/` |
 | `DRAG_MEASUREMENT.md` | Manual Chrome DevTools procedure for drag timing |
