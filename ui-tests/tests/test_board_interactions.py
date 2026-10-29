@@ -553,3 +553,25 @@ def test_card_event_reloads_in_archived_view(logged_in_page, api_session, ui_bas
 
     load_calls, _ = _reload_calls(page)
     assert load_calls >= 1
+
+
+@pytest.mark.ui
+def test_agile_task_view_requests_only_not_done_cards(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """The agile task view asks the server for not-done cards only; counts still include done (item 2.7)."""
+    page = logged_in_page
+    data = board_with_cards
+    board_id = data["board"]["id"]
+    resp = api_session.put(f"{ui_base_url}/api/boards/{board_id}/settings/working-style", json={"value": "agile"})
+    assert resp.status_code == 200
+    short_id = data["short_card"]["id"]
+    assert api_session.patch(f"{ui_base_url}/api/cards/{short_id}/done", json={"done": True}).status_code == 200
+
+    page.set_viewport_size({"width": 1280, "height": 800})
+    with page.expect_request(lambda request: f"/api/boards/{board_id}/cards?" in request.url) as board_request:
+        page.goto(f"/board.html?id={board_id}")
+    _card(page, data["long_card"]["id"]).wait_for(state="visible", timeout=8000)
+
+    assert "done=false" in board_request.value.url
+    assert _card(page, short_id).count() == 0
+    count_text = page.locator(f'.column[data-column-id="{data["col_a"]["id"]}"] .card-count').text_content()
+    assert count_text == "(1/2)"
