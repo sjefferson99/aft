@@ -942,6 +942,9 @@ Brief description of the changes
 - [ ] No sensitive data exposed
 - [ ] Security tests added (if applicable)
 
+## Release Notes (if applicable)
+What admins or integrators need to know, and anything they must check or change on upgrade
+
 ## Screenshots (if applicable)
 Add screenshots for UI changes
 
@@ -953,6 +956,26 @@ Add screenshots for UI changes
 - [ ] Security reviewed
 - [ ] Performance at scale checked (if touching a board-scale endpoint or board.js rendering — see [Performance Considerations](#performance-considerations))
 ```
+
+### Labels and Release Notes
+
+Release notes are generated from PR labels using [.github/release.yml](.github/release.yml). Before merging, give every PR at least one label from the table below. A PR appears once in the notes, under the first matching section in this order:
+
+| Release notes section | Label(s) | Use for |
+|---|---|---|
+| ⚠️ Breaking changes | `breaking-change` | API responses, endpoints or behaviour that integrations rely on change incompatibly |
+| ⚠️ Upgrade notes | `upgrade-note` | Admins should check or act on this when upgrading: new or changed `.env`/compose settings, changed defaults, resource limits |
+| Performance | `performance` | Faster or lighter: speed, memory, payload size |
+| Enhancements | `enhancement` | New features or improvements |
+| Bug fixes | `bug` | Fixes for incorrect behaviour |
+| Security | `security` | Security fixes and hardening, including Snyk upgrade PRs |
+| Dependencies | `dependencies` | Dependency bumps (Dependabot adds this label automatically) |
+| Housekeeping | `documentation`, `maintenance`, `tests`, `CI/CD` | Docs, agent guidance, tooling, tests and CI |
+| Excluded | `skip-release-notes` | Changes not worth listing, such as reverts of unreleased work |
+
+Add `breaking-change` or `upgrade-note` alongside the normal category label (for example `upgrade-note` + `enhancement`). The PR is then listed under the warning section. Descriptive labels such as `UX/UI`, `mobile`, `API` and `docker` can be added too. They don't affect the grouping.
+
+When a PR has the `breaking-change` or `upgrade-note` label, its description must include a **Release notes** section. Say what changed, who is affected and exactly what they need to do. Generated notes only show PR titles, so this section is what the person writing the release notes expands from.
 
 ### Review Process
 

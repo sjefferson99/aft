@@ -88,6 +88,14 @@ Non-obvious behaviour that is easy to break:
   A footer at the bottom is not enough, because readers see the top first. Check the final body string before each post. If a comment went out without the line, edit it immediately. Write the JSON with Python's `json.dump` and send it with `gh api repos/{owner}/{repo}/issues/comments/{id} -X PATCH --input <file>`, then confirm with a GET. On Windows/Git Bash, `-f body=@path` posts the literal path string instead of the file contents.
 - **After an approved fix**, re-run the reproduction that found the bug to confirm the fix. Leave resolving or closing review threads to the user.
 
+## PR labels and release notes
+
+- When opening a PR, label it as described in CONTRIBUTING.md "Labels and Release Notes". If admins must check or act on anything when upgrading, add `upgrade-note` and a "Release notes" section to the PR description. Use `breaking-change` the same way for incompatible API changes. Label Snyk PRs `security`.
+- To draft release notes, generate the grouped list without creating a release:
+  `gh api repos/sjefferson99/aft/releases/generate-notes -f tag_name=<new tag> -f previous_tag_name=<last tag> -q .body`
+  Then rewrite each line in plain language, in the style of earlier releases. Expand `breaking-change` and `upgrade-note` entries from the "Release notes" section of each PR. A PR that is both a feature and an upgrade risk is grouped only under Upgrade notes, so also mention it in the feature section where relevant. Before drafting, check that every merged PR since the last tag has a category label:
+  `gh pr list --state merged --search "merged:><last release date>" --json number,title,labels`
+
 ## Dependabot PR processing
 
 1. List open PRs: `gh pr list --author app/dependabot`.
