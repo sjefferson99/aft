@@ -809,22 +809,21 @@ class WebSocketManager {
     this.boardManager.scheduleBoardReload();
   }
 
+  // Checklist events carry the whole card, so the card node is replaced with
+  // its updated checklist block and summary.
   handleChecklistItemAdded(data) {
     // A checklist item was added on another client
-    // Reload board to reflect checklist changes
-    this.boardManager.scheduleBoardReload();
+    this.patchCardOrReload(data);
   }
 
   handleChecklistItemUpdated(data) {
     // A checklist item was updated on another client
-    // Reload board to reflect checklist changes in the card detail modal
-    this.boardManager.scheduleBoardReload();
+    this.patchCardOrReload(data);
   }
 
   handleChecklistItemDeleted(data) {
     // A checklist item was deleted on another client
-    // Reload board to reflect checklist changes
-    this.boardManager.scheduleBoardReload();
+    this.patchCardOrReload(data);
   }
 
   handleColumnUpdated(data) {
