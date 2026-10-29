@@ -1875,8 +1875,8 @@ def import_board_from_export():
             )
 
             card_done = coerce_bool(card.get("done"), default=False)
-            # Done cards always carry a completion time, matching marking a card done in the app.
-            done_datetime = (parse_iso_datetime(card.get("done_datetime")) or utc_now()) if card_done else None
+            # Carry the source time over as-is; kanban boards record no done time, so None is valid.
+            done_datetime = parse_iso_datetime(card.get("done_datetime")) if card_done else None
 
             new_card = Card(
                 column_id=old_to_new_column_id[source_column_id],

@@ -85,7 +85,7 @@ These AFT features exist in the application today but are not fully covered by t
 ### Closed in format v1.1 (#494)
 
 - **Card `start_date`/`end_date`** are exported and imported. Trello `due`/`start` and CSV dates already used the same import path.
-- **Card `done_datetime`** is restored on import. Done cards with no source timestamp get the import time.
+- **Card `done_datetime`** is restored on import for done cards. Kanban boards don't record one, so it can be empty.
 - **Board `is_public`** is exported for information only. Imports are always private and `public_slug` is never exported, because a carried-over slug could collide or publish a board without anyone choosing to. When the source board was public, `import_meta.warnings` says so. The import modal doesn't show post-import warnings yet.
 
 ### 1. Primary and secondary assignees — user mapping (#585)

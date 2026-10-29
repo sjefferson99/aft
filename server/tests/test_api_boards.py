@@ -730,6 +730,13 @@ class TestBoardsAPI:
         self, api_client, authenticated_session, sample_board, sample_column
     ):
         """Card start/end dates and done time survive an AFT export then import."""
+        # Only agile boards record done_datetime when a card is marked done.
+        style_response = authenticated_session.put(
+            f'{api_client}/api/boards/{sample_board["id"]}/settings/working-style',
+            json={'value': 'agile'},
+        )
+        assert style_response.status_code == 200, style_response.text
+
         card_response = authenticated_session.post(
             f'{api_client}/api/columns/{sample_column["id"]}/cards',
             json={
@@ -771,12 +778,15 @@ class TestBoardsAPI:
         for field_name in ('start_date', 'end_date', 'done', 'done_datetime'):
             assert imported_card[field_name] == source_card[field_name], field_name
 
-    def test_import_board_done_card_without_done_datetime_gets_import_time(
+    def test_import_board_done_datetime_kept_only_for_done_cards(
         self, api_client, authenticated_session
     ):
-        """A done card from an older export with no done_datetime is stamped on import."""
+        """done_datetime is copied for done cards, and dropped for cards not done."""
         payload = build_minimal_board_import_payload(f'Done Card Import {uuid.uuid4().hex[:8]}')
         payload['cards'][0]['done'] = True
+        payload['cards'][0]['done_datetime'] = '2026-03-27T12:30:00Z'
+        not_done_card = dict(payload['cards'][0], id=101, order=1, done=False)
+        payload['cards'].append(not_done_card)
 
         import_response = authenticated_session.post(
             f'{api_client}/api/boards/import',
@@ -788,9 +798,13 @@ class TestBoardsAPI:
 
         export_response = authenticated_session.get(f'{api_client}/api/boards/{imported_board_id}/export')
         assert export_response.status_code == 200
-        imported_card = export_response.json()['cards'][0]
-        assert imported_card['done'] is True
-        assert imported_card['done_datetime'] is not None
+        done_card, not_done_card = sorted(
+            export_response.json()['cards'], key=lambda card: card['order']
+        )
+        assert done_card['done'] is True
+        assert done_card['done_datetime'].startswith('2026-03-27T12:30:00')
+        assert not_done_card['done'] is False
+        assert not_done_card['done_datetime'] is None
 
     def test_import_board_public_source_imported_as_private_with_warning(
         self, api_client, authenticated_session, sample_board
