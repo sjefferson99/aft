@@ -281,6 +281,15 @@ def get_board_cards(board_id):
         description: Filter by archived status - 'true' for archived, 'false' for unarchived, 'both' for all (default is 'false')
         enum: ['true', 'false', 'both']
         default: 'false'
+      - name: done
+        in: query
+        type: string
+        required: false
+        description: >
+          Filter the listed cards by done status - 'true' for done, 'false' for not done,
+          'both' for all (default). card_counts ignore this filter.
+        enum: ['true', 'false', 'both']
+        default: 'both'
       - name: include_owner_candidates
         in: query
         type: string
@@ -386,6 +395,10 @@ def get_board_cards(board_id):
         # Access already validated by @require_board_access decorator
         # Get archived filter from query parameter (default to false - unarchived only)
         archived_param = request.args.get('archived', 'false').lower()
+        done_param = request.args.get('done', 'both').lower()
+        if done_param not in ('true', 'false', 'both'):
+            db.close()
+            return create_error_response("done must be one of true, false, both", 400)
 
         selected_assignee_ids = _parse_assignee_ids_query_param(request.args.get('assignee_ids'))
         include_unassigned = request.args.get('include_unassigned', 'false').lower() == 'true'
@@ -452,6 +465,11 @@ def get_board_cards(board_id):
 
         for column in columns:
             cards_query = apply_view_filters(db.query(Card).filter(Card.column_id == column.id))
+            # The done filter only narrows the listed cards; card_counts include both.
+            if done_param == 'true':
+                cards_query = cards_query.filter(Card.done.is_(True))
+            elif done_param == 'false':
+                cards_query = cards_query.filter(Card.done.is_(False))
             cards_query = cards_query.options(
                 selectinload(Card.assigned_to),
                 selectinload(Card.checklist_items),

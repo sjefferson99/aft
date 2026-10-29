@@ -2174,3 +2174,39 @@ class TestBoardCardCounts:
 
         counts = self._counts(api_client, authenticated_session, sample_board['id'], 'archived=false&q=Alpha')
         assert counts[sample_column['id']] == {'total': 2, 'done': 0}
+
+    def test_done_filter_narrows_cards_but_not_counts(
+        self, api_client, authenticated_session, sample_board, sample_column
+    ):
+        """done=true/false lists only done or not-done cards; card_counts still count both (item 2.7)."""
+        cards = [
+            authenticated_session.post(f'{api_client}/api/columns/{sample_column["id"]}/cards', json={
+                'title': f'Done filter {i}'
+            }).json()['card']
+            for i in range(3)
+        ]
+        assert authenticated_session.patch(
+            f'{api_client}/api/cards/{cards[0]["id"]}/done', json={'done': True}
+        ).status_code == 200
+
+        def column_for(done):
+            response = authenticated_session.get(
+                f'{api_client}/api/boards/{sample_board["id"]}/cards?archived=false&done={done}'
+            )
+            assert response.status_code == 200, response.text
+            return next(c for c in response.json()['board']['columns'] if c['id'] == sample_column['id'])
+
+        not_done = column_for('false')
+        assert [card['id'] for card in not_done['cards']] == [cards[1]['id'], cards[2]['id']]
+        assert not_done['card_counts'] == {'total': 3, 'done': 1}
+
+        done = column_for('true')
+        assert [card['id'] for card in done['cards']] == [cards[0]['id']]
+        assert done['card_counts'] == {'total': 3, 'done': 1}
+
+        assert len(column_for('both')['cards']) == 3
+
+    def test_done_filter_rejects_invalid_value(self, api_client, authenticated_session, sample_board):
+        response = authenticated_session.get(f'{api_client}/api/boards/{sample_board["id"]}/cards?done=maybe')
+        assert response.status_code == 400
+        assert response.json()['success'] is False

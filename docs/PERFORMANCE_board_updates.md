@@ -773,7 +773,23 @@ Add `card_count` / `done_count` / `total_active_count` per column in `get_board_
 1.8) and, more importantly, means an incremental update can adjust a column header without
 holding a full unfiltered mirror of the board in memory.
 
-### 2.7 Push the done/not-done filter into the query — **0.5 day**
+### 2.7 Push the done/not-done filter into the query — **0.5 day** — ✅ implemented
+
+**Implemented:** `GET /api/boards/:id/cards` accepts `done=true|false|both` (default `both`,
+anything else is a 400), like the public endpoint. It narrows the listed cards only;
+`card_counts` (item 2.6) still count done and not-done cards. The agile task view requests
+`done=false` and the done view `done=true`, so done cards are no longer downloaded and
+discarded. `processBoard()` keeps its client-side done filter for the scheduled view, which
+has no `done` parameter. Patching (item 2.3) already copes with cards the board doesn't hold:
+a done card toggled back to not done is inserted from the broadcast's `card_data`, and counts
+come from `column_counts`.
+Measured on an 800-card agile board (8 × 100, 3 checklist items and 2 comments per card) with
+75% of cards done, the task view's request (median of 10, uncompressed transfer):
+**done=both 800 cards, 765 KB, 88 ms → done=false 200 cards, 190 KB, 39 ms** (gzip 36.7 →
+8.4 KB). The saving scales with the share of done cards.
+
+#### Original proposal
+
 
 `processBoard()` downloads every card then filters in JS
 ([board.js:2973-2987](../www/js/board.js#L2973-L2987)) for agile boards. On a board where

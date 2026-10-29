@@ -3574,6 +3574,11 @@ class BoardManager {
           // Add archived parameter to filter cards based on showArchived state
           const queryParams = this.buildAssigneeFilterQueryParams();
           queryParams.set('archived', this.showArchived ? 'true' : 'false');
+          // Agile views list only done or only not-done cards, so don't
+          // download the others; the column counts still include both.
+          if (this.workingStyle === 'agile' && !this.showArchived) {
+            queryParams.set('done', this.showDone ? 'true' : 'false');
+          }
           response = await fetch(`/api/boards/${this.boardId}/cards?${queryParams.toString()}`, {
             signal: requestController.signal
           });
@@ -3701,7 +3706,9 @@ class BoardManager {
       this.canEdit = this.isPublicMode ? false : (board.can_edit !== undefined ? board.can_edit : true);
       this.updateArchivedViewVisibility();
       
-      // Filter cards based on done status and view
+      // Filter cards based on done status and view. The board endpoints
+      // already filter by done for agile task views; this also covers the
+      // scheduled view and a load sent before the working style was known.
       if (this.workingStyle === 'agile') {
         if (this.showDone) {
           // In done view, show only cards where done=true
