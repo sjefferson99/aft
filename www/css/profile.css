@@ -191,12 +191,14 @@
 .passkey-badge {
   display: inline-block;
   margin-left: 8px;
-  padding: 2px 8px;
+  padding: 1px 8px;
   border-radius: 10px;
   font-size: 12px;
   font-weight: 500;
-  background: var(--primary-color);
-  color: var(--button-text);
+  /* Outlined so the text sits on the panel background and keeps AA contrast. */
+  background: transparent;
+  border: 1px solid var(--primary-color);
+  color: var(--text-bold);
 }
 
 .passkey-actions {
