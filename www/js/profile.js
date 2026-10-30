@@ -133,7 +133,7 @@ class ProfileManager {
         });
         this.showMessage('colour-status', 'Colour updated', 'success');
       } else {
-        this.showMessage('colour-status', data.error || 'Failed to update colour', 'error');
+        this.showMessage('colour-status', data.message || 'Failed to update colour', 'error');
       }
     } catch (error) {
       console.error('Error updating profile colour:', error);
@@ -200,7 +200,7 @@ class ProfileManager {
           await window.header.loadCurrentUser();
         }
       } else {
-        this.showMessage('profile-status', data.error || 'Failed to update profile', 'error');
+        this.showMessage('profile-status', data.message || 'Failed to update profile', 'error');
       }
     } catch (error) {
       console.error('Error updating profile:', error);
