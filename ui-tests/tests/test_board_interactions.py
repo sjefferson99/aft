@@ -575,3 +575,166 @@ def test_agile_task_view_requests_only_not_done_cards(logged_in_page, api_sessio
     assert _card(page, short_id).count() == 0
     count_text = page.locator(f'.column[data-column-id="{data["col_a"]["id"]}"] .card-count').text_content()
     assert count_text == "(1/2)"
+
+
+def _make_agile_with_done_short_card(api_session, ui_base_url, data):
+    """Switch the board to agile and mark the short card done."""
+    resp = api_session.put(
+        f"{ui_base_url}/api/boards/{data['board']['id']}/settings/working-style", json={"value": "agile"}
+    )
+    assert resp.status_code == 200
+    resp = api_session.patch(f"{ui_base_url}/api/cards/{data['short_card']['id']}/done", json={"done": True})
+    assert resp.status_code == 200
+
+
+def _set_view(page, view):
+    page.evaluate("(view) => window.header.setView(view)", view)
+    page.wait_for_function("() => !window.boardManager.currentLoadController", timeout=8000)
+
+
+@pytest.mark.ui
+def test_agile_card_archives_without_being_done(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """Agile cards can leave the board as not done, and keep that state (issue #543)."""
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+    long_id = data["long_card"]["id"]
+    _open_board_for_patching(page, data["board"]["id"])
+
+    assert _card(page, long_id).locator(".card-done-btn").is_visible()
+    _card(page, long_id).locator(".card-archive-btn").click()
+    _card(page, long_id).wait_for(state="detached", timeout=8000)
+    count = page.locator(f'.column[data-column-id="{data["col_a"]["id"]}"] .card-count')
+    assert count.text_content() == "(1/1)"
+
+    card = api_session.get(f"{ui_base_url}/api/cards/{long_id}").json()["card"]
+    assert card["archived"] is True
+    assert card["done"] is False
+
+    assert page.locator('.views-dropdown-item[data-view="archived"]').evaluate("el => el.style.display") != "none"
+    _set_view(page, "archived")
+    _card(page, long_id).wait_for(state="visible", timeout=8000)
+
+    _card(page, long_id).locator(".card-unarchive-btn").click()
+    _card(page, long_id).wait_for(state="detached", timeout=8000)
+    _set_view(page, "task")
+    _card(page, long_id).wait_for(state="visible", timeout=8000)
+    assert api_session.get(f"{ui_base_url}/api/cards/{long_id}").json()["card"]["done"] is False
+
+
+@pytest.mark.ui
+def test_agile_done_card_can_be_archived_from_done_view(logged_in_page, api_session, ui_base_url, board_with_cards):
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+    short_id = data["short_card"]["id"]
+    _open_board_for_patching(page, data["board"]["id"])
+
+    _set_view(page, "done")
+    _card(page, short_id).locator(".card-archive-btn").click()
+    _card(page, short_id).wait_for(state="detached", timeout=8000)
+
+    card = api_session.get(f"{ui_base_url}/api/cards/{short_id}").json()["card"]
+    assert card["archived"] is True
+    assert card["done"] is True
+
+
+@pytest.mark.ui
+def test_agile_archived_view_lists_done_and_not_done(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """Going straight from the done view must not leave the done filter on (issue #543)."""
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+    long_id, short_id = data["long_card"]["id"], data["short_card"]["id"]
+    for card_id in (long_id, short_id):
+        assert api_session.patch(f"{ui_base_url}/api/cards/{card_id}/archive").status_code == 200
+    _open_board_for_patching(page, data["board"]["id"])
+
+    _set_view(page, "done")
+    _set_view(page, "archived")
+
+    _card(page, long_id).wait_for(state="visible", timeout=8000)
+    _card(page, short_id).wait_for(state="visible", timeout=8000)
+    count = page.locator(f'.column[data-column-id="{data["col_a"]["id"]}"] .card-count')
+    assert count.text_content() == "(2)"
+
+
+@pytest.mark.ui
+def test_agile_card_modal_offers_done_and_archive(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """The modal is how mobile users archive, since the card button is hidden there."""
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+    long_id = data["long_card"]["id"]
+    _open_board_for_patching(page, data["board"]["id"])
+
+    _card(page, long_id).locator(".card-title").click()
+    page.locator("#edit-card-modal").wait_for(state="visible", timeout=5000)
+    assert page.locator("#done-card-detail-btn").is_visible()
+    page.locator("#archive-card-detail-btn").click()
+    _card(page, long_id).wait_for(state="detached", timeout=8000)
+
+
+@pytest.mark.ui
+def test_agile_card_title_clears_action_buttons(logged_in_page, api_session, ui_base_url, board_with_cards):
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+    resp = api_session.patch(f"{ui_base_url}/api/cards/{data['long_card']['id']}", json={"title": "Long " * 20})
+    assert resp.status_code == 200
+    _open_board_for_patching(page, data["board"]["id"])
+
+    card = _card(page, data["long_card"]["id"])
+    text_right = card.locator(".card-title").evaluate(
+        """(title) => {
+            const range = document.createRange();
+            range.selectNodeContents(title);
+            return Math.max(...Array.from(range.getClientRects(), (rect) => rect.right));
+        }"""
+    )
+    assert text_right <= card.locator(".card-action-buttons").bounding_box()["x"]
+
+
+@pytest.mark.ui
+def test_style_change_keeps_archived_view_and_leaves_done_view(
+    logged_in_page, api_session, ui_base_url, board_with_cards
+):
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+    _open_board_for_patching(page, data["board"]["id"])
+    change_style = """(style) => window.dispatchEvent(
+        new CustomEvent('boardWorkingStyleChanged', { detail: { workingStyle: style } })
+    )"""
+
+    _set_view(page, "archived")
+    page.evaluate(change_style, "kanban")
+    page.evaluate(change_style, "agile")
+    assert page.evaluate("() => window.boardManager.showArchived") is True
+
+    _set_view(page, "done")
+    page.evaluate(change_style, "kanban")
+    page.wait_for_function("() => !window.boardManager.showDone", timeout=8000)
+    assert page.evaluate("() => window.boardManager.showArchived") is False
+
+
+@pytest.mark.ui
+def test_public_agile_board_archived_view_lists_done_and_not_done(
+    logged_in_page, api_session, ui_base_url, board_with_cards
+):
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+    long_id, short_id = data["long_card"]["id"], data["short_card"]["id"]
+    for card_id in (long_id, short_id):
+        assert api_session.patch(f"{ui_base_url}/api/cards/{card_id}/archive").status_code == 200
+    resp = api_session.patch(f"{ui_base_url}/api/boards/{data['board']['id']}", json={"is_public": True})
+    assert resp.status_code == 200
+
+    page.goto(f"/public-board.html?slug={resp.json()['board']['public_slug']}")
+    page.wait_for_function("() => window.boardManager?.hasLoadedBoardData && window.header", timeout=8000)
+    assert page.locator('.views-dropdown-item[data-view="archived"]').evaluate("el => el.style.display") != "none"
+    _set_view(page, "archived")
+
+    _card(page, long_id).wait_for(state="visible", timeout=8000)
+    _card(page, short_id).wait_for(state="visible", timeout=8000)

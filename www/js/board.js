@@ -3006,7 +3006,7 @@ class BoardManager {
 
     if (this.isPublicMode) {
       this.workingStyle = 'kanban';
-      this.updateArchivedViewVisibility();
+      this.updateScheduledViewVisibility();
       return;
     }
 
@@ -3015,7 +3015,7 @@ class BoardManager {
       try {
         await headerWorkingStylePromise;
         this.workingStyle = normalize(window.header.workingStyle);
-        this.updateArchivedViewVisibility();
+        this.updateScheduledViewVisibility();
         return;
       } catch (error) {
         console.warn('Falling back to board working style fetch after header load failure:', error);
@@ -3039,7 +3039,7 @@ class BoardManager {
     }
 
     // Update archived view visibility based on working style
-    this.updateArchivedViewVisibility();
+    this.updateScheduledViewVisibility();
   }
 
   syncPublicHeaderWorkingStyle() {
@@ -3086,28 +3086,17 @@ class BoardManager {
     }, 250);
   }
 
-  // Hide/show archived view option based on working style
-  updateArchivedViewVisibility() {
+  // Hide the scheduled view option on public boards
+  updateScheduledViewVisibility() {
     // Try to apply visibility immediately; if elements are not yet in the DOM,
     // wait for them to be inserted (header HTML is loaded asynchronously).
     const applyVisibility = () => {
-      const archivedViewItem = document.querySelector('.views-dropdown-item[data-view="archived"]');
-      const mobileArchivedViewItem = document.querySelector('.mobile-view-item[data-view="archived"]');
       const scheduledViewItem = document.querySelector('.views-dropdown-item[data-view="scheduled"]');
       const mobileScheduledViewItem = document.querySelector('.mobile-view-item[data-view="scheduled"]');
 
       // If neither element exists yet, signal that we need to retry later
-      if (!archivedViewItem && !mobileArchivedViewItem && !scheduledViewItem && !mobileScheduledViewItem) {
+      if (!scheduledViewItem && !mobileScheduledViewItem) {
         return false;
-      }
-
-      const displayValue = this.workingStyle === 'agile' ? 'none' : '';
-
-      if (archivedViewItem) {
-        archivedViewItem.style.display = displayValue;
-      }
-      if (mobileArchivedViewItem) {
-        mobileArchivedViewItem.style.display = displayValue;
       }
 
       const scheduledDisplayValue = this.isPublicMode ? 'none' : '';
@@ -3126,7 +3115,7 @@ class BoardManager {
       return;
     }
 
-    // Fallback: observe DOM mutations until the archived view items appear.
+    // Fallback: observe DOM mutations until the scheduled view items appear.
     if (typeof MutationObserver === 'function' && document.body) {
       const observer = new MutationObserver(() => {
         if (applyVisibility()) {
@@ -3180,9 +3169,11 @@ class BoardManager {
       if (newView === 'archived') {
         this.currentView = 'task';
         this.showArchived = true;
+        this.showDone = false;
       } else if (newView === 'scheduled') {
         this.currentView = 'scheduled';
         this.showArchived = false;
+        this.showDone = false;
       } else if (newView === 'done') {
         this.currentView = 'task';
         this.showArchived = false;
@@ -3251,16 +3242,8 @@ class BoardManager {
 
     this.workingStyle = nextStyle;
 
-    // When switching to Agile, reset to task view (agile has done view instead of archived)
-    // When switching from Agile to Kanban, also reset (agile features no longer apply)
-    if (this.workingStyle === 'agile' && (this.showArchived || this.showDone)) {
-      this.showArchived = false;
-      this.showDone = false;
-      this.currentView = 'task';
-      if (window.header && typeof window.header.setView === 'function') {
-        window.header.setView('task');
-      }
-    } else if (this.workingStyle !== 'agile' && this.showDone) {
+    // The done view only exists in Agile; the archived view exists in both styles.
+    if (this.workingStyle !== 'agile' && this.showDone) {
       this.showDone = false;
       this.currentView = 'task';
       this.showArchived = false;
@@ -3268,9 +3251,6 @@ class BoardManager {
         window.header.setView('task');
       }
     }
-
-    // Update archived view visibility based on new working style
-    this.updateArchivedViewVisibility();
 
     await this.loadBoard();
   }
@@ -3593,7 +3573,7 @@ class BoardManager {
           const queryParams = new URLSearchParams();
           queryParams.set('archived', this.showArchived ? 'true' : 'false');
 
-          if (this.workingStyle === 'agile') {
+          if (this.workingStyle === 'agile' && !this.showArchived) {
             queryParams.set('done', this.showDone ? 'true' : 'false');
           } else {
             queryParams.set('done', 'both');
@@ -3748,12 +3728,13 @@ class BoardManager {
       
       // Store edit permission flag (default to true for backwards compatibility)
       this.canEdit = this.isPublicMode ? false : (board.can_edit !== undefined ? board.can_edit : true);
-      this.updateArchivedViewVisibility();
+      this.updateScheduledViewVisibility();
       
       // Filter cards based on done status and view. The board endpoints
       // already filter by done for agile task views; this also covers the
       // scheduled view and a load sent before the working style was known.
-      if (this.workingStyle === 'agile') {
+      // The archived view lists done and not-done cards together.
+      if (this.workingStyle === 'agile' && !this.showArchived) {
         if (this.showDone) {
           // In done view, show only cards where done=true
           this.columns = this.columns.map(column => ({
@@ -4384,7 +4365,7 @@ class BoardManager {
 
   // Markup for one card, shared by renderBoard() and renderCard().
   renderCardHtml(card, columnId, permissions) {
-    return `<div class="card ${card.archived ? 'archived-card' : ''} ${this.currentView === 'scheduled' && !card.schedule ? 'no-schedule' : ''} ${card.assigned_to ? 'card--has-assignee' : ''}" draggable="${!card.archived && this.canEdit}" data-card-id="${card.id}" data-column-id="${columnId}" data-order="${card.order}" data-archived="${card.archived}" data-done="${card.done || false}">
+    return `<div class="card ${card.archived ? 'archived-card' : ''} ${this.currentView === 'scheduled' && !card.schedule ? 'no-schedule' : ''} ${card.assigned_to ? 'card--has-assignee' : ''} ${this.workingStyle === 'agile' ? 'card--done-toggle' : ''}" draggable="${!card.archived && this.canEdit}" data-card-id="${card.id}" data-column-id="${columnId}" data-order="${card.order}" data-archived="${card.archived}" data-done="${card.done || false}">
         ${permissions.canShowCardActions ? `<div class="card-action-buttons" draggable="false">`  : '<div class="card-action-buttons readonly-hidden" draggable="false">'}
           ${this.currentView === 'scheduled' ? '' : 
             card.archived ? 
@@ -4396,11 +4377,10 @@ class BoardManager {
                   <path d="M9 14l3 2 3-2"></path>
                 </svg>
               </button>` : ''}` :
-              `${this.workingStyle === 'agile' ? 
-                `${permissions.canToggleDone ? `<button class="card-done-btn" data-card-id="${card.id}" title="${card.done ? 'Mark as not done' : 'Mark as done'}" draggable="false">
+              `${this.workingStyle === 'agile' && permissions.canToggleDone ? `<button class="card-done-btn" data-card-id="${card.id}" title="${card.done ? 'Mark as not done' : 'Mark as done'}" draggable="false">
                   ${card.done ? '○' : '✓'}
-                </button>` : ''}` :
-                `${permissions.canArchiveCard ? `<button class="card-archive-btn" data-card-id="${card.id}" title="Archive card" draggable="false">
+                </button>` : ''}
+                ${permissions.canArchiveCard ? `<button class="card-archive-btn" data-card-id="${card.id}" title="Archive card" draggable="false">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="3" y="4" width="18" height="16" rx="2"></rect>
                     <line x1="3" y1="10" x2="21" y2="10"></line>
@@ -4408,7 +4388,6 @@ class BoardManager {
                     <path d="M9 16l3-2 3 2"></path>
                   </svg>
                 </button>` : ''}`
-              }`
           }
           ${!card.archived && permissions.canMoveCard ? '<button class="card-move-btn" data-card-id="' + card.id + '" title="Move card" draggable="false">↔</button>' : ''}
           ${permissions.canDeleteCard ? '<button class="card-delete-btn" data-card-id="' + card.id + '" title="Delete card" draggable="false">×</button>' : ''}
@@ -7224,13 +7203,10 @@ class BoardManager {
                 </button>` : !isReadOnly ?
                 cardData.archived ? 
                   `${canUnarchiveCard ? `<button type="button" class="btn btn-secondary" id="unarchive-card-detail-btn" data-card-id="${cardData.id}">📂 Unarchive</button>` : ''}` :
-                  `${this.workingStyle === 'agile' ? 
-                    `${canToggleDone ? `<button type="button" class="btn btn-secondary" id="done-card-detail-btn" data-card-id="${cardData.id}" title="${cardData.done ? 'Mark as not done' : 'Mark as done'}">
+                  `${this.workingStyle === 'agile' && canToggleDone ? `<button type="button" class="btn btn-secondary" id="done-card-detail-btn" data-card-id="${cardData.id}" title="${cardData.done ? 'Mark as not done' : 'Mark as done'}">
                       ${cardData.done ? '○ Mark Not Done' : '✓ Mark Done'}
-                    </button>` : ''}` :
-                    ''
-                  }
-                  ${canArchiveCard && this.workingStyle !== 'agile' ? '<button type="button" class="btn btn-secondary" id="archive-card-detail-btn" data-card-id="' + cardData.id + '">🗄️ Archive</button>' : ''}` : ''
+                    </button>` : ''}
+                  ${canArchiveCard ? '<button type="button" class="btn btn-secondary" id="archive-card-detail-btn" data-card-id="' + cardData.id + '">🗄️ Archive</button>' : ''}` : ''
               }
               ${!isReadOnly && canManageAssignees ? `<button type="button" class="btn btn-secondary" id="assign-assignees-btn" data-card-id="${cardData.id}">👤 Assignees</button>` : ''}
               ${!isReadOnly && canMoveCard && !cardData.archived ? `<button type="button" class="btn btn-secondary" id="move-card-detail-btn" data-card-id="${cardData.id}">Move</button>` : ''}
