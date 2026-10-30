@@ -289,9 +289,9 @@ class HousekeepingScheduler:
                 # New version available - check if we should notify
                 logger.info(f"New version available: {latest_version} (current: {self.app_version})")
                 
-                # Check if an unread notification already exists
-                if self._has_unread_version_notification(latest_version):
-                    logger.debug(f"Unread notification already exists for version {latest_version}")
+                # Check if a notification already exists, read or unread
+                if self._has_version_notification(latest_version):
+                    logger.debug(f"Notification already exists for version {latest_version}")
                     return
                 
                 # Create notification
@@ -327,23 +327,22 @@ class HousekeepingScheduler:
         except Exception as e:
             logger.error(f"Unexpected error checking for updates: {e}", exc_info=True)
     
-    def _has_unread_version_notification(self, new_version: str) -> bool:
-        """Check if an unread notification already exists for this version.
+    def _has_version_notification(self, new_version: str) -> bool:
+        """Check if a notification already exists for this version.
         
-        Returns True if unread notification exists, False otherwise.
+        Returns True if a notification exists, read or unread, False otherwise.
         """
         try:
             from models import Notification
             from database import SessionLocal
             
-            # Look for unread notifications with this version in the subject
+            # Look for notifications with this version in the subject
             subject_pattern = f"New Version Available: {new_version}"
             
             session = SessionLocal()
             try:
                 existing = session.query(Notification).filter(
-                    Notification.subject == subject_pattern,
-                    Notification.unread.is_(True)
+                    Notification.subject == subject_pattern
                 ).first()
                 
                 return existing is not None
