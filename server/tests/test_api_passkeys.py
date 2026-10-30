@@ -29,11 +29,18 @@ def _passkeys_enabled():
         return False
 
 
-requires_passkeys = pytest.mark.skipif(
-    not _passkeys_enabled(),
-    reason="Passkeys not enabled on the test server (set WEBAUTHN_RP_ID=localhost "
-           "and WEBAUTHN_ORIGINS=http://localhost in .env)",
-)
+@pytest.fixture
+def passkeys_required(test_admin_session):
+    """Skip when passkeys are off. Checked after setup: before the first admin
+    exists every API call, including the status endpoint, returns 503."""
+    if not _passkeys_enabled():
+        pytest.skip(
+            "Passkeys not enabled on the test server (set WEBAUTHN_RP_ID=localhost "
+            "and WEBAUTHN_ORIGINS=http://localhost in .env)"
+        )
+
+
+requires_passkeys = pytest.mark.usefixtures("passkeys_required")
 
 
 @pytest.fixture
