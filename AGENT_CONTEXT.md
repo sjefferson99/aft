@@ -22,7 +22,9 @@ Also:
 
 ## Environment
 
-- The development machine runs Windows. Commands below use Windows paths. The repo venv is `.venv`, so use `.venv\Scripts\python.exe` (or `../.venv/Scripts/python.exe` from Git Bash).
+- There are three development machines: St Austell (primary, Windows), a MacBook (often used) and Wychwood (occasionally used, Windows). Each has its own `.venv`, `.env` and dev database, so after pulling dependency or config changes, check they are up to date on the machine you're on.
+- Commands below use Windows paths. The repo venv is `.venv`, so use `.venv\Scripts\python.exe` (or `../.venv/Scripts/python.exe` from Git Bash). On the MacBook use `.venv/bin/python`.
+- To test passkeys locally, set `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGINS=http://localhost,https://localhost` in `.env`. Browsers exempt localhost, so no certificate or domain is needed. Without them the passkey tests skip.
 - Use `compose.yml` for local development and testing, and always pass `--build` so code changes reach the containers. `compose.example.yml` is the GHCR deployment template; don't use it locally.
 - `./data` is the MySQL data directory, mounted into the `db` container and gitignored. Clearing it resets the database.
 
