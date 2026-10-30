@@ -131,7 +131,9 @@ class TestPasskeyRegistration:
             f"{API_BASE_URL}/api/auth/passkeys/register/options",
             json={"password": f"wrong-{uuid.uuid4().hex}"},
         )
-        assert response.status_code == 401
+        # 400, not 401: the frontend fetch wrapper treats any 401 as "signed out".
+        assert response.status_code == 400
+        assert response.json()["message"] == "Current password is incorrect"
 
     def test_options_require_resident_key_and_user_verification(self, passkey_user):
         response = passkey_user["session"].post(
@@ -486,6 +488,13 @@ class TestAdminPasskeyRevoke:
         assert test_admin_session.get(url).json()["passkeys"] == []
         assert not _is_logged_in(passkey_session)
         assert _is_logged_in(passkey_user["session"])
+
+    def test_user_list_includes_passkey_count(self, passkey_user, test_admin_session):
+        _register_passkey(passkey_user)
+        users = test_admin_session.get(f"{API_BASE_URL}/api/users").json()["users"]
+        counts = {u["id"]: u["passkey_count"] for u in users}
+        assert counts[passkey_user["id"]] == 1
+        assert all(isinstance(c, int) for c in counts.values())
 
     def test_non_admin_forbidden(self, passkey_user):
         url = f"{API_BASE_URL}/api/users/{passkey_user['id']}/passkeys"

@@ -290,8 +290,297 @@ class ProfileManager {
   }
 }
 
+// Passkeys section: list, add, rename and remove the user's passkeys.
+class ProfilePasskeys {
+  constructor() {
+    this.section = document.getElementById('passkeys-section');
+    this.list = document.getElementById('passkey-list');
+    this.empty = document.getElementById('passkey-empty');
+    this.addButton = document.getElementById('add-passkey-btn');
+    this.addModal = document.getElementById('add-passkey-modal');
+    this.renameModal = document.getElementById('rename-passkey-modal');
+    this.removeModal = document.getElementById('remove-passkey-modal');
+    this.selected = null;
+    this.returnFocusTo = null;
+  }
+
+  async init() {
+    if (!window.Passkeys || !(await window.Passkeys.isEnabled())) {
+      return;
+    }
+    this.section.hidden = false;
+
+    if (!window.Passkeys.isSupported()) {
+      document.getElementById('passkeys-unsupported').hidden = false;
+      this.addButton.disabled = true;
+    }
+
+    this.addButton.addEventListener('click', () => this.openAddModal());
+    document.getElementById('add-passkey-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.handleAdd();
+    });
+    document.getElementById('add-passkey-cancel-btn').addEventListener('click', () => this.closeModal(this.addModal));
+
+    document.getElementById('rename-passkey-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.handleRename();
+    });
+    document.getElementById('rename-passkey-cancel-btn').addEventListener('click', () => this.closeModal(this.renameModal));
+
+    document.getElementById('remove-passkey-ok-btn').addEventListener('click', () => this.handleRemove());
+    document.getElementById('remove-passkey-cancel-btn').addEventListener('click', () => this.closeModal(this.removeModal));
+
+    [this.addModal, this.renameModal, this.removeModal].forEach((modal) => {
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          this.closeModal(modal);
+        }
+      });
+    });
+
+    await this.loadPasskeys();
+  }
+
+  async request(url, options = {}) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal
+      });
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (e) {
+        // Non-JSON error response
+      }
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Request failed. Please try again.');
+      }
+      return data;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('The request timed out. Please check your connection and try again.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async loadPasskeys() {
+    try {
+      const data = await this.request('/api/auth/passkeys');
+      this.render(data.passkeys || []);
+    } catch (error) {
+      console.error('Error loading passkeys:', error);
+      this.showStatus(`Could not load passkeys: ${error.message}`, 'error');
+    }
+  }
+
+  formatDate(value) {
+    return value ? new Date(value).toLocaleDateString() : null;
+  }
+
+  render(passkeys) {
+    this.list.replaceChildren();
+    this.empty.hidden = passkeys.length > 0;
+
+    passkeys.forEach((passkey) => {
+      const item = document.createElement('li');
+      item.className = 'passkey-item';
+      item.dataset.passkeyId = passkey.id;
+
+      const info = document.createElement('div');
+      const name = document.createElement('div');
+      name.className = 'passkey-name';
+      name.textContent = passkey.name;
+      if (passkey.synced) {
+        const badge = document.createElement('span');
+        badge.className = 'passkey-badge';
+        badge.textContent = 'Synced';
+        badge.title = 'Backed up and available on your other devices';
+        name.appendChild(badge);
+      }
+      const meta = document.createElement('div');
+      meta.className = 'passkey-meta';
+      const added = this.formatDate(passkey.created_at) || 'Unknown';
+      const used = this.formatDate(passkey.last_used_at) || 'Never';
+      meta.textContent = `Added ${added} · Last used ${used}`;
+      info.append(name, meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'passkey-actions';
+      const renameBtn = document.createElement('button');
+      renameBtn.type = 'button';
+      renameBtn.className = 'btn btn-secondary btn-sm';
+      renameBtn.textContent = 'Rename';
+      renameBtn.setAttribute('aria-label', `Rename passkey ${passkey.name}`);
+      renameBtn.addEventListener('click', () => this.openRenameModal(passkey, renameBtn));
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn btn-danger btn-sm';
+      removeBtn.textContent = 'Remove';
+      removeBtn.setAttribute('aria-label', `Remove passkey ${passkey.name}`);
+      removeBtn.addEventListener('click', () => this.openRemoveModal(passkey, removeBtn));
+      actions.append(renameBtn, removeBtn);
+
+      item.append(info, actions);
+      this.list.appendChild(item);
+    });
+  }
+
+  openModal(modal, focusEl, trigger) {
+    this.returnFocusTo = trigger || document.activeElement;
+    modal.querySelectorAll('.status-message').forEach((el) => {
+      el.textContent = '';
+      el.classList.remove('show');
+    });
+    modal.classList.add('show');
+    setupModalEscapeClose(modal, () => this.closeModal(modal));
+    focusEl.focus();
+  }
+
+  closeModal(modal) {
+    modal.classList.remove('show');
+    this.selected = null;
+    if (this.returnFocusTo && document.body.contains(this.returnFocusTo)) {
+      this.returnFocusTo.focus();
+    }
+    this.returnFocusTo = null;
+  }
+
+  showModalError(id, message) {
+    const el = document.getElementById(id);
+    el.textContent = message;
+    el.classList.add('show');
+  }
+
+  setBusy(modal, busy) {
+    modal.querySelectorAll('button, input').forEach((el) => {
+      el.disabled = busy;
+    });
+  }
+
+  openAddModal() {
+    document.getElementById('add-passkey-password').value = '';
+    document.getElementById('add-passkey-name').value = '';
+    this.openModal(this.addModal, document.getElementById('add-passkey-password'), this.addButton);
+  }
+
+  async handleAdd() {
+    const password = document.getElementById('add-passkey-password').value;
+    const name = document.getElementById('add-passkey-name').value.trim();
+    if (!password) {
+      this.showModalError('add-passkey-error', 'Enter your current password.');
+      return;
+    }
+
+    this.setBusy(this.addModal, true);
+    document.getElementById('add-passkey-error').classList.remove('show');
+    try {
+      await window.Passkeys.register(password, name);
+      this.closeModal(this.addModal);
+      this.showStatus('Passkey added', 'success');
+      await this.loadPasskeys();
+    } catch (error) {
+      console.error('Error adding passkey:', error);
+      this.showModalError('add-passkey-error', window.Passkeys.describeError(error));
+    } finally {
+      this.setBusy(this.addModal, false);
+    }
+  }
+
+  openRenameModal(passkey, trigger) {
+    this.selected = passkey;
+    const input = document.getElementById('rename-passkey-name');
+    input.value = passkey.name;
+    this.openModal(this.renameModal, input, trigger);
+    input.select();
+  }
+
+  async handleRename() {
+    const passkey = this.selected;
+    const name = document.getElementById('rename-passkey-name').value.trim();
+    if (!passkey) {
+      return;
+    }
+    if (!name) {
+      this.showModalError('rename-passkey-error', 'Enter a name.');
+      return;
+    }
+
+    this.setBusy(this.renameModal, true);
+    try {
+      await this.request(`/api/auth/passkeys/${encodeURIComponent(passkey.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name })
+      });
+      this.closeModal(this.renameModal);
+      this.showStatus('Passkey renamed', 'success');
+      await this.loadPasskeys();
+    } catch (error) {
+      console.error('Error renaming passkey:', error);
+      this.showModalError('rename-passkey-error', error.message);
+    } finally {
+      this.setBusy(this.renameModal, false);
+    }
+  }
+
+  openRemoveModal(passkey, trigger) {
+    this.selected = passkey;
+    document.getElementById('remove-passkey-message').textContent =
+      `Remove "${passkey.name}"? You won't be able to sign in with it any more. ` +
+      'You may also want to delete it from your device or password manager.';
+    this.openModal(this.removeModal, document.getElementById('remove-passkey-cancel-btn'), trigger);
+  }
+
+  async handleRemove() {
+    const passkey = this.selected;
+    if (!passkey) {
+      return;
+    }
+
+    this.setBusy(this.removeModal, true);
+    try {
+      const data = await this.request(`/api/auth/passkeys/${encodeURIComponent(passkey.id)}`, {
+        method: 'DELETE'
+      });
+      this.closeModal(this.removeModal);
+      if (data.signed_out) {
+        // This session was signed in with the removed passkey, so it has ended.
+        sessionStorage.removeItem('currentUser');
+        window.location.href = '/login.html';
+        return;
+      }
+      this.showStatus('Passkey removed', 'success');
+      await this.loadPasskeys();
+    } catch (error) {
+      console.error('Error removing passkey:', error);
+      this.showModalError('remove-passkey-error', error.message);
+    } finally {
+      this.setBusy(this.removeModal, false);
+    }
+  }
+
+  showStatus(message, type) {
+    const statusEl = document.getElementById('passkey-status');
+    statusEl.textContent = message;
+    statusEl.className = `status-message ${type} show`;
+    if (type === 'success') {
+      setTimeout(() => {
+        statusEl.classList.remove('show');
+      }, 5000);
+    }
+  }
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async () => {
   const profileManager = new ProfileManager();
   await profileManager.init();
+  await new ProfilePasskeys().init();
 });

@@ -28,7 +28,7 @@
         <form id="loginForm">
             <div class="form-group">
                 <label for="email">Email or Username</label>
-                <input type="text" id="email" name="email" required aria-required="true" autocomplete="username" autofocus>
+                <input type="text" id="email" name="email" required aria-required="true" autocomplete="username webauthn" autofocus>
             </div>
 
             <div class="form-group">
@@ -48,12 +48,20 @@
             </button>
         </form>
 
+        <div id="passkeySignIn" class="passkey-signin" hidden>
+            <div class="login-divider" aria-hidden="true"><span>or</span></div>
+            <button type="button" class="btn-passkey" id="passkeyButton">
+                Sign in with a passkey
+            </button>
+        </div>
+
         <div class="login-footer">
             Don't have an account? <a href="register.html">Register</a>
         </div>
     </div>
 
     <script src="js/network-timeout.js"></script>
+    <script src="js/passkeys.js"></script>
     <script src="js/login.js"></script>
 </body>
 </html>

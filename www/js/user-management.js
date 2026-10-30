@@ -442,6 +442,7 @@ class UserManagement {
     const createdDate = user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown';
     const lastLogin = user.last_login_at ? new Date(user.last_login_at).toLocaleDateString() : 'Never';
     const safeUserId = this.escapeHtml(String(user.id));
+    const passkeyCount = Number.isInteger(user.passkey_count) ? user.passkey_count : 0;
     
     const roles = user.roles && user.roles.length > 0
       ? user.roles.map(r => `<span class="role-badge">${this.escapeHtml(r.name)}</span>`).join('')
@@ -467,6 +468,7 @@ class UserManagement {
           <div class="user-email">${this.escapeHtml(user.email)}</div>
           ${user.username ? `<div class="user-meta">Username: ${this.escapeHtml(user.username)}</div>` : ''}
           <div class="user-meta">Registered: ${createdDate} • Last login: ${lastLogin}</div>
+          ${passkeyCount > 0 ? `<div class="user-meta">Passkeys: ${passkeyCount}</div>` : ''}
           <div class="user-roles">
             ${roles}
           </div>
@@ -479,6 +481,10 @@ class UserManagement {
         }
         ${this.canResetPasswords && (!window.currentUser || user.id !== window.currentUser.id)
           ? `<button class="btn btn-secondary btn-sm" data-action="reset-password" data-user-id="${safeUserId}">Reset Password</button>`
+          : ''
+        }
+        ${passkeyCount > 0
+          ? `<button class="btn btn-secondary btn-sm" data-action="revoke-passkeys" data-user-id="${safeUserId}">Revoke Passkeys</button>`
           : ''
         }
       </div>
@@ -499,6 +505,11 @@ class UserManagement {
     const resetPasswordBtn = card.querySelector('[data-action="reset-password"]');
     if (resetPasswordBtn) {
       resetPasswordBtn.addEventListener('click', () => this.openResetPasswordModal(user));
+    }
+
+    const revokePasskeysBtn = card.querySelector('[data-action="revoke-passkeys"]');
+    if (revokePasskeysBtn) {
+      revokePasskeysBtn.addEventListener('click', () => this.handleRevokePasskeys(user));
     }
 
     return card;
@@ -623,6 +634,36 @@ class UserManagement {
         } catch (error) {
           console.error('Error deactivating user:', error);
           this.showStatus('Error deactivating user: ' + error.message, 'error');
+        }
+      }
+    );
+  }
+
+  async handleRevokePasskeys(user) {
+    const displayName = user.display_name || user.username || user.email;
+
+    this.showConfirmModal(
+      'Revoke Passkeys',
+      `Remove all of ${displayName}'s passkeys? They will need to sign in with their password and add passkeys again. ` +
+        'Sessions signed in with a passkey end now. To also end password sessions, reset their password.',
+      async () => {
+        try {
+          const response = await fetch(`/api/users/${user.id}/passkeys`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            this.showStatus(`Removed ${data.removed} passkey(s) for ${displayName}`, 'success');
+            await this.loadActiveUsers();
+          } else {
+            throw new Error(data.message || 'Failed to revoke passkeys');
+          }
+        } catch (error) {
+          console.error('Error revoking passkeys:', error);
+          this.showStatus('Error revoking passkeys: ' + error.message, 'error');
         }
       }
     );

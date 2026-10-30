@@ -479,6 +479,49 @@ By default, the stack now enforces secure session cookies and redirects direct H
 
 This keeps direct deployments secure by default while still supporting external reverse proxies and certificate resolvers.
 
+### Passkeys
+Users can sign in with a passkey (fingerprint, face, screen lock, a password manager, or a security key) instead of typing their password. Passkeys are an alternative way to sign in, not a second factor, and every account keeps its password.
+
+Passkeys are **off until you set `WEBAUTHN_RP_ID`**. Once they are on:
+- users add and manage passkeys from their **Profile** page (adding one asks for their current password)
+- the login page shows a **Sign in with a passkey** button, and supported browsers also offer saved passkeys when you click the username field
+- administrators can revoke all of a user's passkeys from **User Management**, for example after a lost device
+
+#### Before you turn them on
+Browsers only allow passkeys when all of these are true:
+- **AFT is reached by a domain name**, such as `aft.example.com`. Passkeys don't work when you browse to an IP address (`https://192.168.1.10`). Single-word LAN host names (`https://aft`) may not work in every browser.
+- **The connection is HTTPS with a certificate the browser trusts.** Chrome and Edge turn passkeys off on pages with certificate errors, so the auto-generated self-signed certificate is not enough unless every device trusts it. Use a real certificate (for example from Let's Encrypt or your reverse proxy), or install your own CA on each device. `http://localhost` is the only exception, for development.
+- **The domain stays the same.** Each passkey is tied to `WEBAUTHN_RP_ID`. If you change it later, or move AFT to a different domain, every existing passkey stops working and users must add new ones. Their passwords keep working.
+
+#### Settings
+Add these to `.env` and restart the server (`docker compose up -d server`). An invalid value stops the server at startup with a message saying what is wrong.
+
+| `.env` variable | Required | Default | What it does |
+|---|---|---|---|
+| `WEBAUTHN_RP_ID` | Yes, to turn passkeys on | (unset: passkeys off) | The domain passkeys are tied to, with no `https://`, port or path. For example `aft.example.com`. It can be a parent domain (`example.com`) if AFT is served from several subdomains of it. |
+| `WEBAUTHN_ORIGINS` | No | `https://<WEBAUTHN_RP_ID>` | Comma-separated list of the exact addresses users open AFT at, including any port, for example `https://aft.example.com,https://aft.example.com:8443`. Each must be on `WEBAUTHN_RP_ID` or a subdomain of it, and must be `https` (only `http://localhost` is allowed for development). |
+| `WEBAUTHN_RP_NAME` | No | `AFT` | The name browsers and password managers show next to the passkey. Up to 64 characters. |
+
+Passkey sign-in also needs Redis (`REDIS_URL`), which the standard compose files already provide.
+
+Example for a site at `https://boards.example.com`:
+
+```
+WEBAUTHN_RP_ID=boards.example.com
+```
+
+Example for local development at `http://localhost`:
+
+```
+WEBAUTHN_RP_ID=localhost
+WEBAUTHN_ORIGINS=http://localhost,https://localhost
+```
+
+#### Notes
+- Revoking a user's passkeys ends any sessions that were signed in with them. Sessions signed in with a password continue, so also reset the user's password if a device was lost or stolen.
+- A user who removes a passkey from their Profile page should also delete it from their device or password manager, or it will keep being offered on the login page.
+- Two-factor authentication is a separate feature, tracked in [#587](https://github.com/sjefferson99/aft/issues/587).
+
 ### Database memory tuning
 The `db` service runs MySQL with settings sized for small self-hosted installs. Stock MySQL defaults suit a dedicated database server, and in AFT they used 450–600 MB at idle. With the defaults below, idle memory is about 130 MB.
 
@@ -592,6 +635,7 @@ The application includes a multi-user security model with authentication, role-b
 - **Permission-Aware UI** - Frontend controls are shown/hidden based on effective permissions, reducing invalid actions before API calls.
 - **Ownership and IDOR Protection** - Server-side scoping checks prevent users from accessing resources they do not own or are not assigned to.
 - **Secure Session Defaults** - HTTPS-first behaviour, secure session cookies by default, and optional Redis-backed server-side sessions.
+- **Passkeys (optional)** - Sign in with a passkey instead of a password, once an administrator sets the passkey domain. See [Passkeys](#passkeys).
 - **Operational Hardening** - Token-protected health checks and browser hardening headers in the reverse proxy layer.
 - **Public Board Guardrails** - Anonymous access is limited to redacted read-only board payloads via slug URLs; private boards and all write/admin endpoints remain auth-gated.
 - **Public Route Controls** - Public board endpoints include crawler-dissuasion/cache headers and request throttling to reduce abuse risk.

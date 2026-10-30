@@ -129,6 +129,131 @@
   cursor: not-allowed;
 }
 
+.btn-secondary {
+  background: var(--secondary-color);
+  color: var(--button-text);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--secondary-hover);
+}
+
+.btn-danger {
+  background: var(--error-color);
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* Passkeys */
+.profile-section[hidden] {
+  display: none;
+}
+
+.passkey-list {
+  list-style: none;
+  margin: 16px 0 0 0;
+  padding: 0;
+}
+
+.passkey-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.passkey-item:last-child {
+  border-bottom: none;
+}
+
+.passkey-name {
+  font-weight: 600;
+  color: var(--text-bold);
+  overflow-wrap: anywhere;
+}
+
+.passkey-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.passkey-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  /* Outlined so the text sits on the panel background and keeps AA contrast. */
+  background: transparent;
+  border: 1px solid var(--primary-color);
+  color: var(--text-bold);
+}
+
+.passkey-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Modals */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.show {
+  display: flex;
+}
+
+.modal-content {
+  background: var(--page-panel-background);
+  padding: 30px;
+  border-radius: 12px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h2 {
+  margin: 0 0 15px 0;
+  color: var(--text-bold);
+  font-size: 22px;
+}
+
+.modal-content p {
+  margin: 0 0 20px 0;
+  color: var(--text-color);
+  line-height: 1.5;
+}
+
+.modal-content .status-message.show {
+  margin-bottom: 16px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
 /* Status Messages */
 .status-message {
   font-size: 14px;
@@ -202,6 +327,11 @@
 
   .status-message {
     order: -1; /* Show above button on mobile */
+  }
+
+  .passkey-item {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
