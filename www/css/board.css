@@ -275,6 +275,63 @@
   min-height: 0;
   max-height: 100%;
   transition: opacity 0.2s;
+  position: relative;
+}
+
+/* Sits in the gap to the right of a column. Absolutely positioned so it adds
+   no width to the board. */
+.column-insert-btn {
+  position: absolute;
+  top: 17px;
+  left: calc(100% + 10px);
+  transform: translateX(-50%);
+  z-index: 5;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--primary-color);
+  border-radius: 4px;
+  background: var(--background-light);
+  color: var(--primary-color);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.column-insert-btn:hover,
+.column-insert-btn:focus-visible {
+  background: var(--primary-color);
+  color: white;
+}
+
+/* The shared tooltip opens upwards, which .columns-container would clip, and
+   would wrap to the button's width. */
+.column-insert-btn[data-tooltip]::after {
+  top: 100%;
+  bottom: auto;
+  margin-top: 5px;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+
+.column-insert-btn[data-tooltip]::before {
+  top: 100%;
+  bottom: auto;
+  margin-top: -5px;
+  border-top-color: transparent;
+  border-bottom-color: var(--page-panel-background);
+}
+
+/* The narrower gaps leave no room for it. Don't add a hover media query here:
+   desktop Chrome with a mouse can report any-hover: none. */
+@media (max-width: 900px) {
+  .column-insert-btn {
+    display: none;
+  }
 }
 
 .column.dragging-column {

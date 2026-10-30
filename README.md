@@ -288,7 +288,8 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 
 ### � Documentation
 - **Comprehensive Docs** - Full documentation available in-app via the Docs page
-- **Keyboard Shortcuts** - Quick reference for card creation shortcuts (N for top, M for bottom)
+- **Keyboard Shortcuts** - Quick reference for board shortcuts (N for a card at the top, M for a card at the bottom, C for a column nearest the mouse)
+- **Adding Columns** - The ways to add a column, including between existing columns
 - **Working Style Guide** - Detailed guide on using different working styles:
   - Available working style options and when to use each
   - Done/Not Done button functionality and task completion tracking

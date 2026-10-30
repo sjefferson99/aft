@@ -988,7 +988,86 @@ class TestBoardColumnsAPI:
         assert data['success'] is True
         assert data['column']['name'] == 'To Do'
         assert data['column']['board_id'] == sample_board['id']
-    
+
+    def _create_columns(self, api_client, session, board_id, names):
+        """Create columns in order and return their ids."""
+        ids = []
+        for name in names:
+            response = session.post(f'{api_client}/api/boards/{board_id}/columns', json={'name': name})
+            assert response.status_code == 201
+            ids.append(response.json()['column']['id'])
+        return ids
+
+    def _column_orders(self, api_client, session, board_id):
+        """Return (name, order) for a board's columns, leftmost first."""
+        response = session.get(f'{api_client}/api/boards/{board_id}/columns')
+        assert response.status_code == 200
+        return [(column['name'], column['order']) for column in response.json()['columns']]
+
+    def test_create_column_at_order_inserts_between_columns(self, api_client, authenticated_session, sample_board):
+        """Creating a column at an order shifts later columns right, keeping orders unique."""
+        board_id = sample_board['id']
+        self._create_columns(api_client, authenticated_session, board_id, ['A', 'B', 'C'])
+
+        response = authenticated_session.post(
+            f'{api_client}/api/boards/{board_id}/columns', json={'name': 'New', 'order': 1}
+        )
+
+        assert response.status_code == 201
+        assert response.json()['column']['order'] == 1
+        assert self._column_orders(api_client, authenticated_session, board_id) == [
+            ('A', 0), ('New', 1), ('B', 2), ('C', 3)
+        ]
+
+    def test_create_column_at_order_zero_inserts_first(self, api_client, authenticated_session, sample_board):
+        """Order 0 puts the new column at the left of the board."""
+        board_id = sample_board['id']
+        self._create_columns(api_client, authenticated_session, board_id, ['A', 'B'])
+
+        response = authenticated_session.post(
+            f'{api_client}/api/boards/{board_id}/columns', json={'name': 'New', 'order': 0}
+        )
+
+        assert response.status_code == 201
+        assert self._column_orders(api_client, authenticated_session, board_id) == [('New', 0), ('A', 1), ('B', 2)]
+
+    def test_create_column_at_order_past_end_moves_nothing(self, api_client, authenticated_session, sample_board):
+        """An order past the last column leaves existing columns where they are."""
+        board_id = sample_board['id']
+        self._create_columns(api_client, authenticated_session, board_id, ['A', 'B'])
+
+        response = authenticated_session.post(
+            f'{api_client}/api/boards/{board_id}/columns', json={'name': 'New', 'order': 2}
+        )
+
+        assert response.status_code == 201
+        assert self._column_orders(api_client, authenticated_session, board_id) == [('A', 0), ('B', 1), ('New', 2)]
+
+    def test_create_column_at_order_only_shifts_same_board(self, api_client, authenticated_session, sample_board):
+        """Inserting a column leaves other boards' column orders alone."""
+        other_board = authenticated_session.post(f'{api_client}/api/boards', json={'name': 'Other board'}).json()['board']
+        self._create_columns(api_client, authenticated_session, sample_board['id'], ['A'])
+        self._create_columns(api_client, authenticated_session, other_board['id'], ['X'])
+
+        response = authenticated_session.post(
+            f'{api_client}/api/boards/{sample_board["id"]}/columns', json={'name': 'New', 'order': 0}
+        )
+
+        assert response.status_code == 201
+        assert self._column_orders(api_client, authenticated_session, other_board['id']) == [('X', 0)]
+
+    def test_create_column_invalid_order_moves_nothing(self, api_client, authenticated_session, sample_board):
+        """A rejected order must not renumber the board's columns."""
+        board_id = sample_board['id']
+        self._create_columns(api_client, authenticated_session, board_id, ['A'])
+
+        response = authenticated_session.post(
+            f'{api_client}/api/boards/{board_id}/columns', json={'name': 'New', 'order': -1}
+        )
+
+        assert response.status_code == 400
+        assert self._column_orders(api_client, authenticated_session, board_id) == [('A', 0)]
+
     def test_create_column_board_not_found(self, api_client, authenticated_session):
         """Test creating a column for non-existent board returns 403 (no access)."""
         response = authenticated_session.post(f'{api_client}/api/boards/9999/columns', json={
