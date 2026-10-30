@@ -129,7 +129,7 @@ Add this phase after MVP is merged and stable.
 ## No Changes Required
 - `compose.yml` — logos stored in existing `backgrounds_volume` subdirectory
 - `server/nginx.conf` — existing `^~ /images/backgrounds/` location already serves subdirectories with 30-day immutable caching
-- Any HTML favicon `<link>` tags — `header.js` already overrides the first `link[rel="icon"]` dynamically
+- Any HTML favicon `<link>` tags — they are overridden dynamically, by `header.js` or, on pages without it (login, setup, register, logout), by `www/js/custom-favicon.js`
 
 ---
 
