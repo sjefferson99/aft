@@ -1039,9 +1039,9 @@ def change_password():
             message:
               type: string
       400:
-        description: Validation error
+        description: Validation error or current password incorrect
       401:
-        description: Not authenticated or current password incorrect
+        description: Not authenticated
       403:
         description: Non-administrator attempted to reset another user's password
       404:
@@ -1098,7 +1098,7 @@ def change_password():
             if not is_admin_reset:
                 # Verify current password for self-service password changes.
                 if not verify_password(current_password, user.password_hash):
-                    return create_error_response("Current password is incorrect", 401)
+                    return create_error_response("Current password is incorrect", 400)
 
             # Update password for either self-change or admin reset.
             user.password_hash = hash_password(new_password)

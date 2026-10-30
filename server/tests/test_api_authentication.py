@@ -476,7 +476,8 @@ class TestPasswordChange:
             "current_password": "WrongPassword",
             "new_password": "NewPass456!"
         })
-        assert response.status_code == 401
+        # 400, not 401: the session is still valid, and a 401 makes the UI redirect to login.
+        assert response.status_code == 400
         assert 'current password' in response.json()['message'].lower()
     
     def test_change_password_validation(self, authenticated_session):
