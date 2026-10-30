@@ -21,14 +21,18 @@ def _passkeys_enabled():
         return False
 
 
-pytestmark = [
-    pytest.mark.ui,
-    pytest.mark.skipif(
-        not _passkeys_enabled(),
-        reason="Passkeys not enabled on the stack (set WEBAUTHN_RP_ID=localhost and "
-               "WEBAUTHN_ORIGINS=http://localhost,https://localhost in .env)",
-    ),
-]
+pytestmark = pytest.mark.ui
+
+
+@pytest.fixture(autouse=True)
+def require_passkeys(ensure_test_admin):
+    """Skip when passkeys are off. Checked after setup: before the first admin
+    exists every API call, including the status endpoint, returns 503."""
+    if not _passkeys_enabled():
+        pytest.skip(
+            "Passkeys not enabled on the stack (set WEBAUTHN_RP_ID=localhost and "
+            "WEBAUTHN_ORIGINS=http://localhost,https://localhost in .env)"
+        )
 
 
 def add_virtual_authenticator(page):
