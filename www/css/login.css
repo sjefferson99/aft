@@ -143,6 +143,53 @@ body {
     transform: none;
 }
 
+.passkey-signin[hidden] {
+    display: none;
+}
+
+.login-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 0;
+    color: #666;
+    font-size: 13px;
+}
+
+.login-divider::before,
+.login-divider::after {
+    content: '';
+    flex: 1;
+    border-top: 1px solid #e1e4e8;
+}
+
+.btn-passkey {
+    width: 100%;
+    padding: 12px;
+    background: white;
+    color: #2c7a5c;
+    border: 2px solid #6abfa0;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.btn-passkey:hover:not(:disabled) {
+    background: #f0faf6;
+}
+
+.btn-passkey:focus-visible {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+.btn-passkey:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .login-footer {
     text-align: center;
     margin-top: 24px;

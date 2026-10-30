@@ -227,9 +227,11 @@ def passkey_register_options():
             options:
               type: object
       400:
-        description: Missing password or passkey limit reached
+        description: >
+          Missing or incorrect password, or passkey limit reached. A wrong
+          password is 400, not 401, because the session is still valid.
       401:
-        description: Not logged in, or the password is incorrect
+        description: Not logged in
       404:
         description: Passkeys are not enabled
       500:
@@ -249,7 +251,7 @@ def passkey_register_options():
         if not user or not user.password_hash:
             return create_error_response("This account cannot add passkeys", 400)
         if not verify_password(password, user.password_hash):
-            return create_error_response("Current password is incorrect", 401)
+            return create_error_response("Current password is incorrect", 400)
 
         existing = db.query(WebAuthnCredential).filter(
             WebAuthnCredential.user_id == user.id

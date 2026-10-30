@@ -103,12 +103,82 @@
           </div>
         </form>
       </div>
+
+      <section class="profile-section" id="passkeys-section" aria-labelledby="passkeys-heading" hidden>
+        <h3 id="passkeys-heading">Passkeys</h3>
+        <p class="field-help">
+          Sign in with your fingerprint, face, screen lock or a security key instead of typing your password.
+          Your password keeps working too.
+        </p>
+        <p id="passkeys-unsupported" class="field-help" hidden>
+          This browser can't use passkeys here. Passkeys need a supported browser and a secure (https) connection.
+        </p>
+        <ul id="passkey-list" class="passkey-list" aria-label="Your passkeys"></ul>
+        <p id="passkey-empty" class="field-help" hidden>You haven't added any passkeys yet.</p>
+        <div class="form-actions">
+          <button type="button" class="btn btn-primary" id="add-passkey-btn">Add a passkey</button>
+          <div id="passkey-status" class="status-message" role="status" aria-live="polite"></div>
+        </div>
+      </section>
     </div>
   </main>
+
+  <div class="modal" id="add-passkey-modal" role="dialog" aria-modal="true" aria-labelledby="add-passkey-title" aria-describedby="add-passkey-description">
+    <div class="modal-content">
+      <h2 id="add-passkey-title">Add a passkey</h2>
+      <form id="add-passkey-form" class="modal-body" novalidate>
+        <p id="add-passkey-description">Confirm your password, then follow your browser's prompts to create the passkey.</p>
+        <div id="add-passkey-error" class="status-message error" role="alert"></div>
+        <div class="form-group">
+          <label for="add-passkey-password">Current Password</label>
+          <input type="password" id="add-passkey-password" class="form-input" autocomplete="current-password" required aria-required="true" aria-describedby="add-passkey-error">
+        </div>
+        <div class="form-group">
+          <label for="add-passkey-name">Name (optional)</label>
+          <p class="field-help" id="add-passkey-name-help">Helps you tell your passkeys apart, for example "Work laptop".</p>
+          <input type="text" id="add-passkey-name" class="form-input" maxlength="100" aria-describedby="add-passkey-name-help">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="add-passkey-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="add-passkey-ok-btn">Continue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="rename-passkey-modal" role="dialog" aria-modal="true" aria-labelledby="rename-passkey-title">
+    <div class="modal-content">
+      <h2 id="rename-passkey-title">Rename passkey</h2>
+      <form id="rename-passkey-form" class="modal-body" novalidate>
+        <div id="rename-passkey-error" class="status-message error" role="alert"></div>
+        <div class="form-group">
+          <label for="rename-passkey-name">Name</label>
+          <input type="text" id="rename-passkey-name" class="form-input" maxlength="100" required aria-required="true" aria-describedby="rename-passkey-error">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="rename-passkey-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="rename-passkey-ok-btn">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="remove-passkey-modal" role="dialog" aria-modal="true" aria-labelledby="remove-passkey-title" aria-describedby="remove-passkey-message">
+    <div class="modal-content">
+      <h2 id="remove-passkey-title">Remove passkey</h2>
+      <p id="remove-passkey-message"></p>
+      <div id="remove-passkey-error" class="status-message error" role="alert"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="remove-passkey-cancel-btn">Cancel</button>
+        <button type="button" class="btn btn-danger" id="remove-passkey-ok-btn">Remove</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/js/utils.js"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/header.js"></script>
+  <script src="/js/passkeys.js"></script>
   <script src="/js/profile.js"></script>
 </body>
 </html>

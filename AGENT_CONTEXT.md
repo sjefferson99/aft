@@ -83,7 +83,9 @@ Non-obvious behaviour that is easy to break:
   - Challenges are stored in Redis, keyed by the challenge itself (read back from `clientDataJSON` on verify). They are single use (GETDEL) and bound to the browser session by a `webauthn_binding` id. Keying by challenge lets several ceremonies run at once in one session (two tabs, or autofill plus the sign-in button). Don't move them into the Flask session: with cookie sessions an old cookie could replay a challenge.
   - Binary WebAuthn values are stored as base64url text in `ascii_bin` columns, so backups stay plain text and lookups stay case-sensitive.
   - A passkey sign-in stores `passkey_id` in the session. `_resolve_session_user` ends that session when the passkey is removed.
-  - API tests use the software authenticator in `server/tests/soft_authenticator.py`. They need `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGINS=http://localhost,https://localhost` in `.env`, or they skip.
+  - API tests use the software authenticator in `server/tests/soft_authenticator.py`. They need `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGINS=http://localhost,https://localhost` in `.env`, or they skip. UI tests (`ui-tests/tests/test_passkeys.py`) use Chromium's virtual authenticator and need the same settings.
+  - Frontend: `www/js/passkeys.js` does the base64url conversion around `navigator.credentials`. The login page starts one autofill (conditional) request on load and never restarts it after it rejects: some browsers reject at once when there is nothing to offer, which caused a request loop. Only the button flow restarts it.
+- **401 responses on logged-in pages**: the global fetch wrapper in `www/js/utils.js` treats any 401 as signed out and redirects to the login page. Endpoints called from logged-in pages must return 400, not 401, for "wrong password"-type errors where the session is still valid.
 - **Frontend modals**: reuse the existing modal structure and styles, and use the CSS variables so themes work. Don't hardcode colours. Use danger styling only for destructive actions.
 
 ## PR review workflow

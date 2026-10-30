@@ -11,7 +11,8 @@ This module provides admin-only endpoints for:
 from flask import Blueprint, jsonify, request, g
 from database import SessionLocal
 from datetime_helpers import serialize_datetime
-from models import User, Role, UserRole
+from models import User, Role, UserRole, WebAuthnCredential
+from sqlalchemy.sql import func
 from auth import ensure_global_role
 from utils import (
     require_permission,
@@ -76,6 +77,9 @@ def list_users():
                   last_login_at:
                     type: string
                     format: date-time
+                  passkey_count:
+                    type: integer
+                    description: Number of passkeys the user has registered
                   roles:
                     type: array
                     items:
@@ -95,6 +99,12 @@ def list_users():
             query = query.filter(User.is_approved == True)
         
         users = query.order_by(User.created_at.desc()).all()
+
+        passkey_counts = dict(
+            db.query(WebAuthnCredential.user_id, func.count(WebAuthnCredential.id))
+            .group_by(WebAuthnCredential.user_id)
+            .all()
+        )
         
         users_data = []
         for user in users:
@@ -115,6 +125,7 @@ def list_users():
                 'oauth_provider': user.oauth_provider,
                 'created_at': serialize_datetime(user.created_at),
                 'last_login_at': serialize_datetime(user.last_login_at),
+                'passkey_count': passkey_counts.get(user.id, 0),
                 'roles': [{'id': r.id, 'name': r.name} for r in roles]
             })
         

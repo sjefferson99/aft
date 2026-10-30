@@ -26,7 +26,8 @@ ui-tests/
     ├── __init__.py
     ├── test_login.py            # Login flow (valid/invalid credentials)
     ├── test_boards.py           # Create/delete a board from the boards list
-    └── test_board_workflow.py   # Add a column, add a card to a column
+    ├── test_board_workflow.py   # Add a column, add a card to a column
+    └── test_passkeys.py         # Passkey add/rename/remove, passkey sign-in, admin revoke
 ```
 
 ## Prerequisites
@@ -38,6 +39,12 @@ ui-tests/
    docker compose up -d --build
    ```
    The app must be reachable at `http://localhost`.
+3. **Passkeys enabled** for `tests/test_passkeys.py`. Add
+   `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGINS=http://localhost,https://localhost`
+   to `.env` and rebuild the server; otherwise those tests are skipped. They
+   use Chromium's virtual authenticator, so no real device is needed. The
+   virtual authenticator answers passkey autofill straight away, so a page
+   with a registered passkey signs in as soon as `login.html` loads.
 
 ## Setup
 
