@@ -1037,6 +1037,10 @@
   overflow-wrap: break-word;
 }
 
+.card.card--done-toggle .card-title {
+  padding-right: 100px; /* Space for done + archive + delete buttons */
+}
+
 .card-title a,
 .card-description a,
 .card-checklist-name a {
@@ -2112,7 +2116,8 @@ button.readonly-disabled,
     max-width: none;
   }
 
-  .card-title {
+  .card-title,
+  .card.card--done-toggle .card-title {
     font-size: 11px;
     padding-right: 58px;
   }

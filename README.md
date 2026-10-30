@@ -97,7 +97,7 @@ The application supports different working styles to accommodate various team pr
 - **Kanban** - Traditional column-based workflow where cards move through stages (To Do, In Progress, Done, etc.)
 - **Agile** - Enables done tracking and a dedicated Done View on the board
 
-In Agile mode, cards use Done/Not Done status and the Archived View is hidden. In Kanban mode, archive workflows remain available. For detailed information on using these features, see the Docs page (accessible from the user menu in the header).
+In Agile mode, cards use Done/Not Done status, and you can also archive a card to take it off the board without marking it done, for example work you decided not to do. Archive workflows and the Archived View are available in both modes. For detailed information on using these features, see the Docs page (accessible from the user menu in the header).
 
 ### 📋 Board Management
 - **Create Multiple Boards** - Organise different projects with separate Kanban boards
@@ -240,7 +240,7 @@ In Agile mode, cards use Done/Not Done status and the Archived View is hidden. I
   - **Board-Level Override**: Existing board style is managed from that board's settings menu
   - **Done Button**: Mark cards as complete without moving them between columns in Agile mode
   - **Done View**: Dedicated view to see completed cards in Agile mode
-  - **Archived View**: Available in Kanban mode; hidden in Agile mode
+  - **Archived View**: Available in both modes; in Agile mode it lists done and not-done archived cards together
   - **Smart Column Counts**: See total and done counts in column headers (e.g., "To Do (2/5)")
 
 ![Settings](images/settings.png)
