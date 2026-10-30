@@ -2691,19 +2691,23 @@ class BoardManager {
 
     this.applyHeaderSearchCollapsedState();
 
-    const columnsContainer = this.container?.querySelector('.columns-container');
-    if (!columnsContainer) {
+    const canvas = document.querySelector('.board-page .canvas');
+    if (!canvas) {
       return;
     }
 
-    const viewportHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight;
+    // Multiply by scale so pinch zoom doesn't shrink the layout.
+    const visualViewport = window.visualViewport;
+    const viewportHeight = visualViewport
+      ? visualViewport.height * visualViewport.scale
+      : window.innerHeight || document.documentElement.clientHeight;
     if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
       return;
     }
 
-    const containerTop = columnsContainer.getBoundingClientRect().top;
-    const bottomGap = 8;
-    const availableHeight = Math.max(320, Math.floor(viewportHeight - containerTop - bottomGap));
+    const canvasTop = canvas.getBoundingClientRect().top;
+    const bottomGap = 6;
+    const availableHeight = Math.max(320, Math.floor(viewportHeight - canvasTop - bottomGap));
 
     document.documentElement.style.setProperty('--board-mobile-available-height', `${availableHeight}px`);
   }

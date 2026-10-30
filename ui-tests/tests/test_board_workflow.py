@@ -104,6 +104,61 @@ def test_long_title_wraps_in_template_schedule_modal_on_mobile(logged_in_page, c
     _assert_title_wraps(title)
 
 
+def _open_long_mobile_column(page, api_session, ui_base_url, column):
+    """Open a board on a phone-sized viewport with enough cards to scroll the column."""
+    for index in range(12):
+        resp = api_session.post(
+            f"{ui_base_url}/api/columns/{column['id']}/cards",
+            json={"title": f"Card {index}", "description": "Some text " * 8},
+        )
+        assert resp.status_code == 201
+
+    page.set_viewport_size({"width": 360, "height": 726})
+    page.goto(f"/board.html?id={column['board_id']}")
+    page.locator(f'.column-cards[data-column-id="{column["id"]}"] .add-card-btn').wait_for(state="attached", timeout=5000)
+
+
+def _add_card_button_bottom_at_max_scroll(page, column):
+    """Scroll the column to its end and return the Add Card button's bottom edge."""
+    return page.evaluate(
+        """columnId => {
+          const list = document.querySelector(`.column-cards[data-column-id="${columnId}"]`);
+          list.scrollTop = list.scrollHeight;
+          return list.querySelector('.add-card-btn').getBoundingClientRect().bottom;
+        }""",
+        column["id"],
+    )
+
+
+@pytest.mark.ui
+def test_mobile_board_height_follows_measured_viewport(logged_in_page, api_session, ui_base_url, column):
+    """The board is sized from the measured space, not 100dvh less a fixed header height (#515)."""
+    page = logged_in_page
+    _open_long_mobile_column(page, api_session, ui_base_url, column)
+
+    # A taller header would push the board off screen with a fixed offset.
+    page.add_style_tag(content=".header { padding-bottom: 60px !important; }")
+    page.evaluate("window.dispatchEvent(new Event('resize'))")
+    page.wait_for_function(
+        "() => document.querySelector('.canvas').getBoundingClientRect().bottom <= window.innerHeight",
+        timeout=5000,
+    )
+
+    assert _add_card_button_bottom_at_max_scroll(page, column) <= 726
+
+
+@pytest.mark.ui
+def test_add_card_button_reachable_when_column_overflows_screen(logged_in_page, api_session, ui_base_url, column):
+    """Add Card stays reachable when the board overshoots the screen, as in an installed PWA (#515)."""
+    page = logged_in_page
+    _open_long_mobile_column(page, api_session, ui_base_url, column)
+
+    # The overshoot measured on an affected phone: 50px past the visible area.
+    page.add_style_tag(content=".board-page .canvas { height: calc(100dvh - 12px) !important; }")
+
+    assert _add_card_button_bottom_at_max_scroll(page, column) <= 726
+
+
 def _assert_title_wraps(title):
     """Assert a title field shows every line of a long title within a 375px viewport."""
     sizes = title.evaluate(

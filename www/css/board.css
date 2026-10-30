@@ -1973,7 +1973,6 @@ button.readonly-disabled,
 .board-page {
   --mobile-column-width: min(66vw, 248px);
   --mobile-column-width-tight: calc(100vw - 64px);
-  --board-mobile-available-height: calc(100dvh - 154px);
 }
 
 .columns-container {
@@ -1991,8 +1990,10 @@ button.readonly-disabled,
 @media (max-width: 900px) {
   .board-page .canvas {
     padding: 10px 8px 2px;
-    height: calc(100dvh - 68px);
-    min-height: calc(100dvh - 68px);
+    /* Set from the measured viewport in board.js: installed PWAs can report a
+       100dvh taller than the visible area (#515). */
+    height: var(--board-mobile-available-height, calc(100dvh - 68px));
+    min-height: var(--board-mobile-available-height, calc(100dvh - 68px));
   }
 
   .board-header {
@@ -2102,6 +2103,8 @@ button.readonly-disabled,
 
   .column-cards {
     touch-action: none;
+    /* Keeps Add Card reachable if the column still overflows the screen (#515). */
+    padding-bottom: 60px;
   }
 
   .column-menu-dropdown {
@@ -2299,7 +2302,6 @@ button.readonly-disabled,
 @media (max-width: 640px) {
   .board-page .canvas {
     padding: 8px 4px 1px;
-    height: calc(100dvh - 68px);
   }
 
   .columns-container {
