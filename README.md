@@ -334,7 +334,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 - **Housekeeping Scheduler** - Automatic maintenance service running every hour
   - Checks GitHub for new AFT releases
   - Creates notifications when updates are available
-  - Prevents duplicate notifications for the same version
+  - Prevents duplicate notifications for the same version while one still exists, read or unread
   - Can be enabled/disabled via System Info page
 
 ### 🔌 API Documentation
