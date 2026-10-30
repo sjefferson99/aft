@@ -92,6 +92,7 @@ Non-obvious behaviour that is easy to break:
 - **Agile archive**: agile cards have both Done and Archive. The done filter applies to the task and done views only. The Archived View lists done and not-done cards together, so requests from it must not narrow by `done`.
 - **401 responses on logged-in pages**: the global fetch wrapper in `www/js/utils.js` treats any 401 as signed out and redirects to the login page. Endpoints called from logged-in pages must return 400, not 401, for "wrong password"-type errors where the session is still valid.
 - **Frontend asset versions**: nginx serves CSS and JS with a 1-hour browser cache. When you change a file that its HTML page loads with a `?v=` value (such as `board.js` and `board.css` in `www/board.html`), bump that value, in the form `YYYYMMDDa`, or browsers can run new JS against old CSS.
+- **Mobile board height**: at 900px and below, `updateMobileBoardViewportMetrics()` in `www/js/board.js` sets the board height from the measured viewport, because an installed PWA can report a `100dvh` taller than the visible area. It re-measures on viewport changes and through a `ResizeObserver` on `document.body`, because the header loads after the board can render. UI tests that intercept requests need `context.route`, since the service worker makes them.
 - **Frontend modals**: reuse the existing modal structure and styles, and use the CSS variables so themes work. Don't hardcode colours. Use danger styling only for destructive actions.
 
 ## PR review workflow
@@ -105,6 +106,7 @@ Non-obvious behaviour that is easy to break:
 
   A footer at the bottom is not enough, because readers see the top first. Check the final body string before each post. If a comment went out without the line, edit it immediately. Write the JSON with Python's `json.dump` and send it with `gh api repos/{owner}/{repo}/issues/comments/{id} -X PATCH --input <file>`, then confirm with a GET. On Windows/Git Bash, `-f body=@path` posts the literal path string instead of the file contents.
 - **After an approved fix**, re-run the reproduction that found the bug to confirm the fix. Leave resolving or closing review threads to the user.
+- **After merging**, delete the merged branch locally and on the remote. Before deleting, check `git branch --merged origin/main` lists it. Never delete an unmerged branch without asking.
 
 ## PR labels and release notes
 

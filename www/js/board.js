@@ -940,6 +940,7 @@ class BoardManager {
     this.closeDropdownHandler = this.handleCloseDropdown.bind(this);
     this.beforeUnloadHandler = this.handleBeforeUnload.bind(this);
     this.viewportMetricsHandler = this.queueMobileViewportMetricsUpdate.bind(this);
+    this.viewportMetricsObserver = null;
     this.boardTouchStartHandler = this.handleBoardTouchStart.bind(this);
     this.boardTouchMoveHandler = this.handleBoardTouchMove.bind(this);
     this.boardTouchEndHandler = this.handleBoardTouchEnd.bind(this);
@@ -1770,6 +1771,12 @@ class BoardManager {
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', this.viewportMetricsHandler);
       window.visualViewport.addEventListener('scroll', this.viewportMetricsHandler, { passive: true });
+    }
+
+    // The header loads separately and can arrive after the board has rendered.
+    if (typeof ResizeObserver !== 'undefined') {
+      this.viewportMetricsObserver = new ResizeObserver(this.viewportMetricsHandler);
+      this.viewportMetricsObserver.observe(document.body);
     }
   }
 
@@ -2699,19 +2706,23 @@ class BoardManager {
 
     this.applyHeaderSearchCollapsedState();
 
-    const columnsContainer = this.container?.querySelector('.columns-container');
-    if (!columnsContainer) {
+    const canvas = document.querySelector('.board-page .canvas');
+    if (!canvas) {
       return;
     }
 
-    const viewportHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight;
+    // Multiply by scale so pinch zoom doesn't shrink the layout.
+    const visualViewport = window.visualViewport;
+    const viewportHeight = visualViewport
+      ? visualViewport.height * visualViewport.scale
+      : window.innerHeight || document.documentElement.clientHeight;
     if (!Number.isFinite(viewportHeight) || viewportHeight <= 0) {
       return;
     }
 
-    const containerTop = columnsContainer.getBoundingClientRect().top;
-    const bottomGap = 8;
-    const availableHeight = Math.max(320, Math.floor(viewportHeight - containerTop - bottomGap));
+    const canvasTop = canvas.getBoundingClientRect().top;
+    const bottomGap = 6;
+    const availableHeight = Math.max(200, Math.floor(viewportHeight - canvasTop - bottomGap));
 
     document.documentElement.style.setProperty('--board-mobile-available-height', `${availableHeight}px`);
   }
@@ -3972,6 +3983,11 @@ class BoardManager {
     if (window.visualViewport) {
       window.visualViewport.removeEventListener('resize', this.viewportMetricsHandler);
       window.visualViewport.removeEventListener('scroll', this.viewportMetricsHandler);
+    }
+
+    if (this.viewportMetricsObserver) {
+      this.viewportMetricsObserver.disconnect();
+      this.viewportMetricsObserver = null;
     }
 
     if (this.container && this.boardTouchScrollingSetup) {
