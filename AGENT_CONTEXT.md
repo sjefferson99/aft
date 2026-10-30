@@ -102,6 +102,7 @@ Non-obvious behaviour that is easy to break:
 
   A footer at the bottom is not enough, because readers see the top first. Check the final body string before each post. If a comment went out without the line, edit it immediately. Write the JSON with Python's `json.dump` and send it with `gh api repos/{owner}/{repo}/issues/comments/{id} -X PATCH --input <file>`, then confirm with a GET. On Windows/Git Bash, `-f body=@path` posts the literal path string instead of the file contents.
 - **After an approved fix**, re-run the reproduction that found the bug to confirm the fix. Leave resolving or closing review threads to the user.
+- **After merging**, delete the merged branch locally and on the remote. Before deleting, check `git branch --merged origin/main` lists it. Never delete an unmerged branch without asking.
 
 ## PR labels and release notes
 
