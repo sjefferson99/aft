@@ -3038,7 +3038,6 @@ class BoardManager {
       this.workingStyle = 'kanban';
     }
 
-    // Update archived view visibility based on working style
     this.updateScheduledViewVisibility();
   }
 
@@ -4360,12 +4359,22 @@ class BoardManager {
     const canMoveCard = this.canEdit || this.canCallPermissionEndpoint('PATCH', '/api/cards/:id');
     const canShowCardActions = canArchiveCard || canUnarchiveCard || canDeleteCard || canMoveCard ||
       (this.workingStyle === 'agile' && canToggleDone);
-    return { canShowCardActions, canArchiveCard, canUnarchiveCard, canDeleteCard, canToggleDone, canMoveCard };
+    const reserveDoneAndArchiveSpace = this.workingStyle === 'agile' && canToggleDone && canArchiveCard &&
+      this.currentView !== 'scheduled';
+    return {
+      canShowCardActions,
+      canArchiveCard,
+      canUnarchiveCard,
+      canDeleteCard,
+      canToggleDone,
+      canMoveCard,
+      reserveDoneAndArchiveSpace
+    };
   }
 
   // Markup for one card, shared by renderBoard() and renderCard().
   renderCardHtml(card, columnId, permissions) {
-    return `<div class="card ${card.archived ? 'archived-card' : ''} ${this.currentView === 'scheduled' && !card.schedule ? 'no-schedule' : ''} ${card.assigned_to ? 'card--has-assignee' : ''} ${this.workingStyle === 'agile' ? 'card--done-toggle' : ''}" draggable="${!card.archived && this.canEdit}" data-card-id="${card.id}" data-column-id="${columnId}" data-order="${card.order}" data-archived="${card.archived}" data-done="${card.done || false}">
+    return `<div class="card ${card.archived ? 'archived-card' : ''} ${this.currentView === 'scheduled' && !card.schedule ? 'no-schedule' : ''} ${card.assigned_to ? 'card--has-assignee' : ''} ${permissions.reserveDoneAndArchiveSpace && !card.archived ? 'card--done-toggle' : ''}" draggable="${!card.archived && this.canEdit}" data-card-id="${card.id}" data-column-id="${columnId}" data-order="${card.order}" data-archived="${card.archived}" data-done="${card.done || false}">
         ${permissions.canShowCardActions ? `<div class="card-action-buttons" draggable="false">`  : '<div class="card-action-buttons readonly-hidden" draggable="false">'}
           ${this.currentView === 'scheduled' ? '' : 
             card.archived ? 
