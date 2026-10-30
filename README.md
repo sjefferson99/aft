@@ -583,6 +583,27 @@ Multi-worker support is unchanged. Socket.IO broadcasts go through Redis, and th
 
 **During a large database restore** with a single worker, other requests can slow to a few seconds while the backup file is read and validated, because that work runs in the same process. Requests return `503` while the database itself is being reloaded, whatever the worker count. In testing, a 75 MB restore took about 25 seconds in total.
 
+### Sign-in rate limits
+AFT slows down password guessing. After too many failed attempts, further attempts get a "Too many attempts" message until the block ends. Blocks end by themselves, and people who are already signed in aren't affected. A blocked account can still sign in with a passkey. Failed passwords count across sign-in, password changes and adding a passkey, and only failures count. Limits apply to unknown usernames too, so a block doesn't show whether an account exists.
+
+**If another reverse proxy, such as Traefik, sits in front of the bundled nginx, set `TRUSTED_PROXY_HOPS=2`.** Otherwise every user appears to come from that proxy's address and shares one per-IP limit, so failed attempts by one person could block everyone's sign-in. Use the real number of proxies: a value that is too high lets clients fake their address by sending their own `X-Forwarded-For` header. If you run the server without nginx and nothing in front of it, set `TRUSTED_PROXY_HOPS=0`.
+
+| `.env` variable | Default | Allowed | What it does |
+|---|---|---|---|
+| `TRUSTED_PROXY_HOPS` | `1` | 0 or more | Proxies in front of the server, counting the bundled nginx. Used to find each client's real IP address. |
+| `AUTH_RATE_LIMIT_ACCOUNT_FAILURES` | `10` | 1 or more | Failed password attempts per account in 15 minutes. |
+| `AUTH_RATE_LIMIT_IP_FAILURES` | `50` | 1 or more | Failed password attempts per client IP in 15 minutes, across all accounts. Raise this if many people share one public address, such as an office network. |
+| `AUTH_RATE_LIMIT_REGISTRATIONS` | `10` | 1 or more | Registration attempts per client IP in an hour. Signed-in administrators creating users aren't limited. |
+| `AUTH_RATE_LIMIT_PASSKEY_STARTS` | `60` | 1 or more | Passkey sign-ins started per client IP in a minute. |
+
+Apply changes with `docker compose up -d server`. Invalid values stop the server from starting, and the reason appears in `docker compose logs server`. Blocked attempts are logged as warnings in the same place.
+
+Blocks survive a restart of Redis. To clear every block early, without signing anyone out, run:
+
+```sh
+docker compose exec redis sh -c "redis-cli --scan --pattern 'aft:rl:auth:*' | xargs -r redis-cli del"
+```
+
 ### Backup Storage
 Automatic backups are stored on the host filesystem at `./backups/` (relative to the docker-compose.yml location). This directory is automatically created by Docker and persists across container restarts. You can include this directory in your host backup solution for additional data protection.
 
@@ -637,6 +658,7 @@ The application includes a multi-user security model with authentication, role-b
 - **Ownership and IDOR Protection** - Server-side scoping checks prevent users from accessing resources they do not own or are not assigned to.
 - **Secure Session Defaults** - HTTPS-first behaviour, secure session cookies by default, and optional Redis-backed server-side sessions.
 - **Passkeys (optional)** - Sign in with a passkey instead of a password, once an administrator sets the passkey domain. See [Passkeys](#passkeys).
+- **Password Guessing Limits** - Repeated failed passwords are temporarily blocked per account and per client IP. See [Sign-in rate limits](#sign-in-rate-limits).
 - **Operational Hardening** - Token-protected health checks and browser hardening headers in the reverse proxy layer.
 - **Public Board Guardrails** - Anonymous access is limited to redacted read-only board payloads via slug URLs; private boards and all write/admin endpoints remain auth-gated.
 - **Public Route Controls** - Public board endpoints include crawler-dissuasion/cache headers and request throttling to reduce abuse risk.

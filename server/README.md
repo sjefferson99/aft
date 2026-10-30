@@ -185,7 +185,7 @@ python migrate.py downgrade
 
 ### Recommended Additional Protections
 
-⚠️ **Rate Limiting**: Consider adding rate limiting for production (e.g., Flask-Limiter)
+⚠️ **Rate Limiting**: Sign-in and public board endpoints are limited. Consider general API limits for production
 ⚠️ **HTTPS**: Always use HTTPS in production
 ⚠️ **CORS**: Configure CORS policies for your domain
 ⚠️ **CSRF Protection**: Add CSRF tokens if using session-based auth

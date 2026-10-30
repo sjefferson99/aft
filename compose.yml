@@ -60,6 +60,12 @@ services:
     security_opt:
       - no-new-privileges:true
     env_file: .env
+    environment:
+      # The test suites make all their requests from one IP, so raise the
+      # per-IP limits here. Per-account limits stay at their defaults.
+      - AUTH_RATE_LIMIT_IP_FAILURES=${AUTH_RATE_LIMIT_IP_FAILURES:-100000}
+      - AUTH_RATE_LIMIT_REGISTRATIONS=${AUTH_RATE_LIMIT_REGISTRATIONS:-100000}
+      - AUTH_RATE_LIMIT_PASSKEY_STARTS=${AUTH_RATE_LIMIT_PASSKEY_STARTS:-100000}
     depends_on:
       - db
       - redis

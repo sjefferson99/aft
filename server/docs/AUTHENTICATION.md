@@ -460,5 +460,5 @@ show_user_permissions(user.id)
 - **Custom roles**: Allow admins to create custom roles with specific permissions
 - **Audit logging**: Track all data access and modifications
 - **API keys**: Generate API keys for programmatic access
-- **Rate limiting**: Per-user rate limits for API endpoints
+- **Rate limiting**: Per-user rate limits for general API endpoints (password checks and sign-in are already limited, see `auth_rate_limit.py`)
 - **Two-factor authentication**: Add 2FA support for enhanced security

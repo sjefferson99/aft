@@ -32,6 +32,14 @@ from sqlalchemy.sql import func
 from database import SessionLocal
 from models import User, Role, UserRole, WebAuthnCredential
 from permissions import INITIAL_ROLES
+from auth_rate_limit import (
+    account_key,
+    clear_password_failures,
+    password_block_seconds,
+    record_password_failure,
+    registration_block_seconds,
+    too_many_attempts_response,
+)
 from utils import (
     validate_string_length,
     create_error_response,
@@ -314,12 +322,17 @@ def load_user_from_session():
                     func.lower(User.username) == auth.username.lower()
                 ).first()
             
-            if user and user.is_active and user.is_approved and user.password_hash:
-                if verify_password(auth.password, user.password_hash):
-                    g.user = user
-                    g.db = db
-                    return
-            
+            # A blocked attempt is treated like invalid credentials, so the
+            # password isn't checked and the route returns its usual 401.
+            account = account_key(user, auth.username)
+            if not password_block_seconds(account):
+                if user and user.is_active and user.is_approved and user.password_hash:
+                    if verify_password(auth.password, user.password_hash):
+                        g.user = user
+                        g.db = db
+                        return
+                record_password_failure(account)
+
             # Invalid Basic Auth
             g.user = None
             g.db = None
@@ -393,13 +406,15 @@ def login():
         description: Invalid credentials
       403:
         description: Account disabled or pending approval
+      429:
+        description: Too many failed attempts. See the Retry-After header.
     """
     try:
         data = request.get_json()
-        
+
         if not data:
             return create_error_response("Request body required", 400)
-        
+
         email_or_username = data.get('email', '').strip()
         password = data.get('password', '')
         remember_me = data.get('remember_me', False)
@@ -422,10 +437,16 @@ def login():
                     func.lower(User.username) == email_or_username.lower()
                 ).first()
             
+            account = account_key(user, email_or_username)
+            retry_after = int(password_block_seconds(account))
+            if retry_after:
+                return too_many_attempts_response(retry_after)
+
             if not user:
                 # Don't reveal whether user exists
+                record_password_failure(account)
                 return create_error_response("Invalid email/username or password", 401)
-            
+
             # Check if user has a password (might be OAuth only)
             if not user.password_hash:
                 return create_error_response(
@@ -435,8 +456,9 @@ def login():
             
             # Verify password
             if not verify_password(password, user.password_hash):
+                record_password_failure(account)
                 return create_error_response("Invalid email/username or password", 401)
-            
+
             # Check if account is active
             if not user.is_active:
                 return create_error_response("Account is disabled", 403)
@@ -448,6 +470,7 @@ def login():
                     403
                 )
             
+            clear_password_failures(account)
             start_user_session(user, remember_me)
 
             # Update last login
@@ -546,16 +569,18 @@ def validate_credentials():
         description: Invalid credentials
       403:
         description: Account disabled or pending approval
+      429:
+        description: Too many failed attempts. See the Retry-After header.
     """
     try:
         data = request.get_json()
-        
+
         if not data:
             return create_error_response("Request body required", 400)
-        
+
         email_or_username = data.get('email', '').strip()
         password = data.get('password', '')
-        
+
         if not email_or_username or not password:
             return create_error_response("Email/username and password are required", 400)
         
@@ -571,18 +596,25 @@ def validate_credentials():
                     func.lower(User.username) == email_or_username.lower()
                 ).first()
             
+            account = account_key(user, email_or_username)
+            retry_after = int(password_block_seconds(account))
+            if retry_after:
+                return too_many_attempts_response(retry_after)
+
             if not user:
+                record_password_failure(account)
                 return create_error_response("Invalid email/username or password", 401)
-            
+
             if not user.password_hash:
                 return create_error_response(
                     "This account uses OAuth login",
                     400
                 )
-            
+
             if not verify_password(password, user.password_hash):
+                record_password_failure(account)
                 return create_error_response("Invalid email/username or password", 401)
-            
+
             if not user.is_active:
                 return create_error_response("Account is disabled", 403)
             
@@ -900,13 +932,21 @@ def register():
         description: Validation error
       409:
         description: Email or username already exists
+      429:
+        description: Too many registration attempts. See the Retry-After header.
     """
     try:
+        # Admins create accounts through this endpoint while signed in.
+        if not g.get('user'):
+            retry_after = registration_block_seconds()
+            if retry_after:
+                return too_many_attempts_response(retry_after)
+
         data = request.get_json()
-        
+
         if not data:
             return create_error_response("Request body required", 400)
-        
+
         email = data.get('email', '').strip().lower()
         username = data.get('username', '').strip()
         password = data.get('password', '')
@@ -1046,6 +1086,8 @@ def change_password():
         description: Non-administrator attempted to reset another user's password
       404:
         description: Target user not found
+      429:
+        description: Too many failed attempts. See the Retry-After header.
     """
     if not g.get('user'):
         return create_error_response("Not authenticated", 401)
@@ -1097,8 +1139,16 @@ def change_password():
 
             if not is_admin_reset:
                 # Verify current password for self-service password changes.
+                account = account_key(user)
+                retry_after = password_block_seconds(account)
+                if retry_after:
+                    return too_many_attempts_response(retry_after)
+
                 if not verify_password(current_password, user.password_hash):
+                    record_password_failure(account)
                     return create_error_response("Current password is incorrect", 400)
+
+                clear_password_failures(account)
 
             # Update password for either self-change or admin reset.
             user.password_hash = hash_password(new_password)
