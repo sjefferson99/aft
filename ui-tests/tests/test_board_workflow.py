@@ -104,7 +104,7 @@ def test_long_title_wraps_in_template_schedule_modal_on_mobile(logged_in_page, c
     _assert_title_wraps(title)
 
 
-def _open_long_mobile_column(page, api_session, ui_base_url, column):
+def _open_long_mobile_column(page, api_session, ui_base_url, column, width=360, height=726):
     """Open a board on a phone-sized viewport with enough cards to scroll the column."""
     for index in range(12):
         resp = api_session.post(
@@ -113,7 +113,7 @@ def _open_long_mobile_column(page, api_session, ui_base_url, column):
         )
         assert resp.status_code == 201
 
-    page.set_viewport_size({"width": 360, "height": 726})
+    page.set_viewport_size({"width": width, "height": height})
     page.goto(f"/board.html?id={column['board_id']}")
     page.locator(f'.column-cards[data-column-id="{column["id"]}"] .add-card-btn').wait_for(state="attached", timeout=5000)
 
@@ -145,6 +145,38 @@ def test_mobile_board_height_follows_measured_viewport(logged_in_page, api_sessi
     )
 
     assert _add_card_button_bottom_at_max_scroll(page, column) <= 726
+
+
+@pytest.mark.ui
+def test_mobile_board_height_updates_when_header_loads_late(logged_in_page, api_session, ui_base_url, column):
+    """A header that arrives after the board must not leave a stale height (#515)."""
+    page = logged_in_page
+    held_header_requests = []
+    # On the context, not the page: the service worker makes this request.
+    page.context.route("**/components/header.html", lambda route: held_header_requests.append(route))
+    _open_long_mobile_column(page, api_session, ui_base_url, column)
+    page.wait_for_timeout(300)
+    assert held_header_requests, "Header should still be loading after the board has rendered"
+
+    held_header_requests[0].continue_()
+    page.locator(".header").wait_for(state="attached", timeout=5000)
+
+    page.wait_for_function(
+        "() => document.querySelector('.canvas').getBoundingClientRect().bottom <= window.innerHeight",
+        timeout=5000,
+    )
+
+
+@pytest.mark.ui
+def test_mobile_board_fits_short_viewport(logged_in_page, api_session, ui_base_url, column):
+    """The minimum board height must not push the board off a short landscape screen (#515)."""
+    page = logged_in_page
+    _open_long_mobile_column(page, api_session, ui_base_url, column, width=740, height=320)
+
+    page.wait_for_function(
+        "() => document.querySelector('.canvas').getBoundingClientRect().bottom <= window.innerHeight",
+        timeout=5000,
+    )
 
 
 @pytest.mark.ui

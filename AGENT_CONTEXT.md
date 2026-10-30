@@ -90,6 +90,7 @@ Non-obvious behaviour that is easy to break:
   - Frontend: `www/js/passkeys.js` does the base64url conversion around `navigator.credentials`. The login page starts one autofill (conditional) request on load and never restarts it after it rejects: some browsers reject at once when there is nothing to offer, which caused a request loop. Only the button flow restarts it.
 - **Agile archive**: agile cards have both Done and Archive. The done filter applies to the task and done views only. The Archived View lists done and not-done cards together, so requests from it must not narrow by `done`.
 - **401 responses on logged-in pages**: the global fetch wrapper in `www/js/utils.js` treats any 401 as signed out and redirects to the login page. Endpoints called from logged-in pages must return 400, not 401, for "wrong password"-type errors where the session is still valid.
+- **Mobile board height**: at 900px and below, `updateMobileBoardViewportMetrics()` in `www/js/board.js` sets the board height from the measured viewport, because an installed PWA can report a `100dvh` taller than the visible area. It re-measures on viewport changes and through a `ResizeObserver` on `document.body`, because the header loads after the board can render. UI tests that intercept requests need `context.route`, since the service worker makes them.
 - **Frontend modals**: reuse the existing modal structure and styles, and use the CSS variables so themes work. Don't hardcode colours. Use danger styling only for destructive actions.
 
 ## PR review workflow
