@@ -13,6 +13,7 @@ after CEREMONY_TTL_SECONDS.
 import json
 import logging
 import os
+import re
 import secrets
 
 from flask import Blueprint, request, session, g
@@ -66,6 +67,9 @@ DEFAULT_PASSKEY_NAME = 'Passkey'
 MAX_CEREMONY_BODY_BYTES = 64 * 1024
 
 CEREMONY_KEY_PREFIX = 'aft:webauthn:'
+# clientDataJSON is a small JSON object; challenges are 64 random bytes in base64url.
+MAX_CLIENT_DATA_LENGTH = 4096
+_CHALLENGE_PATTERN = re.compile(r'[A-Za-z0-9_-]{16,256}')
 
 _redis_client = None
 
@@ -79,22 +83,50 @@ def _get_redis():
     return _redis_client
 
 
-def _store_ceremony(purpose, state):
-    """Store ceremony state in Redis and bind it to this browser session."""
-    token = secrets.token_urlsafe(32)
+def _store_ceremony(purpose, challenge, state=None):
+    """Store ceremony state in Redis, keyed by its challenge and bound to this browser session.
+
+    Keying by challenge lets several ceremonies run at once in one session, such
+    as two login tabs, or passkey autofill plus the sign-in button.
+    """
+    binding = session.get('webauthn_binding')
+    if not isinstance(binding, str):
+        binding = secrets.token_urlsafe(32)
+        session['webauthn_binding'] = binding
+    challenge_b64 = bytes_to_base64url(challenge)
+    payload = dict(state or {}, challenge=challenge_b64, binding=binding)
     _get_redis().set(
-        f"{CEREMONY_KEY_PREFIX}{purpose}:{token}", json.dumps(state), ex=CEREMONY_TTL_SECONDS
+        f"{CEREMONY_KEY_PREFIX}{purpose}:{challenge_b64}",
+        json.dumps(payload),
+        ex=CEREMONY_TTL_SECONDS,
     )
-    session[f'webauthn_{purpose}'] = token
 
 
-def _take_ceremony(purpose):
-    """Return and delete this session's ceremony state, or None if missing or expired."""
-    token = session.pop(f'webauthn_{purpose}', None)
-    if not isinstance(token, str):
+def _take_ceremony(purpose, credential):
+    """Return and delete the ceremony state this credential answers.
+
+    The challenge is read from the credential's clientDataJSON; the signature
+    check later proves it was really signed. Returns None if the challenge is
+    unknown, expired, already used, or was issued to another browser session.
+    """
+    try:
+        client_data_b64 = credential['response']['clientDataJSON']
+        if not isinstance(client_data_b64, str) or len(client_data_b64) > MAX_CLIENT_DATA_LENGTH:
+            return None
+        challenge = json.loads(base64url_to_bytes(client_data_b64)).get('challenge')
+    except (KeyError, TypeError, ValueError, AttributeError):
         return None
-    raw = _get_redis().getdel(f"{CEREMONY_KEY_PREFIX}{purpose}:{token}")
-    return json.loads(raw) if raw else None
+    if not isinstance(challenge, str) or not _CHALLENGE_PATTERN.fullmatch(challenge):
+        return None
+
+    raw = _get_redis().getdel(f"{CEREMONY_KEY_PREFIX}{purpose}:{challenge}")
+    if not raw:
+        return None
+    state = json.loads(raw)
+    binding = session.get('webauthn_binding')
+    if not isinstance(binding, str) or not secrets.compare_digest(state.get('binding', ''), binding):
+        return None
+    return state
 
 
 def _disabled_response():
@@ -248,10 +280,7 @@ def passkey_register_options():
                 for c in existing
             ],
         )
-        _store_ceremony('register', {
-            'challenge': bytes_to_base64url(options.challenge),
-            'user_id': user.id,
-        })
+        _store_ceremony('register', options.challenge, {'user_id': user.id})
         return create_success_response(data={'options': options_to_json_dict(options)})
     except Exception as e:
         logger.error(f"Passkey registration options error: {e}")
@@ -321,7 +350,7 @@ def passkey_register_verify():
         return create_error_response(name_error, 400)
 
     try:
-        state = _take_ceremony('register')
+        state = _take_ceremony('register', credential)
     except Exception as e:
         logger.error(f"Passkey registration state error: {e}")
         return create_error_response("Could not add passkey", 500)
@@ -420,7 +449,7 @@ def passkey_login_options():
             timeout=CEREMONY_TIMEOUT_MS,
             user_verification=UserVerificationRequirement.REQUIRED,
         )
-        _store_ceremony('login', {'challenge': bytes_to_base64url(options.challenge)})
+        _store_ceremony('login', options.challenge)
         return create_success_response(data={'options': options_to_json_dict(options)})
     except Exception as e:
         logger.error(f"Passkey sign-in options error: {e}")
@@ -474,7 +503,7 @@ def passkey_login_verify():
     remember_me = data.get('remember_me', False) is True
 
     try:
-        state = _take_ceremony('login')
+        state = _take_ceremony('login', credential)
     except Exception as e:
         logger.error(f"Passkey sign-in state error: {e}")
         return create_error_response("An error occurred during login", 500)

@@ -213,6 +213,22 @@ class TestPasskeyRegistration:
         )
         assert replay.status_code == 400
 
+    def test_concurrent_registrations_in_one_session(self, passkey_user):
+        """Two profile tabs can each add a passkey, finished in either order."""
+        session = passkey_user["session"]
+        url = f"{API_BASE_URL}/api/auth/passkeys/register/options"
+        first = session.post(url, json={"password": passkey_user["password"]}).json()["options"]
+        second = session.post(url, json={"password": passkey_user["password"]}).json()["options"]
+        assert first["challenge"] != second["challenge"]
+
+        for options in (first, second):
+            credential = SoftAuthenticator(RP_ID, ORIGIN).create(options)
+            response = session.post(
+                f"{API_BASE_URL}/api/auth/passkeys/register/verify", json={"credential": credential}
+            )
+            assert response.status_code == 201, response.text
+        assert len(session.get(f"{API_BASE_URL}/api/auth/passkeys").json()["passkeys"]) == 2
+
     @pytest.mark.parametrize("tamper", [
         {"user_verified": False},
         {"origin": "https://evil.example"},
@@ -310,6 +326,20 @@ class TestPasskeyLogin:
         )
         assert response.status_code == 400
 
+    def test_earlier_ceremony_still_works_after_another_starts(self, passkey_user):
+        """Two login tabs, or autofill plus the sign-in button, share one session."""
+        authenticator, _ = _register_passkey(passkey_user)
+        session = requests.Session()
+        first = _login_options(session)
+        second = _login_options(session)
+        assert first["challenge"] != second["challenge"]
+        response = session.post(
+            f"{API_BASE_URL}/api/auth/passkeys/login/verify",
+            json={"credential": authenticator.get(first)},
+        )
+        assert response.status_code == 200, response.text
+        assert _is_logged_in(session)
+
     @pytest.mark.parametrize("tamper", [
         {"user_verified": False},
         {"origin": "https://evil.example"},
@@ -359,7 +389,7 @@ class TestPasskeyLogin:
             f"{API_BASE_URL}/api/auth/passkeys/login/verify",
             json={"credential": {"id": "x", "rawId": 5}},
         )
-        assert response.status_code == 401
+        assert response.status_code == 400
 
     def test_deactivated_user_cannot_login(self, passkey_user, test_admin_session):
         authenticator, _ = _register_passkey(passkey_user)

@@ -80,7 +80,7 @@ Non-obvious behaviour that is easy to break:
 - **Passkeys (WebAuthn)**
   - Off unless `WEBAUTHN_RP_ID` is set. `server/webauthn_settings.py` validates the settings at startup (unit tests in `server/tests/test_webauthn_settings.py`). Routes are in `server/passkey_routes.py`.
   - Passkeys are an alternative sign-in alongside the password, not a second factor. Accounts always keep a password.
-  - Challenges are stored in Redis, are single use (GETDEL) and are bound to the browser session. Don't move them into the Flask session: with cookie sessions an old cookie could replay a challenge.
+  - Challenges are stored in Redis, keyed by the challenge itself (read back from `clientDataJSON` on verify). They are single use (GETDEL) and bound to the browser session by a `webauthn_binding` id. Keying by challenge lets several ceremonies run at once in one session (two tabs, or autofill plus the sign-in button). Don't move them into the Flask session: with cookie sessions an old cookie could replay a challenge.
   - Binary WebAuthn values are stored as base64url text in `ascii_bin` columns, so backups stay plain text and lookups stay case-sensitive.
   - A passkey sign-in stores `passkey_id` in the session. `_resolve_session_user` ends that session when the passkey is removed.
   - API tests use the software authenticator in `server/tests/soft_authenticator.py`. They need `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGINS=http://localhost,https://localhost` in `.env`, or they skip.
