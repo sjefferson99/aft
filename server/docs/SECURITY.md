@@ -105,9 +105,10 @@ except Exception as e:
 - Type safety
 - Content-Type validation
 - Proper error handling
+- Rate limits on password checks, registration and passkey sign-in (`server/auth_rate_limit.py`) and on public board reads
 
 ⚠️ **Not Implemented** (Recommended for Production):
-- **Rate Limiting**: No request rate limits (recommend Flask-Limiter)
+- **Rate Limiting**: No general request rate limits on other endpoints (recommend Flask-Limiter)
 - **Authentication**: No user authentication/authorisation
 - **CSRF Protection**: No CSRF tokens (needed if using session-based auth)
 - **CORS**: No CORS configuration (configure for your domain)

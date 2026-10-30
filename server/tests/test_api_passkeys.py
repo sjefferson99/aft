@@ -142,6 +142,15 @@ class TestPasskeyRegistration:
         assert response.status_code == 400
         assert response.json()["message"] == "Current password is incorrect"
 
+    def test_options_limit_password_guesses(self, passkey_user):
+        url = f"{API_BASE_URL}/api/auth/passkeys/register/options"
+        for _ in range(10):
+            response = passkey_user["session"].post(url, json={"password": f"wrong-{uuid.uuid4().hex}"})
+            assert response.status_code == 400
+        response = passkey_user["session"].post(url, json={"password": passkey_user["password"]})
+        assert response.status_code == 429
+        assert int(response.headers["Retry-After"]) > 0
+
     def test_options_require_resident_key_and_user_verification(self, passkey_user):
         response = passkey_user["session"].post(
             f"{API_BASE_URL}/api/auth/passkeys/register/options",

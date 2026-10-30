@@ -40,6 +40,13 @@ from webauthn.helpers.structs import (
 )
 
 from auth import build_login_user_data, start_user_session, verify_password
+from auth_rate_limit import (
+    account_key,
+    passkey_start_block_seconds,
+    password_block_seconds,
+    record_password_failure,
+    too_many_attempts_response,
+)
 from database import SessionLocal
 from datetime_helpers import serialize_datetime
 from models import User, WebAuthnCredential
@@ -234,6 +241,8 @@ def passkey_register_options():
         description: Not logged in
       404:
         description: Passkeys are not enabled
+      429:
+        description: Too many failed attempts. See the Retry-After header.
       500:
         description: Server error
     """
@@ -250,7 +259,12 @@ def passkey_register_options():
         user = db.query(User).filter(User.id == g.user.id).first()
         if not user or not user.password_hash:
             return create_error_response("This account cannot add passkeys", 400)
+        account = account_key(user)
+        retry_after = password_block_seconds(account)
+        if retry_after:
+            return too_many_attempts_response(retry_after)
         if not verify_password(password, user.password_hash):
+            record_password_failure(account)
             return create_error_response("Current password is incorrect", 400)
 
         existing = db.query(WebAuthnCredential).filter(
@@ -439,11 +453,17 @@ def passkey_login_options():
               type: object
       404:
         description: Passkeys are not enabled
+      429:
+        description: Too many requests. See the Retry-After header.
       500:
         description: Server error
     """
     if not WEBAUTHN_SETTINGS:
         return _disabled_response()
+
+    retry_after = passkey_start_block_seconds()
+    if retry_after:
+        return too_many_attempts_response(retry_after)
 
     try:
         options = generate_authentication_options(
