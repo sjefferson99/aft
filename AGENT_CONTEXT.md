@@ -77,6 +77,13 @@ Non-obvious behaviour that is easy to break:
   - `GET /api/boards/import/csv-template` returns a template CSV and needs no auth.
 - **MySQL memory tuning**: the `db` service's `command:` list sets MySQL options from `MYSQL_*` env vars with small-install defaults (see README "Database memory tuning"). Keep `compose.yml`, `compose.example.yml`, `.env.example` and the README table in sync when adding or changing one. `max_connections` must stay above 15 × gunicorn workers (SQLAlchemy pool 5 + overflow 10) plus backup/restore headroom.
 - **Gunicorn workers/threads**: `server/gunicorn.conf.py` reads `GUNICORN_WORKERS` (default 1) and `GUNICORN_THREADS` (default 32), validated in `server/gunicorn_settings.py` (unit tests in `server/tests/test_gunicorn_settings.py`). Every open Socket.IO WebSocket holds a gthread thread for its lifetime, so a low thread count starves the whole app: 1 × 8 hung with 7 open tabs. Don't lower the default thread count without re-measuring. Keep the multi-worker safety mechanisms (Redis Socket.IO queue, scheduler locks) intact.
+- **Passkeys (WebAuthn)**
+  - Off unless `WEBAUTHN_RP_ID` is set. `server/webauthn_settings.py` validates the settings at startup (unit tests in `server/tests/test_webauthn_settings.py`). Routes are in `server/passkey_routes.py`.
+  - Passkeys are an alternative sign-in alongside the password, not a second factor. Accounts always keep a password.
+  - Challenges are stored in Redis, are single use (GETDEL) and are bound to the browser session. Don't move them into the Flask session: with cookie sessions an old cookie could replay a challenge.
+  - Binary WebAuthn values are stored as base64url text in `ascii_bin` columns, so backups stay plain text and lookups stay case-sensitive.
+  - A passkey sign-in stores `passkey_id` in the session. `_resolve_session_user` ends that session when the passkey is removed.
+  - API tests use the software authenticator in `server/tests/soft_authenticator.py`. They need `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGINS=http://localhost,https://localhost` in `.env`, or they skip.
 - **Frontend modals**: reuse the existing modal structure and styles, and use the CSS variables so themes work. Don't hardcode colours. Use danger styling only for destructive actions.
 
 ## PR review workflow

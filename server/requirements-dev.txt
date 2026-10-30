@@ -12,6 +12,9 @@ requests==2.34.2
 # server runs several workers, so polling needs sticky sessions it doesn't have)
 python-socketio==5.17.0
 websocket-client==1.9.2
+# Software passkey authenticator for passkey API tests (tests/soft_authenticator.py)
+cbor2==6.1.5
+cryptography==50.0.2
 
 # Code quality tools (optional but recommended)
 pylint==4.1.3

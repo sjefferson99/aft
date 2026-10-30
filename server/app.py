@@ -30,6 +30,7 @@ from card_routes import card_bp, configure_card_routes
 from schedule_routes import schedule_bp, configure_schedule_routes
 from branding_routes import branding_bp
 from planner_routes import planner_bp
+from passkey_routes import passkey_bp, WEBAUTHN_SETTINGS
 from broadcasting import (
     broadcast_failures,
     broadcast_failures_lock,
@@ -299,6 +300,16 @@ app.register_blueprint(card_bp)
 app.register_blueprint(schedule_bp)
 app.register_blueprint(branding_bp)
 app.register_blueprint(planner_bp)
+app.register_blueprint(passkey_bp)
+
+if WEBAUTHN_SETTINGS:
+    logger.info(
+        "Passkeys enabled. rp_id=%s origins=%s",
+        WEBAUTHN_SETTINGS.rp_id,
+        ",".join(WEBAUTHN_SETTINGS.origins),
+    )
+else:
+    logger.info("Passkeys disabled (WEBAUTHN_RP_ID not set)")
 
 # Load user from session before each request
 @app.before_request

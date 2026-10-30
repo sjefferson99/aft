@@ -30,7 +30,7 @@ AVATAR_COLOURS = [
 from flask import Blueprint, request, jsonify, session, g
 from sqlalchemy.sql import func
 from database import SessionLocal
-from models import User, Role, UserRole
+from models import User, Role, UserRole, WebAuthnCredential
 from permissions import INITIAL_ROLES
 from utils import (
     validate_string_length,
@@ -145,6 +145,44 @@ def _password_session_fingerprint(password_hash: str) -> str:
     return hashlib.sha256(password_hash.encode('utf-8')).hexdigest()[:16]
 
 
+def start_user_session(user, remember_me=False, passkey_id=None):
+    """Start a fresh login session for a user.
+
+    Args:
+        user: The authenticated User.
+        remember_me: Keep the session after the browser closes.
+        passkey_id: WebAuthnCredential ID when signing in with a passkey. The
+            session ends if that passkey is later removed.
+    """
+    session.clear()
+    session['user_id'] = user.id
+    session['user_email_hash'] = hashlib.sha256(user.email.encode()).hexdigest()[:16]
+    session['user_pwd_hash'] = _password_session_fingerprint(user.password_hash)
+    if passkey_id is not None:
+        session['passkey_id'] = passkey_id
+    session.permanent = bool(remember_me)
+
+
+def build_login_user_data(db, user):
+    """Return the user payload sent to the client after a successful login."""
+    from utils import get_user_permissions
+
+    roles = db.query(Role).join(UserRole).filter(
+        UserRole.user_id == user.id,
+        UserRole.board_id.is_(None)  # Global roles only
+    ).all()
+
+    return {
+        'id': user.id,
+        'email': user.email,
+        'username': user.username,
+        'display_name': user.display_name,
+        'email_verified': user.email_verified,
+        'roles': [{'id': r.id, 'name': r.name, 'description': r.description} for r in roles],
+        'permissions': list(get_user_permissions(user.id))
+    }
+
+
 def _resolve_session_user(skip_email_hash_validation=False):
     """Resolve and validate the current session user.
 
@@ -191,6 +229,17 @@ def _resolve_session_user(skip_email_hash_validation=False):
                     "Session password fingerprint mismatch for user_id=%s; forcing re-authentication",
                     user_id,
                 )
+                session.clear()
+                db.close()
+                return None, None
+
+            # Passkey sessions end when the passkey that started them is removed.
+            passkey_id = session.get('passkey_id')
+            if passkey_id is not None and not db.query(WebAuthnCredential.id).filter(
+                WebAuthnCredential.id == passkey_id,
+                WebAuthnCredential.user_id == user.id
+            ).first():
+                logger.info("Session passkey removed for user_id=%s; forcing re-authentication", user_id)
                 session.clear()
                 db.close()
                 return None, None
@@ -399,39 +448,15 @@ def login():
                     403
                 )
             
-            # Create session
-            session.clear()
-            session['user_id'] = user.id
-            session['user_email_hash'] = hashlib.sha256(user.email.encode()).hexdigest()[:16]
-            session['user_pwd_hash'] = _password_session_fingerprint(user.password_hash)
-            session.permanent = remember_me
+            start_user_session(user, remember_me)
 
             # Update last login
             user.last_login_at = func.now()
             db.commit()
-            
-            # Get user's roles and permissions
-            from utils import get_user_permissions
-            
-            roles = db.query(Role).join(UserRole).filter(
-                UserRole.user_id == user.id,
-                UserRole.board_id.is_(None)  # Global roles only
-            ).all()
-            
-            # Get user's global permissions
-            permissions = list(get_user_permissions(user.id))
-            
+
             # Return user data (without sensitive fields)
-            user_data = {
-                'id': user.id,
-                'email': user.email,
-                'username': user.username,
-                'display_name': user.display_name,
-                'email_verified': user.email_verified,
-                'roles': [{'id': r.id, 'name': r.name, 'description': r.description} for r in roles],
-                'permissions': permissions
-            }
-            
+            user_data = build_login_user_data(db, user)
+
             logger.info(f"User logged in: {user.email} (ID: {user.id})")
             
             return create_success_response(

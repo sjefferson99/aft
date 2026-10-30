@@ -117,6 +117,7 @@ def validate_schema_integrity(file_path, expected_tables=None):
             'roles',
             'users',
             'user_roles',
+            'webauthn_credentials',
             'alembic_version'
         ]
 

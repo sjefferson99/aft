@@ -1,5 +1,7 @@
 """Database models."""
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Boolean, DateTime, Index
+from sqlalchemy import (
+    Column, Integer, BigInteger, String, Text, ForeignKey, Boolean, DateTime, Index
+)
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -338,12 +340,21 @@ class User(Base):
     # Profile
     profile_colour = Column(String(7), nullable=False, server_default='#90A4AE')
 
+    # Random WebAuthn user handle (base64url), created on first passkey registration.
+    # ascii_bin keeps base64url comparisons case-sensitive.
+    webauthn_user_handle = Column(
+        String(100, collation='ascii_bin'), nullable=True, unique=True
+    )
+
     # Timestamps
     created_at = Column(DateTime, server_default=func.current_timestamp())
     last_login_at = Column(DateTime, nullable=True)
     
     # Relationships
     role_assignments = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
+    webauthn_credentials = relationship(
+        "WebAuthnCredential", back_populates="user", cascade="all, delete-orphan"
+    )
     owned_boards = relationship("Board", back_populates="owner", foreign_keys="Board.owner_id")
     
     __table_args__ = (
@@ -353,6 +364,36 @@ class User(Base):
     
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}', username='{self.username}')>"
+
+
+class WebAuthnCredential(Base):
+    """A passkey registered by a user.
+
+    Binary WebAuthn values are stored base64url-encoded so database backups stay
+    plain text.
+    """
+
+    __tablename__ = "webauthn_credentials"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+
+    # Credential IDs are at most 1023 bytes (1364 base64url characters).
+    credential_id = Column(String(1400, collation='ascii_bin'), nullable=False, unique=True)
+    public_key = Column(Text, nullable=False)
+    sign_count = Column(BigInteger, nullable=False, default=0)
+    transports = Column(String(255), nullable=True)  # JSON array of transport hints
+    aaguid = Column(String(36), nullable=True)
+    backed_up = Column(Boolean, nullable=False, default=False)
+
+    name = Column(String(100), nullable=False)
+    created_at = Column(DateTime, server_default=func.current_timestamp())
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="webauthn_credentials")
+
+    def __repr__(self):
+        return f"<WebAuthnCredential(id={self.id}, user_id={self.user_id}, name='{self.name}')>"
 
 
 class Role(Base):

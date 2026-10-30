@@ -40,6 +40,12 @@ docker compose up -d
 ```
    - The API must be running at `http://localhost` (via nginx)
    - Wait a few seconds for the server to be ready
+3. **Passkeys enabled** for the passkey tests (`tests/test_api_passkeys.py`). Add these to `.env` and rebuild the server; without them the passkey ceremony tests are skipped:
+```
+WEBAUTHN_RP_ID=localhost
+WEBAUTHN_ORIGINS=http://localhost,https://localhost
+```
+4. **Server requirements in the venv**: some unit tests import server modules, so install both `server/requirements.txt` and `server/requirements-dev.txt`.
 
 ### Important: Authentication for Tests
 
