@@ -928,6 +928,7 @@ class BoardManager {
     this.columns = [];
     this.hoveredColumnId = null;
     this.lastUsedColumnId = null;
+    this.lastMouseX = null; // Latest pointer X, used to place a column added with the keyboard
     this.showArchived = false; // Track whether to show archived or active cards
     this.showDone = false; // Track whether to show done cards (for agile style)
     this.currentView = 'task'; // Track current view: 'task', 'scheduled', or 'archived'
@@ -935,6 +936,7 @@ class BoardManager {
     this.workingStyle = 'kanban'; // Track working style: 'kanban' or 'agile'
     this.canEdit = true; // Track if user has edit permissions for this board
     this.keyboardHandler = this.handleKeydown.bind(this);
+    this.mouseMoveHandler = this.handleMouseMove.bind(this);
     this.closeDropdownHandler = this.handleCloseDropdown.bind(this);
     this.beforeUnloadHandler = this.handleBeforeUnload.bind(this);
     this.viewportMetricsHandler = this.queueMobileViewportMetricsUpdate.bind(this);
@@ -1813,6 +1815,12 @@ class BoardManager {
 
     if (target.closest('#add-column-empty-btn, #add-column-inline-btn')) {
       this.openAddColumnModal();
+      return;
+    }
+
+    const insertColumnBtn = target.closest('.column-insert-btn');
+    if (insertColumnBtn) {
+      this.openAddColumnModal(parseInt(insertColumnBtn.getAttribute('data-order'), 10));
       return;
     }
 
@@ -3846,6 +3854,33 @@ class BoardManager {
 
   setupKeyboardShortcuts() {
     document.addEventListener('keydown', this.keyboardHandler);
+    document.addEventListener('mousemove', this.mouseMoveHandler, { passive: true });
+  }
+
+  // Only stores the position: this fires constantly, so measure at keypress instead.
+  handleMouseMove(e) {
+    this.lastMouseX = e.clientX;
+  }
+
+  /**
+   * Find the order for a new column at the gap nearest the mouse: the left
+   * side of a column inserts before it and the right side after it.
+   * @returns {number|null} The order, or null to add at the end of the board
+   */
+  getColumnInsertOrderNearMouse() {
+    const columns = Array.from(this.container.querySelectorAll('.column[data-column-id]'));
+    if (this.lastMouseX === null || columns.length === 0) {
+      return null;
+    }
+
+    const nextColumn = columns.find((column) => {
+      const rect = column.getBoundingClientRect();
+      return this.lastMouseX < rect.left + rect.width / 2;
+    });
+    if (nextColumn) {
+      return parseInt(nextColumn.getAttribute('data-order'), 10);
+    }
+    return parseInt(columns[columns.length - 1].getAttribute('data-order'), 10) + 1;
   }
 
   handleKeydown(e) {
@@ -3854,8 +3889,13 @@ class BoardManager {
       return;
     }
 
+    // Leave browser shortcuts such as Ctrl+C alone
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      return;
+    }
+
     // Don't trigger if any visible modal is open on the page
-    const anyModalOpen = Array.from(document.querySelectorAll('.modal')).some((modal) => {
+    const anyModalOpen = Array.from(document.querySelectorAll('.modal, .modal-app')).some((modal) => {
       const style = window.getComputedStyle(modal);
       return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
     });
@@ -3887,11 +3927,19 @@ class BoardManager {
         this.openAddCardModal(columnId, null, scheduled); // default = bottom
       }
     }
+
+    // 'c' key - add column nearest the mouse
+    if ((e.key === 'c' || e.key === 'C') && this.currentView !== 'planner'
+      && this.canCallPermissionEndpoint('POST', '/api/boards/:id/columns')) {
+      e.preventDefault();
+      this.openAddColumnModal(this.getColumnInsertOrderNearMouse());
+    }
   }
 
   cleanup() {
     // Remove event listeners to prevent memory leaks
     document.removeEventListener('keydown', this.keyboardHandler);
+    document.removeEventListener('mousemove', this.mouseMoveHandler);
     document.removeEventListener('click', this.closeDropdownHandler);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
     window.removeEventListener('boardFiltersToggleRequested', this.boardFiltersToggleRequestHandler);
@@ -4286,6 +4334,7 @@ class BoardManager {
                 }
                 ${!this.showArchived && canCreateCardsInCurrentView ? `<button class="btn btn-secondary add-card-btn" data-column-id="${column.id}">+ Add Card</button>` : ''}
               </div>
+              ${this.canEdit && index < this.columns.length - 1 ? `<button type="button" class="column-insert-btn" data-order="${this.columns[index + 1].order}" aria-label="Add new column after column ${index + 1}" data-tooltip="Add new column">+</button>` : ''}
             </div>
           `).join('')}
           ${this.canEdit ? `<div class="add-column-placeholder">
@@ -4480,7 +4529,7 @@ class BoardManager {
     
     // Remove "Add Column" buttons if user can't call create-column endpoint.
     if (!canCreateColumn) {
-      document.querySelectorAll('#add-column-empty-btn, #add-column-inline-btn').forEach(btn => btn.remove());
+      document.querySelectorAll('#add-column-empty-btn, #add-column-inline-btn, .column-insert-btn').forEach(btn => btn.remove());
     }
     
     // In scheduled view, creating a template through UI requires both card.create and schedule.create.
@@ -5696,7 +5745,7 @@ class BoardManager {
     setupModalEscapeClose(modal, handleCancel);
   }
 
-  openAddColumnModal() {
+  openAddColumnModal(order = null) {
     // Check database connection
     if (window.header && !window.header.dbConnected) {
       this.showErrorToast('Cannot add column: Database is not connected. Please wait for the connection to be restored.');
@@ -5753,7 +5802,7 @@ class BoardManager {
       const columnName = nameInput.value.trim();
       
       if (columnName) {
-        await this.createColumn(columnName);
+        await this.createColumn(columnName, order);
         closeModal();
       }
     });
@@ -6165,7 +6214,7 @@ class BoardManager {
     setupModalEscapeClose(modal, handleCancel);
   }
 
-  async createColumn(name) {
+  async createColumn(name, order = null) {
     // Check database connection before creating column
     if (window.header && !window.header.dbConnected) {
       this.showErrorToast('Cannot create column: Database is not connected. Please wait for the connection to be restored.');
@@ -6178,7 +6227,7 @@ class BoardManager {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ name })
+        body: JSON.stringify(order === null ? { name } : { name, order })
       });
 
       const data = await this.parseResponse(response);

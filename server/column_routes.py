@@ -155,7 +155,9 @@ def create_column(board_id):
             order:
               type: integer
               example: 0
-              description: The order position of the column (optional, defaults to last)
+              description: >-
+                The order position of the column (optional, defaults to last).
+                Columns at or after this position are moved one place right.
     responses:
       201:
         description: Column created successfully
@@ -247,6 +249,15 @@ def create_column(board_id):
             is_valid, error = validate_integer(order, "Order", min_value=0)
             if not is_valid:
                 return create_error_response(error, 400)
+
+            # Inserting: make room so the new column doesn't share an order.
+            columns_to_update = (
+                db.query(BoardColumn)
+                .filter(BoardColumn.board_id == board_id, BoardColumn.order >= order)
+                .all()
+            )
+            for col in columns_to_update:
+                col.order += 1
         else:
             max_order = (
                 db.query(BoardColumn).filter(BoardColumn.board_id == board_id).count()

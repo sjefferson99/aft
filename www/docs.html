@@ -16,7 +16,7 @@
   <script src="/js/pwa.js"></script>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/header.css">
-  <link rel="stylesheet" href="/css/docs.css">
+  <link rel="stylesheet" href="/css/docs.css?v=20261030a">
 </head>
 <body>
   <!-- Header component will be loaded here -->
@@ -28,28 +28,63 @@
       <h2>Table of Contents</h2>
       <ul>
         <li><a href="#keyboard-shortcuts">Keyboard Shortcuts</a></li>
+        <li><a href="#adding-columns">Adding Columns</a></li>
         <li><a href="#working-style">Working Style</a></li>
       </ul>
     </div>
 
     <section id="keyboard-shortcuts" class="docs-section">
       <h3>Keyboard Shortcuts</h3>
-      <p>Use these keyboard shortcuts for faster card creation:</p>
-      <ul>
-        <li><strong>N</strong> - Add a new card at the <strong>top</strong> of a column</li>
-        <li><strong>M</strong> - Add a new card at the <strong>bottom</strong> of a column</li>
-      </ul>
+      <p>Use these keyboard shortcuts on a board to add cards and columns faster:</p>
+      <table class="docs-shortcuts">
+        <thead>
+          <tr>
+            <th scope="col">Key</th>
+            <th scope="col">Action</th>
+            <th scope="col">Where it goes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><kbd>N</kbd></td>
+            <td>Add a new card</td>
+            <td><strong>Top</strong> of the column under your mouse</td>
+          </tr>
+          <tr>
+            <td><kbd>M</kbd></td>
+            <td>Add a new card</td>
+            <td><strong>Bottom</strong> of the column under your mouse</td>
+          </tr>
+          <tr>
+            <td><kbd>C</kbd></td>
+            <td>Add a new column</td>
+            <td><strong>Nearest</strong> your mouse: to the left of a column if you're over its left half, to the right if you're over its right half</td>
+          </tr>
+        </tbody>
+      </table>
       <p>To use these shortcuts:</p>
       <ul>
-        <li>Hover your mouse over the column where you want to add the card, then press the shortcut key</li>
-        <li>After adding a card, press the shortcut again to quickly add another card to the same column</li>
-        <li>Shortcuts won't work while typing in text fields or when a modal is open</li>
+        <li>Move your mouse to where you want the card or column, then press the shortcut key</li>
+        <li>After adding a card, press <strong>N</strong> or <strong>M</strong> again to quickly add another card to the same column, even if your mouse has moved off the board</li>
+        <li>If you press <strong>C</strong> before moving your mouse, the new column is added at the end of the board</li>
+        <li>In the Scheduled View, <strong>N</strong> and <strong>M</strong> add a scheduled card</li>
+        <li>Shortcuts don't work while typing in text fields, when a modal is open, or on boards you can't edit</li>
+      </ul>
+    </section>
+
+    <section id="adding-columns" class="docs-section">
+      <h3>Adding Columns</h3>
+      <p>If you can edit a board, there are three ways to add a column:</p>
+      <ul>
+        <li><strong>Between two columns</strong> - Select the small <strong>+</strong> in the gap between two column headers. The new column goes in that gap. The <strong>+</strong> isn't shown in small windows or on phones</li>
+        <li><strong>With the keyboard</strong> - Press <strong>C</strong> to add a column nearest your mouse (see <a href="#keyboard-shortcuts">Keyboard Shortcuts</a>). This is also the quickest way to add a column before the first one</li>
+        <li><strong>At the end of the board</strong> - Scroll to the end of the board and select <strong>+ Add Column</strong></li>
       </ul>
     </section>
 
     <section id="working-style" class="docs-section">
       <h3>Working Style</h3>
-      <p>AFT supports different working styles to accommodate various team preferences and workflows. You can configure your preferred working style in the General Settings.</p>
+      <p>AFT supports different working styles to accommodate various team preferences and workflows. The working style in Settings is the default for boards you create in the future. To change the style of an existing board, use that board's settings menu.</p>
       
       <h4>Available Working Styles</h4>
       <p>There are two main working styles available:</p>
@@ -95,18 +130,19 @@
       <p>Agile cards also have an <strong>Archive button</strong>. Use it to take a card off the board without marking it done, for example a feature you decided not to build. You keep the card and its history.</p>
       <ul>
         <li>Archived cards appear in the Archived View, in the views dropdown, and can be found there with the board search</li>
-        <li>The Archived View lists done and not-done archived cards together</li>
+        <li>The Archived View is available in both working styles. In Agile it lists done and not-done archived cards together</li>
         <li>Unarchiving a card returns it to the board with its done status unchanged</li>
         <li>On mobile, open the card to find the Archive button</li>
       </ul>
 
       <h4>Column Count Updates</h4>
-      <p>When using the Done button functionality, column headers display updated counts:</p>
+      <p>In the Agile Task View, column headers show both counts in parentheses:</p>
       <ul>
+        <li><strong>Done Count</strong> - Number of cards marked as done in the column</li>
         <li><strong>Total Count</strong> - Total number of cards in the column (all cards regardless of done status)</li>
-        <li><strong>Done Count</strong> - Number of cards marked as done in the column (shown in parentheses)</li>
         <li>For example: "To Do (2/5)" means 5 total cards with 2 marked as done</li>
       </ul>
+      <p>The Done View shows only the done count.</p>
     </section>
   </main>
 

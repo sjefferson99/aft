@@ -18,6 +18,133 @@ def test_add_column_to_board(logged_in_page, board):
     column.wait_for(state="visible", timeout=5000)
 
 
+def _create_columns(api_session, ui_base_url, board, names):
+    for name in names:
+        response = api_session.post(f"{ui_base_url}/api/boards/{board['id']}/columns", json={"name": name})
+        assert response.status_code == 201
+
+
+def _column_names(page):
+    return [name.split(" (")[0] for name in page.locator(".column h4").all_inner_texts()]
+
+
+def _column_named(page, name):
+    return page.locator(".column").filter(has=page.locator("h4", has_text=name))
+
+
+def _submit_new_column(page, name):
+    page.fill("#column-name", name)
+    page.click("#add-column-form button[type='submit']")
+    _column_named(page, name).wait_for(state="visible", timeout=5000)
+
+
+def _hover_column_side(page, name, side):
+    """Rest the mouse over the left or right quarter of a column."""
+    box = _column_named(page, name).bounding_box()
+    fraction = 0.25 if side == "left" else 0.75
+    page.mouse.move(box["x"] + box["width"] * fraction, box["y"] + box["height"] / 2)
+
+
+@pytest.mark.ui
+def test_column_insert_button_adds_column_in_the_gap(logged_in_page, api_session, ui_base_url, board):
+    """The + between two columns inserts the new column there."""
+    _create_columns(api_session, ui_base_url, board, ["A", "B"])
+    page = logged_in_page
+    page.goto(f"/board.html?id={board['id']}")
+
+    page.locator(".column-insert-btn").click()
+    _submit_new_column(page, "Between")
+
+    assert _column_names(page) == ["A", "Between", "B"]
+
+
+@pytest.mark.ui
+def test_column_insert_button_sits_in_gap_without_widening_board(logged_in_page, api_session, ui_base_url, board):
+    """The + fits in the margin between columns, and its tooltip appears after a pause."""
+    _create_columns(api_session, ui_base_url, board, ["A", "B", "C"])
+    page = logged_in_page
+    page.goto(f"/board.html?id={board['id']}")
+
+    buttons = page.locator(".column-insert-btn")
+    buttons.first.wait_for(state="visible", timeout=5000)
+    assert buttons.count() == 2  # only between columns, not after the last one
+
+    first = page.locator(".column").nth(0).bounding_box()
+    second = page.locator(".column").nth(1).bounding_box()
+    button = buttons.nth(0).bounding_box()
+    left_edge = first["x"] + first["width"]
+    assert second["x"] - left_edge == 20
+    assert button["x"] >= left_edge
+    assert button["x"] + button["width"] <= second["x"]
+
+    scroll_width = page.locator(".columns-container").evaluate("el => el.scrollWidth")
+    tooltip_opacity = "el => Number(getComputedStyle(el, '::after').opacity)"
+    buttons.nth(0).hover()
+    assert buttons.nth(0).evaluate(tooltip_opacity) == 0  # the pause, not shown at once
+    page.wait_for_function(
+        "el => getComputedStyle(el, '::after').opacity === '1'",
+        arg=buttons.nth(0).element_handle(),
+        timeout=2000,
+    )
+    assert buttons.nth(0).get_attribute("data-tooltip") == "Add new column"
+    assert page.locator(".column").nth(1).bounding_box()["x"] == second["x"]
+    assert page.locator(".columns-container").evaluate("el => el.scrollWidth") == scroll_width
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize(
+    "hover_column, side, expected",
+    [
+        ("A", "left", ["New", "A", "B"]),
+        ("B", "left", ["A", "New", "B"]),
+        ("A", "right", ["A", "New", "B"]),
+        ("B", "right", ["A", "B", "New"]),
+    ],
+)
+def test_c_shortcut_adds_column_nearest_mouse(
+    logged_in_page, api_session, ui_base_url, board, hover_column, side, expected
+):
+    """Pressing C inserts on whichever side of the hovered column the mouse is on."""
+    _create_columns(api_session, ui_base_url, board, ["A", "B"])
+    page = logged_in_page
+    page.goto(f"/board.html?id={board['id']}")
+    _column_named(page, "A").wait_for(state="visible", timeout=5000)
+
+    _hover_column_side(page, hover_column, side)
+    page.keyboard.press("c")
+
+    assert page.input_value("#column-name") == ""  # the key must not reach the input
+    _submit_new_column(page, "New")
+    assert _column_names(page) == expected
+
+
+@pytest.mark.ui
+def test_ctrl_c_does_not_open_add_column_modal(logged_in_page, column):
+    """Copying on a board must not trigger the C shortcut."""
+    page = logged_in_page
+    page.goto(f"/board.html?id={column['board_id']}")
+    page.locator(".column", has_text=column["name"]).wait_for(state="visible", timeout=5000)
+
+    page.keyboard.press("Control+c")
+
+    assert page.locator("#add-column-modal").count() == 0
+
+
+@pytest.mark.ui
+def test_shortcuts_ignored_while_confirm_dialog_open(logged_in_page, column):
+    """Board shortcuts must not open a modal over an app confirm dialog."""
+    page = logged_in_page
+    page.goto(f"/board.html?id={column['board_id']}")
+
+    page.locator(f'.column-menu-btn[data-column-id="{column["id"]}"]').click()
+    page.locator(f'.column-delete-btn[data-column-id="{column["id"]}"]').click()
+    page.locator("#appModal").wait_for(state="visible", timeout=5000)
+
+    page.keyboard.press("c")
+
+    assert page.locator("#add-column-modal").count() == 0
+
+
 @pytest.mark.ui
 def test_add_card_to_column(logged_in_page, column):
     """Adding a card through the modal renders it inside the target column."""

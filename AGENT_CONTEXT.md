@@ -26,6 +26,7 @@ Also:
 - Commands below use Windows paths. The repo venv is `.venv`, so use `.venv\Scripts\python.exe` (or `../.venv/Scripts/python.exe` from Git Bash). On the MacBook use `.venv/bin/python`.
 - To test passkeys locally, set `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGINS=http://localhost,https://localhost` in `.env`. Browsers exempt localhost, so no certificate or domain is needed. Without them the passkey tests skip.
 - Use `compose.yml` for local development and testing, and always pass `--build` so code changes reach the containers. `compose.example.yml` is the GHCR deployment template; don't use it locally.
+- `compose.yml` bind-mounts `./www` into nginx, so frontend edits are live without a rebuild. To reproduce a frontend bug, undo the fix first: a rebuild doesn't bring back the old code.
 - `./data` is the MySQL data directory, mounted into the `db` container and gitignored. Clearing it resets the database.
 
 ## Common commands
@@ -90,6 +91,7 @@ Non-obvious behaviour that is easy to break:
   - Frontend: `www/js/passkeys.js` does the base64url conversion around `navigator.credentials`. The login page starts one autofill (conditional) request on load and never restarts it after it rejects: some browsers reject at once when there is nothing to offer, which caused a request loop. Only the button flow restarts it.
 - **Agile archive**: agile cards have both Done and Archive. The done filter applies to the task and done views only. The Archived View lists done and not-done cards together, so requests from it must not narrow by `done`.
 - **401 responses on logged-in pages**: the global fetch wrapper in `www/js/utils.js` treats any 401 as signed out and redirects to the login page. Endpoints called from logged-in pages must return 400, not 401, for "wrong password"-type errors where the session is still valid.
+- **Frontend asset versions**: nginx serves CSS and JS with a 1-hour browser cache. When you change a file that its HTML page loads with a `?v=` value (such as `board.js` and `board.css` in `www/board.html`), bump that value, in the form `YYYYMMDDa`, or browsers can run new JS against old CSS.
 - **Frontend modals**: reuse the existing modal structure and styles, and use the CSS variables so themes work. Don't hardcode colours. Use danger styling only for destructive actions.
 
 ## PR review workflow
