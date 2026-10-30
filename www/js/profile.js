@@ -264,7 +264,7 @@ class ProfileManager {
         // Clear form
         this.passwordForm.reset();
       } else {
-        this.showMessage('password-status', data.error || 'Failed to change password', 'error');
+        this.showMessage('password-status', data.message || 'Failed to change password', 'error');
       }
     } catch (error) {
       console.error('Error changing password:', error);

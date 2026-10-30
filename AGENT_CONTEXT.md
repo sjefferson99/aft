@@ -22,7 +22,9 @@ Also:
 
 ## Environment
 
-- The development machine runs Windows. Commands below use Windows paths. The repo venv is `.venv`, so use `.venv\Scripts\python.exe` (or `../.venv/Scripts/python.exe` from Git Bash).
+- There are three development machines: St Austell (primary, Windows), a MacBook (often used) and Wychwood (occasionally used, Windows). Each has its own `.venv`, `.env` and dev database, so after pulling dependency or config changes, check they are up to date on the machine you're on.
+- Commands below use Windows paths. The repo venv is `.venv`, so use `.venv\Scripts\python.exe` (or `../.venv/Scripts/python.exe` from Git Bash). On the MacBook use `.venv/bin/python`.
+- To test passkeys locally, set `WEBAUTHN_RP_ID=localhost` and `WEBAUTHN_ORIGINS=http://localhost,https://localhost` in `.env`. Browsers exempt localhost, so no certificate or domain is needed. Without them the passkey tests skip.
 - Use `compose.yml` for local development and testing, and always pass `--build` so code changes reach the containers. `compose.example.yml` is the GHCR deployment template; don't use it locally.
 - `./data` is the MySQL data directory, mounted into the `db` container and gitignored. Clearing it resets the database.
 
@@ -46,10 +48,11 @@ Only delete `./data` after `docker compose down` has succeeded. Removing files u
 ## Testing
 
 - `server/tests` are integration tests. They hit the running Docker stack, so the stack must be up and rebuilt with current code. The full suite takes about 20 minutes (~900 tests).
-- Tests marked `slow` (`@pytest.mark.slow`) wait on real scheduler cycles. They are currently the backup-notification tests in `test_backup_notifications.py`. When a change doesn't touch the area a slow test covers, run the backend suite with `-m "not slow"` to skip them. Still run the full suite, slow tests included, from time to time: after changes to backups, notifications or the schedulers, and before a release. That keeps any regression they would catch close to the change that caused it. Say in the PR when the slow tests were skipped.
+- Tests marked `slow` (`@pytest.mark.slow`) wait on real scheduler cycles. They are currently the backup-notification tests in `test_backup_notifications.py`.
+- The default backend run is `-m "not slow"`. Only run the full backend suite, slow tests included, after changes to backups, notifications or the schedulers, before a release, or when the user asks. Say in the PR when the slow tests were skipped.
 - `ui-tests/` holds Playwright tests for `www/` (pytest-playwright, no Node toolchain). They need the stack at `http://localhost`. Login-dependent tests need a fresh database; see `ui-tests/docs/UI_TESTING.md`. Use the `logged_in_page` fixture for authenticated tests rather than reimplementing login.
 - Both suites share one dev database. Never run two suites, or two runs of the same suite, at the same time: they interfere with each other and produce spurious failures.
-- Match test scope to what changed. A frontend-only (JS/CSS/HTML) change doesn't need a backend pytest run. Run the narrowest subset that exercises the changed code. Run full suites when backend code or dependencies change, or before merging.
+- Match test scope to what changed. A frontend-only (JS/CSS/HTML) change doesn't need a backend pytest run. Run the narrowest subset that exercises the changed code. When backend code or dependencies change, or before merging, run the whole backend suite with `-m "not slow"` (see above) and the UI suite.
 - Many unexpected failures come from a dirty database. Before you debug a failure, reset to a clean DB and re-run.
 - Long runs should go in the background. If a run goes well past its usual duration with no new output, check the container logs. If it has stalled, tell the user rather than waiting silently.
 
