@@ -187,7 +187,8 @@
   background-color: var(--background-light);
 }
 
-.radio-label input[type="radio"] {
+.radio-label input[type="radio"],
+.radio-label input[type="checkbox"] {
   margin-right: 10px;
   cursor: pointer;
   width: 16px;

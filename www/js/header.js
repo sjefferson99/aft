@@ -3812,6 +3812,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await header.load();
 
+    if (typeof loadTouchscreenMode === 'function') {
+      loadTouchscreenMode();
+    }
+
     // Preload time format preference
     if (typeof preloadTimeFormat === 'function') {
       preloadTimeFormat();

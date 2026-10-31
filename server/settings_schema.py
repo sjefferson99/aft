@@ -117,6 +117,12 @@ SETTINGS_SCHEMA = {
         "description": "IANA timezone name used when rendering UTC timestamps (for example 'UTC' or 'Europe/London')",
         "validate": _validate_timezone,
     },
+    "touchscreen_mode": {
+        "type": "boolean",
+        "nullable": False,
+        "description": "Use touch gestures and larger controls at any screen width",
+        "validate": lambda value: isinstance(value, bool),
+    },
     "working_style": {
         "type": "string",
         "nullable": False,

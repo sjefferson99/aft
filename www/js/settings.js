@@ -5,6 +5,7 @@ class Settings {
     this.defaultBoardSelect = document.getElementById('default-board');
     this.timeFormatRadios = document.querySelectorAll('input[name="time-format"]');
     this.timezoneSelect = document.getElementById('timezone-select');
+    this.touchscreenModeCheckbox = document.getElementById('touchscreen-mode');
     this.themeSelect = document.getElementById('theme-select');
     this.instanceDefaultThemeSelect = document.getElementById('instance-default-theme');
     this.instanceDefaultThemeSaveBtn = document.getElementById('instance-default-theme-save-btn');
@@ -476,6 +477,16 @@ class Settings {
       } else {
         console.error('Error loading time format:', timeResponse.statusText);
       }
+
+      if (this.touchscreenModeCheckbox) {
+        const touchscreenResponse = await fetch('/api/settings/touchscreen_mode');
+        if (touchscreenResponse.ok) {
+          const data = await touchscreenResponse.json();
+          this.touchscreenModeCheckbox.checked = data.success && data.value === true;
+        } else if (touchscreenResponse.status !== 404) {
+          console.error('Error loading touchscreen mode:', touchscreenResponse.statusText);
+        }
+      }
     } catch (err) {
       console.error('Error loading settings:', err);
     }
@@ -919,6 +930,44 @@ class Settings {
     }
   }
 
+  async saveTouchscreenMode() {
+    const enabled = this.touchscreenModeCheckbox.checked;
+
+    try {
+      this.showStatus('Saving...', 'info');
+
+      const response = await fetch('/api/settings/touchscreen_mode', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ value: enabled })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      }
+
+      if (data.success) {
+        applyTouchscreenMode(enabled);
+        this.showStatus('Saved', 'success');
+
+        setTimeout(() => {
+          this.statusElement.textContent = '';
+          this.statusElement.className = 'settings-status';
+        }, 2000);
+      } else {
+        this.touchscreenModeCheckbox.checked = !enabled;
+        this.showStatus('Error: ' + data.message, 'error');
+      }
+    } catch (err) {
+      this.touchscreenModeCheckbox.checked = !enabled;
+      this.showStatus('Error: ' + err.message, 'error');
+    }
+  }
+
   async saveTimezone() {
     if (!this.timezoneSelect) {
       return;
@@ -1033,6 +1082,10 @@ class Settings {
         }, 500);
       });
     });
+
+    if (this.touchscreenModeCheckbox) {
+      this.touchscreenModeCheckbox.addEventListener('change', () => this.saveTouchscreenMode());
+    }
 
     if (this.timezoneSelect) {
       this.timezoneSelect.addEventListener('change', () => {
