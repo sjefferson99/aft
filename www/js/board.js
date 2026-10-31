@@ -7769,6 +7769,7 @@ class BoardManager {
       || startDateInput.value !== savedStart
       || endDateInput.value !== savedEnd
       || pendingNewItems.some((item) => item.name)
+      || !!modal.querySelector('.comment-edit-input')
     );
 
     // Saves anything outstanding. Returns false if something couldn't be saved.
@@ -8359,23 +8360,9 @@ class BoardManager {
             }
             
             const sanitizedComment = this.sanitizeCommentData(data.comment);
-            const isLongComment = sanitizedComment.comment.split('\n').length > 10 || sanitizedComment.comment.length > 500;
             const newComment = this.createCommentElement(sanitizedComment);
             
             commentsList.prepend(newComment);
-            
-            // Attach delete handler to new comment
-            const deleteBtn = newComment.querySelector('.comment-delete-btn');
-            deleteBtn.addEventListener('click', () => this.deleteCommentHandler(deleteBtn, cardId));
-            
-            // Attach read more handler if it's a long comment
-            if (isLongComment) {
-              const readMoreBtn = newComment.querySelector('.comment-read-more');
-              readMoreBtn.addEventListener('click', (e) => {
-                const commentText = newComment.querySelector('.comment-text');
-                this.toggleCommentCollapse(commentText, e.target);
-              });
-            }
             
             // Update card timestamp in UI
             await this.updateCardTimestamp(cardId);
@@ -8405,19 +8392,91 @@ class BoardManager {
       });
     }
     
-    // Handle delete comment buttons (only if comments section exists)
-    document.querySelectorAll('.comment-delete-btn').forEach(btn => {
-      btn.addEventListener('click', () => this.deleteCommentHandler(btn, cardId));
-    });
-    
-    // Handle read more buttons (only if comments section exists)
-    document.querySelectorAll('.comment-read-more').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const commentId = e.target.getAttribute('data-comment-id');
-        const commentText = document.querySelector(`.comment-text[data-comment-id="${commentId}"]`);
-        this.toggleCommentCollapse(commentText, e.target);
+    // One set of listeners, so posted and edited comments work too
+    const commentsList = document.getElementById('comments-list');
+
+    const editComment = (commentItem) => {
+      const textElement = commentItem.querySelector('.comment-text');
+      if (!textElement) return; // Already being edited
+
+      const commentId = parseInt(commentItem.getAttribute('data-comment-id'), 10);
+      const currentText = textElement.textContent;
+      const input = document.createElement('textarea');
+      input.className = 'comment-edit-input';
+      input.value = currentText;
+      input.maxLength = MAX_COMMENT_LENGTH;
+      input.rows = Math.min(currentText.split('\n').length + 1, 10);
+      input.setAttribute('aria-label', 'Edit comment');
+      textElement.replaceWith(input);
+      input.focus();
+
+      let finished = false;
+      const cancelEdit = () => {
+        finished = true;
+        input.replaceWith(textElement);
+      };
+
+      input.addEventListener('blur', () => {
+        if (finished) return;
+        const newText = input.value.trim();
+        if (!newText) {
+          this.showErrorToast('Comment cannot be empty');
+          cancelEdit();
+          return;
+        }
+        if (newText === currentText) {
+          cancelEdit();
+          return;
+        }
+
+        // Stay in edit mode until saved, to allow a retry
+        finished = true;
+        input.disabled = true;
+        queueSave(async () => {
+          const comment = await this.updateComment(commentId, newText);
+          if (comment) {
+            commentItem.replaceWith(this.createCommentElement(this.sanitizeCommentData(comment)));
+            await this.updateCardTimestamp(cardId);
+          } else {
+            finished = false;
+            input.disabled = false;
+          }
+          return !!comment;
+        });
       });
-    });
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !enterAddsNewLine) {
+          e.preventDefault();
+          input.blur();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          cancelEdit();
+        }
+      });
+    };
+
+    if (commentsList) {
+      commentsList.addEventListener('click', (e) => {
+        const commentItem = e.target.closest('.comment-item');
+        if (!commentItem) return;
+        if (e.target.matches('.comment-edit-btn')) {
+          editComment(commentItem);
+        } else if (e.target.matches('.comment-delete-btn')) {
+          this.deleteCommentHandler(e.target, cardId);
+        } else if (e.target.matches('.comment-read-more')) {
+          this.toggleCommentCollapse(commentItem.querySelector('.comment-text'), e.target);
+        }
+      });
+
+      if (!isReadOnly) {
+        commentsList.addEventListener('dblclick', (e) => {
+          if (!e.target.closest('.comment-text')) return;
+          editComment(e.target.closest('.comment-item'));
+        });
+      }
+    }
 
     // Close modal on background click (ignore text selection drags)
     setupModalBackgroundClose(modal, handleCancel);
@@ -9392,8 +9451,14 @@ class BoardManager {
     return `
       <div class="comment-item" data-comment-id="${comment.id}">
         <div class="comment-header">
-          <span class="comment-date" data-tooltip="${formatTooltipDateTime(comment.created_at)}" aria-label="Created on ${formatTooltipDateTime(comment.created_at)}" tabindex="0">${this.formatCommentDate(comment.created_at)}</span>
-          ${!isReadOnly ? `<button type="button" class="comment-delete-btn" data-comment-id="${comment.id}" title="Delete" aria-label="Delete comment">🗑</button>` : ''}
+          <div class="comment-meta">
+            <span class="comment-date" data-tooltip="${formatTooltipDateTime(comment.created_at)}" aria-label="Created on ${formatTooltipDateTime(comment.created_at)}" tabindex="0">${this.formatCommentDate(comment.created_at)}</span>
+            ${comment.edited_at ? `<span class="comment-edited" data-tooltip="Edited ${formatTooltipDateTime(comment.edited_at)}" aria-label="Edited on ${formatTooltipDateTime(comment.edited_at)}" tabindex="0">edited</span>` : ''}
+          </div>
+          ${!isReadOnly ? `<div class="comment-actions">
+            <button type="button" class="comment-edit-btn" data-comment-id="${comment.id}" title="Edit" aria-label="Edit comment">✎</button>
+            <button type="button" class="comment-delete-btn" data-comment-id="${comment.id}" title="Delete" aria-label="Delete comment">🗑</button>
+          </div>` : ''}
         </div>
         <div class="comment-text ${isLongComment ? 'collapsed' : ''}" id="comment-text-${comment.id}" data-comment-id="${comment.id}">${linkifyUrls(this.escapeHtml(comment.comment))}</div>
         ${isLongComment ? `<button type="button" class="comment-read-more" data-comment-id="${comment.id}" aria-expanded="false" aria-controls="comment-text-${comment.id}" aria-label="Expand comment">Read more...</button>` : ''}
@@ -9416,9 +9481,35 @@ class BoardManager {
     commentDate.setAttribute('aria-label', `Created on ${formatTooltipDateTime(comment.created_at)}`);
     commentDate.setAttribute('tabindex', '0');
     commentDate.textContent = this.formatCommentDate(comment.created_at);
-    commentHeader.appendChild(commentDate);
+
+    const commentMeta = document.createElement('div');
+    commentMeta.className = 'comment-meta';
+    commentMeta.appendChild(commentDate);
+
+    if (comment.edited_at) {
+      const commentEdited = document.createElement('span');
+      commentEdited.className = 'comment-edited';
+      commentEdited.setAttribute('data-tooltip', `Edited ${formatTooltipDateTime(comment.edited_at)}`);
+      commentEdited.setAttribute('aria-label', `Edited on ${formatTooltipDateTime(comment.edited_at)}`);
+      commentEdited.setAttribute('tabindex', '0');
+      commentEdited.textContent = 'edited';
+      commentMeta.appendChild(commentEdited);
+    }
+
+    commentHeader.appendChild(commentMeta);
 
     if (!isReadOnly) {
+      const actions = document.createElement('div');
+      actions.className = 'comment-actions';
+
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'comment-edit-btn';
+      editBtn.setAttribute('data-comment-id', String(comment.id));
+      editBtn.title = 'Edit';
+      editBtn.setAttribute('aria-label', 'Edit comment');
+      editBtn.textContent = '✎';
+
       const deleteBtn = document.createElement('button');
       deleteBtn.type = 'button';
       deleteBtn.className = 'comment-delete-btn';
@@ -9426,7 +9517,9 @@ class BoardManager {
       deleteBtn.title = 'Delete';
       deleteBtn.setAttribute('aria-label', 'Delete comment');
       deleteBtn.textContent = '🗑';
-      commentHeader.appendChild(deleteBtn);
+
+      actions.append(editBtn, deleteBtn);
+      commentHeader.appendChild(actions);
     }
 
     const commentText = document.createElement('div');
@@ -9495,7 +9588,9 @@ class BoardManager {
     return {
       id: Number.parseInt(comment?.id, 10) || 0,
       created_at: this.sanitizePlainText(comment?.created_at),
-      comment: this.sanitizePlainText(comment?.comment)
+      edited_at: this.sanitizePlainText(comment?.edited_at),
+      // Unlike plain text fields, comments keep their line breaks and tabs
+      comment: String(comment?.comment ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
     };
   }
 
@@ -9506,6 +9601,40 @@ class BoardManager {
       displayName,
       profileColour: this.sanitizeProfileColour(user?.profile_colour)
     };
+  }
+
+  // Returns the updated comment, or null if it couldn't be saved.
+  async updateComment(commentId, comment) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    try {
+      const response = await fetch(`/api/comments/${commentId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ comment }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+      const data = await response.json();
+
+      if (data.success) {
+        return data.comment;
+      }
+      this.showErrorToast(`Failed to save comment: ${data.message}`);
+      return null;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        this.showErrorToast('Save comment timed out (5s). Please check your connection.');
+      } else {
+        this.showErrorToast(`Error saving comment: ${err.message}`);
+      }
+      return null;
+    }
   }
 
   async deleteCommentHandler(deleteBtn, cardId) {

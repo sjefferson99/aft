@@ -1842,7 +1842,8 @@ body.compact-cards .card.collapsed .card-content-wrapper {
   margin-bottom: 20px;
 }
 
-#new-comment-input {
+#new-comment-input,
+.comment-edit-input {
   width: 100%;
   padding: 10px;
   border: 1px solid var(--border-color);
@@ -1856,7 +1857,8 @@ body.compact-cards .card.collapsed .card-content-wrapper {
   color: var(--text-color);
 }
 
-#new-comment-input:focus {
+#new-comment-input:focus,
+.comment-edit-input:focus {
   border-color: var(--primary-color);
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
 }
@@ -1886,11 +1888,28 @@ body.compact-cards .card.collapsed .card-content-wrapper {
   margin-bottom: 8px;
 }
 
-.comment-date {
+.comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.comment-date,
+.comment-edited {
   font-size: 12px;
   color: var(--text-muted);
 }
 
+.comment-edited {
+  font-style: italic;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: center;
+}
+
+.comment-edit-btn,
 .comment-delete-btn {
   background: none;
   border: none;
@@ -1902,6 +1921,11 @@ body.compact-cards .card.collapsed .card-content-wrapper {
   color: var(--error-color);
 }
 
+.comment-edit-btn {
+  color: var(--text-color);
+}
+
+.comment-edit-btn:hover,
 .comment-delete-btn:hover {
   opacity: 1;
 }
