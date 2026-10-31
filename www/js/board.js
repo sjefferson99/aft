@@ -226,6 +226,22 @@ function actionBtnContent(icon, label) {
   return `<span class="btn-icon" aria-hidden="true">${icon}</span><span class="btn-label">${label}</span>`;
 }
 
+function cardDateFieldsHtml(idPrefix, { start, end, days, hours }, disabledAttr = '') {
+  const field = (name, label, type, value, attrs = '') => `
+    <div class="card-date-field card-date-${name}">
+      <label for="${idPrefix}-${name}">${label}</label>
+      <input type="${type}" id="${idPrefix}-${name}" name="${idPrefix}-${name}" value="${value}" ${attrs} ${disabledAttr}>
+    </div>`;
+
+  return `
+    <div class="card-dates">
+      ${field('start-date', 'Start', 'datetime-local', start)}
+      ${field('end-date', 'End', 'datetime-local', end)}
+      ${field('duration-days', 'Days', 'number', days, 'min="0"')}
+      ${field('duration-hours', 'Hours', 'number', hours, 'min="0" max="23"')}
+    </div>`;
+}
+
 // Keep start date, end date, and duration in sync. Whichever field was
 // just edited recalculates the missing one of the other two; if both
 // others already hold a genuine value, start date acts as the anchor
@@ -7135,37 +7151,6 @@ class BoardManager {
               <label for="card-description">Description:</label>
               <textarea id="card-description" name="card-description" rows="4"></textarea>
             </div>
-            <div class="form-group">
-              <label for="card-start-date">Start Date:</label>
-              <input type="datetime-local" id="card-start-date" name="card-start-date" value="${initialStartDate}">
-            </div>
-            <div class="form-group">
-              <label for="card-end-date">End Date:</label>
-              <input type="datetime-local" id="card-end-date" name="card-end-date" value="${initialEndDate}">
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="card-duration-days">Duration (days):</label>
-                <input type="number" id="card-duration-days" name="card-duration-days" min="0" value="${initialDuration ? initialDuration.days : ''}">
-              </div>
-              <div class="form-group">
-                <label for="card-duration-hours">Duration (hours):</label>
-                <input type="number" id="card-duration-hours" name="card-duration-hours" min="0" max="23" value="${initialDuration ? initialDuration.hours : ''}">
-              </div>
-            </div>
-
-            ${canCreateSchedule ? `
-            <div class="schedule-section">
-              <button type="button" class="btn btn-secondary btn-sm" id="new-card-schedule-btn" title="Create the card, then open its schedule">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-                Create Schedule
-              </button>
-            </div>
-            ` : ''}
-
             <div class="checklist-section">
               <div id="checklist-header-container">
                 <button type="button" class="btn btn-secondary btn-sm" id="add-checklist-item-initial-btn">+ Add Checklist</button>
@@ -7180,6 +7165,25 @@ class BoardManager {
                 <button type="button" class="btn btn-secondary btn-sm" id="add-checklist-item-bottom-btn">+ Add Item</button>
               </div>
             </div>
+
+            ${cardDateFieldsHtml('card', {
+              start: initialStartDate,
+              end: initialEndDate,
+              days: initialDuration ? initialDuration.days : '',
+              hours: initialDuration ? initialDuration.hours : ''
+            })}
+
+            ${canCreateSchedule ? `
+            <div class="schedule-section">
+              <button type="button" class="btn btn-secondary btn-sm" id="new-card-schedule-btn" title="Create the card, then open its schedule">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Create Schedule
+              </button>
+            </div>
+            ` : ''}
 
             ${canManageAssignees ? `
             <div class="card-metadata" id="new-card-assignee-metadata" style="display:none;">
@@ -7654,37 +7658,6 @@ class BoardManager {
               <label for="edit-card-description">Description:</label>
               <textarea id="edit-card-description" name="edit-card-description" rows="4" ${readonlyAttr}>${this.escapeHtml(cardData.description || '')}</textarea>
             </div>
-            <div class="form-group">
-              <label for="edit-card-start-date">Start Date:</label>
-              <input type="datetime-local" id="edit-card-start-date" name="edit-card-start-date" value="${defaultStartDate}" ${disabledAttr}>
-            </div>
-            <div class="form-group">
-              <label for="edit-card-end-date">End Date:</label>
-              <input type="datetime-local" id="edit-card-end-date" name="edit-card-end-date" value="${defaultEndDate}" ${disabledAttr}>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="edit-card-duration-days">Duration (days):</label>
-                <input type="number" id="edit-card-duration-days" name="edit-card-duration-days" min="0" value="${defaultDurationDays}" ${disabledAttr}>
-              </div>
-              <div class="form-group">
-                <label for="edit-card-duration-hours">Duration (hours):</label>
-                <input type="number" id="edit-card-duration-hours" name="edit-card-duration-hours" min="0" max="23" value="${defaultDurationHours}" ${disabledAttr}>
-              </div>
-            </div>
-            
-            ${!isTemplate && canOpenScheduleEditor ? `
-            <div class="schedule-section">
-              <button type="button" class="btn btn-secondary btn-sm" id="schedule-card-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
-                ${cardData.schedule ? 'Edit Schedule' : 'Create Schedule'}
-              </button>
-            </div>
-            ` : ''}
-            
             <div class="checklist-section">
               ${hasChecklist ? `
                 <div class="checklist-header">
@@ -7721,6 +7694,25 @@ class BoardManager {
                 </div>
               `}
             </div>
+            
+            ${cardDateFieldsHtml('edit-card', {
+              start: defaultStartDate,
+              end: defaultEndDate,
+              days: defaultDurationDays,
+              hours: defaultDurationHours
+            }, disabledAttr)}
+
+            ${!isTemplate && canOpenScheduleEditor ? `
+            <div class="schedule-section">
+              <button type="button" class="btn btn-secondary btn-sm" id="schedule-card-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                ${cardData.schedule ? 'Edit Schedule' : 'Create Schedule'}
+              </button>
+            </div>
+            ` : ''}
             
             ${!isTemplate ? `
             <div class="card-metadata">

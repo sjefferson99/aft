@@ -248,6 +248,8 @@ def test_dragging_checklist_item_saves_order(logged_in_page, api_session, ui_bas
     for name in ("First", "Second", "Third"):
         _add_item(api_session, ui_base_url, card, name)
     page = logged_in_page
+    # A drag fails if Playwright has to scroll the modal to reach the target
+    page.set_viewport_size({"width": 1280, "height": 1000})
     _open_card(page, column["board_id"], card)
 
     rows = page.locator("#edit-card-modal .checklist-item")
@@ -351,8 +353,16 @@ def test_enter_adds_lines_in_touchscreen_mode(logged_in_page, api_session, ui_ba
     page = logged_in_page
     page.goto(f"/board.html?id={column['board_id']}")
     page.locator(f'.card[data-card-id="{card["id"]}"] .card-title').wait_for(timeout=5000)
-    page.evaluate("() => document.body.classList.add('touchscreen-mode')")
-    page.locator(f'.card[data-card-id="{card["id"]}"] .card-title').click()
+    page.wait_for_function("() => window.header?.dbConnected", timeout=8000)
+    # Added in the same step as opening, because loading the setting can clear it
+    page.evaluate(
+        """async (id) => {
+            const data = await window.boardManager.getCardData(id);
+            document.body.classList.add('touchscreen-mode');
+            window.boardManager.openEditCardModal(id, data);
+        }""",
+        card["id"],
+    )
 
     description = page.locator("#edit-card-description")
     description.fill("Line one")
