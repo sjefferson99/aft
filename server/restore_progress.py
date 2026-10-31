@@ -25,6 +25,7 @@ PROGRESS_ID_PATTERN = re.compile(r'[0-9a-f]{32}')
 PROGRESS_TTL_SECONDS = 3600
 KEY_PREFIX = 'restore_progress:'
 REDIS_TIMEOUT_SECONDS = 1
+SETUP_RESTORE_KEY = 'setup_restore_running'
 # Importing writes after every line, so limit how often that reaches the store.
 IMPORT_WRITE_INTERVAL_SECONDS = 0.5
 
@@ -60,6 +61,31 @@ class ProgressStore:
             self._memory = {key: entry for key, entry in self._memory.items() if entry[1] > now}
             self._memory[progress_id] = (state, now + PROGRESS_TTL_SECONDS)
 
+    def claim(self, key):
+        """Take a key for this caller. Returns False if it's already taken."""
+        if self._redis:
+            try:
+                return bool(self._redis.set(KEY_PREFIX + key, '1', nx=True, ex=PROGRESS_TTL_SECONDS))
+            except redis.RedisError as error:
+                logger.warning("Restore claim failed, using in-memory fallback: %s", error)
+
+        now = time.monotonic()
+        with self._lock:
+            if self._memory.get(key, (None, 0))[1] > now:
+                return False
+            self._memory[key] = (True, now + PROGRESS_TTL_SECONDS)
+        return True
+
+    def release(self, key):
+        if self._redis:
+            try:
+                self._redis.delete(KEY_PREFIX + key)
+            except redis.RedisError as error:
+                logger.warning("Restore release failed: %s", error)
+
+        with self._lock:
+            self._memory.pop(key, None)
+
     def read(self, progress_id):
         if self._redis:
             try:
@@ -79,6 +105,23 @@ _store = ProgressStore(os.getenv('REDIS_URL'))
 
 def read_progress(progress_id):
     return _store.read(progress_id)
+
+
+def claim_setup_restore():
+    """Allow one restore at a time during setup.
+
+    The users table is empty or missing for part of a restore, so checking for
+    users can't stop a second restore, or an administrator being created.
+    """
+    return _store.claim(SETUP_RESTORE_KEY)
+
+
+def release_setup_restore():
+    _store.release(SETUP_RESTORE_KEY)
+
+
+def setup_restore_running():
+    return _store.read(SETUP_RESTORE_KEY) is not None
 
 
 class RestoreProgress:

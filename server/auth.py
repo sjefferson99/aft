@@ -32,6 +32,7 @@ from sqlalchemy.sql import func
 from database import SessionLocal
 from models import User, Role, UserRole, WebAuthnCredential
 from permissions import INITIAL_ROLES
+from restore_progress import setup_restore_running
 from auth_rate_limit import (
     account_key,
     clear_password_failures,
@@ -1323,7 +1324,12 @@ def setup_admin():
         description: Validation error
       403:
         description: Setup already complete
+      409:
+        description: A backup is being restored
     """
+    if setup_restore_running():
+        return create_error_response("A backup is being restored. Please wait.", 409)
+
     try:
         db = SessionLocal()
         
