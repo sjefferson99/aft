@@ -340,6 +340,8 @@ let closeOpenDateTimePicker = null;
 
 function setupDateTimePickers(root) {
   root.querySelectorAll('input[type="datetime-local"]').forEach((input) => {
+    // Read this first: a detached input has no labels.
+    const label = (input.labels[0]?.textContent || 'date and time').replace(/:$/, '');
     const wrapper = document.createElement('span');
     wrapper.className = 'date-time-field';
     input.replaceWith(wrapper);
@@ -349,7 +351,7 @@ function setupDateTimePickers(root) {
     button.className = 'date-time-picker-btn';
     button.textContent = '📅';
     button.title = 'Pick date and time';
-    button.setAttribute('aria-label', `Pick ${(input.labels[0]?.textContent || 'date and time').replace(/:$/, '')}`);
+    button.setAttribute('aria-label', `Pick ${label}`);
     button.setAttribute('aria-expanded', 'false');
     button.disabled = input.disabled;
     wrapper.append(input, button);
@@ -493,6 +495,8 @@ function openDateTimePicker(input, button) {
   button.setAttribute('aria-expanded', 'true');
   refresh();
   position();
+  // It sits at the end of the body, so Tab wouldn't reach it from the button.
+  dateInput.focus();
 }
 
 class ChecklistManager {

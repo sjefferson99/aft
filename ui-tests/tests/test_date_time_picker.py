@@ -196,6 +196,36 @@ def test_edit_card_saves_a_picked_time(logged_in_page, api_session, ui_base_url,
 
 
 @pytest.mark.ui
+def test_buttons_are_named_after_their_field(logged_in_page, column):
+    page = logged_in_page
+    _open_board(page, column)
+    _open_new_card(page, column)
+
+    assert _picker_button(page, "card-start-date").get_attribute("aria-label") == "Pick Start"
+    assert _picker_button(page, "card-end-date").get_attribute("aria-label") == "Pick End"
+
+
+@pytest.mark.ui
+def test_picker_works_by_keyboard(logged_in_page, column):
+    page = logged_in_page
+    _open_board(page, column)
+    _open_new_card(page, column)
+    page.fill("#card-start-date", "2030-03-04T09:15")
+
+    _picker_button(page, "card-start-date").focus()
+    page.keyboard.press("Enter")
+    page.locator(".date-time-popover").wait_for(state="visible", timeout=3000)
+    assert page.evaluate("document.activeElement.classList.contains('date-time-picker-date')")
+
+    page.locator('[data-hour="17"]').focus()
+    page.keyboard.press("Enter")
+    assert page.input_value("#card-start-date") == "2030-03-04T17:15"
+
+    page.keyboard.press("Escape")
+    assert page.evaluate("document.activeElement.classList.contains('date-time-picker-btn')")
+
+
+@pytest.mark.ui
 def test_disabled_field_has_a_disabled_button(logged_in_page, column):
     page = logged_in_page
     _open_board(page, column)
