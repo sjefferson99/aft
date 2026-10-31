@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings - AFT</title>
+  <title>Instance Settings - AFT</title>
   <link rel="icon" type="image/png" href="/images/AFT_logo.png">
   <link rel="icon" type="image/webp" href="/images/AFT_logo.webp">
   <link rel="manifest" href="/manifest.webmanifest">
@@ -16,17 +16,28 @@
   <script src="/js/pwa.js"></script>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/header.css">
-  <link rel="stylesheet" href="/css/settings.css">
+  <link rel="stylesheet" href="/css/settings.css?v=20261031b">
 </head>
 <body>
   <!-- Header component will be loaded here -->
   
   <main class="canvas">
-    <h1 class="page-title">Settings</h1>
+    <h1 class="page-title">Instance Settings</h1>
     <div class="settings-container">
 
       <p class="setting-help settings-page-note">Looking for your own preferences? They are on your <a href="/profile.html#preferences">Profile</a>.</p>
 
+      <div class="settings-tabs" role="tablist" aria-label="Instance settings sections">
+        <a href="#instance" class="settings-tab" role="tab" id="settings-tab-instance" data-tab="instance" aria-controls="settings-panel-instance">Instance Settings</a>
+        <a href="/user-management.html" class="settings-tab" role="tab" id="settings-tab-users" data-tab="users" aria-controls="settings-panel-frames">User Management</a>
+        <a href="/role-management.html" class="settings-tab" role="tab" id="settings-tab-roles" data-tab="roles" aria-controls="settings-panel-frames">Role Management</a>
+        <a href="/backup-restore.html" class="settings-tab" role="tab" id="settings-tab-backup" data-tab="backup" aria-controls="settings-panel-frames">Backup &amp; Restore</a>
+        <a href="/theme-builder.html" class="settings-tab" role="tab" id="settings-tab-themes" data-tab="themes" aria-controls="settings-panel-frames">Theme Builder</a>
+      </div>
+
+      <div class="settings-tab-frames" role="tabpanel" id="settings-panel-frames" hidden></div>
+
+      <div role="tabpanel" id="settings-panel-instance" aria-labelledby="settings-tab-instance" hidden>
       <div class="settings-panels">
         <section class="settings-section" id="global-settings-panel" hidden aria-labelledby="global-settings-title">
           <h3 id="global-settings-title">Instance Global Settings</h3>
@@ -102,13 +113,14 @@
       <div class="settings-actions">
         <div id="settings-status" class="settings-status" role="status" aria-live="polite"></div>
       </div>
+      </div>
     </div>
   </main>
 
-  <script src="/js/utils.js"></script>
+  <script src="/js/utils.js?v=20261031b"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/header.js"></script>
-  <script src="/js/settings.js"></script>
+  <script src="/js/settings.js?v=20261031b"></script>
   <script src="/js/pwa-install.js"></script>
 </body>
 </html>

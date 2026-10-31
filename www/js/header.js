@@ -1324,6 +1324,11 @@ class Header {
     // Menu items and their required permissions
     const protectedItems = [
       {
+        selectors: ['a[href="/settings.html"]'],
+        permissions: window.INSTANCE_SETTINGS_PERMISSIONS,
+        requireAny: true
+      },
+      {
         selectors: ['a[href="/backup-restore.html"]'],
         permission: 'admin.database'
       },

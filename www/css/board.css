@@ -1464,6 +1464,13 @@ body.compact-cards .card.collapsed .card-content-wrapper {
   padding-right: 8px;
 }
 
+/* Labels only on larger screens. At 900px and below the buttons show only the icon. */
+@media (min-width: 901px) {
+  .modal-action-group .btn-icon {
+    display: none;
+  }
+}
+
 .modal-header h2 .card-save-status {
   margin-left: auto;
   font-size: 13px;

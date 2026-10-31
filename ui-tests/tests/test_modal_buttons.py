@@ -43,6 +43,7 @@ def test_edit_card_buttons_show_labels_on_desktop(logged_in_page, column, card):
     _open_edit_modal(page, column["board_id"], card["id"], 1280)
 
     assert page.locator("#move-card-detail-btn .btn-label").is_visible()
+    assert page.locator("#move-card-detail-btn .btn-icon").is_hidden()
     assert page.locator("#move-card-detail-btn").bounding_box()["height"] <= 36
 
 

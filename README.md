@@ -21,7 +21,7 @@ There is comprehensive documentation in the form of this readme, the Swagger API
 
 ### API
 The entire application is based on a server container that exposes all functionality via API. The UI is a separate container with a javascript web app that adds a layer over the API. You can easily interact with any element of AFT programmatically over API, or even completely rewrite the UI or drop into a larger application.
-Check the swagger docs page in the settings menu for more details.
+Check the API Docs page in the user menu for more details.
 
 ### Security
 Authentication should be rock solid, data should be secure, known exploits patched regularly and best practice design followed for preventing injection attacks, cross site scripting etc. Details of security review performed and mitigated are in the docs folders.
@@ -89,7 +89,7 @@ docker compose up --build -d
 The application supports different working styles to accommodate various team preferences.
 
 - The Working Style option in General Settings sets the default for new boards you create.
-- Existing boards keep their own working style and can be changed from each board's settings menu.
+- Existing boards keep their own working style and can be changed from each board's menu.
 
 ![Working Style Options](images/working_style_options.png)
 
@@ -123,10 +123,10 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
   - **Unknown assignees** - Cards with unrecognised usernames are imported without an assignee; a warning is shown
 
 ### 🌐 Public Board Sharing (Read-Only)
-- **Public Visibility Toggle** - Board owners/editors can switch a board between private and public from the board settings menu.
+- **Public Visibility Toggle** - Board owners/editors can switch a board between private and public from the board menu.
 - **Stable Share Link** - Making a board private and public again keeps the same public slug unless you explicitly rotate it.
-- **Copy Public Link** - Signed-in users see a small "P" badge in the header on public boards. Click it, or use "Copy Public Link" in board settings, to copy the link.
-- **Rotate Public Link** - Use "Rotate Public Link" in board settings to immediately invalidate the old URL and issue a new one.
+- **Copy Public Link** - Signed-in users see a small "P" badge in the header on public boards. Click it, or use "Copy Public Link" in the board menu, to copy the link.
+- **Rotate Public Link** - Use "Rotate Public Link" in the board menu to immediately invalidate the old URL and issue a new one.
 - **Dedicated Public Page** - Public links open at `/public-board.html?slug=<slug>` for anonymous viewing.
 - **Instance Theme Alignment** - Public board viewers use the configured instance default theme, not a fixed hardcoded theme.
 - **Read-Only by Design** - Public boards do not expose edit controls, websocket mutation paths, assignee metadata, or commenter identity fields.
@@ -162,7 +162,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 - **Update Cards** - Edit card details, titles, descriptions, and comments. Edited comments are marked as edited. Changes save as you leave each field, with a small "Saved" indicator. Enter saves and closes the card, Shift+Enter adds a new line, and Escape reverts the field you're editing, then closes. On touchscreens Enter adds a new line in descriptions and comments
 - **Assign Responsibility** - Set a primary assignee and optional secondary assignees per card from users with board access
 - **Assignee Avatars** - Cards show the primary assignee initials in a bottom-left avatar circle using the assignee's profile colour
-- **Board Assignee Filters** - Open/toggle the compact assignee filter bar from the header search field's filter icon to show cards for selected assignees, include unassigned cards, and optionally match secondary assignees. When filters are active, a visual indicator appears next to the board name. Clear all filters quickly via the settings menu "Clear filters" option.
+- **Board Assignee Filters** - Open/toggle the compact assignee filter bar from the header search field's filter icon to show cards for selected assignees, include unassigned cards, and optionally match secondary assignees. When filters are active, a visual indicator appears next to the board name. Clear all filters quickly via the board menu "Clear Filters" option.
 - **Board Text Search** - Search cards from the header or filter bar with shared state and a 500ms debounce. Search matches card title, description, and checklist item text. Query grammar supports spaces as AND, commas as OR, quoted exact phrases, and repeated double quotes inside phrases for literal quote matching. API search contract limits are: max 200 characters, max 12 comma-separated OR groups, max 24 total terms, and max 80 characters per term; requests outside this contract return HTTP 400.
 - **Card ID Search Tokens** - Use unquoted `#123` to match card ID 123 only. Use quoted `"#123"` for text-only matching. Tokens like `#00379`, `#abc`, and `##123` are treated as normal text tokens.
 - **Delete Cards** - Remove completed or cancelled tasks
@@ -242,7 +242,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 - **Working Style Default (New Boards)** - Set your default board style for boards created in the future
   - **Kanban**: Traditional column-based workflow where cards move through stages
   - **Agile**: Board-level done tracking with Done/Not Done workflow
-  - **Board-Level Override**: Existing board style is managed from that board's settings menu
+  - **Board-Level Override**: Existing board style is managed from that board's menu
   - **Done Button**: Mark cards as complete without moving them between columns in Agile mode
   - **Done View**: Dedicated view to see completed cards in Agile mode
   - **Archived View**: Available in both modes; in Agile mode it lists done and not-done archived cards together
@@ -671,7 +671,7 @@ The application includes a multi-user security model with authentication, role-b
 
 ### Permissions Access Model and User Lifecycle
 
-- **Board Ownership and Sharing** - Boards are owned by a user, and access can be shared per board. Board-specific roles enable read-only access (viewer) or read/write collaboration (editor) without granting global access to all boards. Board owners and administrators can reassign ownership from the board header settings menu on the board page.
+- **Board Ownership and Sharing** - Boards are owned by a user, and access can be shared per board. Board-specific roles enable read-only access (viewer) or read/write collaboration (editor) without granting global access to all boards. Board owners and administrators can reassign ownership from the board menu on the board page.
 - **Fine-Grained Per-Board Permissions** - Effective permissions are evaluated per board, so actions like editing or deleting are allowed only where the user has board-level rights.
 - **Custom Role Construction** - Role management supports building custom roles from individual permission blocks, then assigning those roles to users within the allowed assignment scope.
 - **Controlled Role Assignment** - Role changes require role-management permissions, with backend checks to prevent unauthorised escalation and invalid global vs board-specific assignments.

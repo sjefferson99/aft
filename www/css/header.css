@@ -289,6 +289,12 @@
   background-color: var(--header-menu-hover);
 }
 
+/* The board menu only appears when it has something to offer. Items hide with inline styles. */
+.settings-dropdown:not(:has(.settings-dropdown-item:not([style*="display: none"]))),
+#mobile-board-actions:not(:has(.mobile-menu-link:not([style*="display: none"]))) {
+  display: none;
+}
+
 /* Board menu: rows with a choice show every option and mark the current one */
 .settings-dropdown-item.board-menu-toggle,
 .mobile-menu-link.board-menu-toggle {

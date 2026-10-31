@@ -161,7 +161,7 @@
         </div>
       </div>
       <div class="settings-dropdown">
-        <a href="javascript:void(0)" class="icon-link" title="Settings" aria-label="Settings" role="button">
+        <a href="javascript:void(0)" class="icon-link" title="Board menu" aria-label="Board menu" role="button">
           <svg class="icon-btn icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="4" y1="6" x2="20" y2="6"></line>
             <line x1="4" y1="12" x2="20" y2="12"></line>
@@ -192,10 +192,6 @@
           <a href="javascript:void(0)" class="settings-dropdown-item" id="clear-board-filters-menu-item" style="display: none;">Clear Filters</a>
           <a href="javascript:void(0)" class="settings-dropdown-item" id="reassign-board-menu-item" style="display: none;">Reassign Board</a>
           <a href="javascript:void(0)" class="settings-dropdown-item" id="archive-board-menu-item" style="display: none;">Archive Board</a>
-          <a href="/backup-restore.html" class="settings-dropdown-item">Backup & Restore</a>
-          <a href="/theme-builder.html" class="settings-dropdown-item">Theme Builder</a>
-          <a href="/user-management.html" class="settings-dropdown-item">User Management</a>
-          <a href="/role-management.html" class="settings-dropdown-item">Role Management</a>
         </div>
       </div>
       <div class="user-dropdown">
@@ -212,7 +208,7 @@
             </a>
           </div>
           <a href="/profile.html" class="user-dropdown-item">Profile</a>
-          <a href="/settings.html" class="user-dropdown-item">Settings</a>
+          <a href="/settings.html" class="user-dropdown-item">Instance Settings</a>
           <a href="/about.html" class="user-dropdown-item">About</a>
           <a href="/docs.html" class="user-dropdown-item">Docs</a>
           <a href="/system-info.html" class="user-dropdown-item">System Info</a>
@@ -298,14 +294,14 @@
           </div>
         </details>
 
-        <details class="mobile-tree-group">
+        <details class="mobile-tree-group" id="mobile-board-actions">
           <summary>
             <span class="mobile-tree-title">
               <svg class="mobile-tree-icon" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle>
                 <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 0 1 0 2.83a2 2 0 0 1-2.83 0l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .26a1.7 1.7 0 0 0-.8 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-.8-1.5a1.7 1.7 0 0 0-1-.26a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 0 1-2.83 0a2 2 0 0 1 0-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.26-1a1.7 1.7 0 0 0-1.5-.8H2.8a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-.8a1.7 1.7 0 0 0 .26-1a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 0 1 0-2.83a2 2 0 0 1 2.83 0l.06.06A1.7 1.7 0 0 0 9 4.6c.36 0 .7-.09 1-.26a1.7 1.7 0 0 0 .8-1.5V2.8a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 .8 1.5c.3.17.64.26 1 .26a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 0 1 2.83 0a2 2 0 0 1 0 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c0 .36.09.7.26 1c.29.5.81.8 1.39.8h.15a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5.8c-.17.3-.26.64-.26 1z" fill="none" stroke="currentColor" stroke-width="1.5"></path>
               </svg>
-              <span>Settings</span>
+              <span>Board</span>
             </span>
           </summary>
           <div class="mobile-tree-items">
@@ -329,10 +325,6 @@
             <button type="button" class="mobile-menu-link" id="mobile-clear-board-filters-menu-item" style="display: none;">Clear Filters</button>
             <button type="button" class="mobile-menu-link" id="mobile-reassign-board-menu-item" style="display: none;">Reassign Board</button>
             <button type="button" class="mobile-menu-link" id="mobile-archive-board-menu-item" style="display: none;">Archive Board</button>
-            <a href="/backup-restore.html" class="mobile-menu-link">Backup & Restore</a>
-            <a href="/theme-builder.html" class="mobile-menu-link">Theme Builder</a>
-            <a href="/user-management.html" class="mobile-menu-link">User Management</a>
-            <a href="/role-management.html" class="mobile-menu-link">Role Management</a>
           </div>
         </details>
 
@@ -349,7 +341,7 @@
           <div class="mobile-tree-items">
             <div class="mobile-user-name" id="mobile-header-user-name">Guest</div>
             <a href="/profile.html" class="mobile-menu-link">Profile</a>
-            <a href="/settings.html" class="mobile-menu-link">Settings</a>
+            <a href="/settings.html" class="mobile-menu-link">Instance Settings</a>
             <a href="/about.html" class="mobile-menu-link">About</a>
             <a href="/docs.html" class="mobile-menu-link">Docs</a>
             <a href="/system-info.html" class="mobile-menu-link">System Info</a>

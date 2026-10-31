@@ -263,3 +263,16 @@ body {
   font-size: 14px;
   line-height: 1.2;
 }
+
+/* Admin pages inside the Instance Settings tabs */
+.embedded-page .header,
+.embedded-page .page-title {
+  display: none;
+}
+
+.embedded-page .canvas,
+.embedded-page .settings-container {
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}

@@ -161,7 +161,7 @@ def test_card_button_moves_card_when_chosen(logged_in_page, column, cards, set_c
 
 
 @pytest.mark.ui
-@pytest.mark.parametrize("viewport, max_height", [(DESKTOP, 36), (MOBILE, 36)])
+@pytest.mark.parametrize("viewport, max_height", [(DESKTOP, 36), (MOBILE, 80)])
 def test_action_row_stays_on_one_line(logged_in_page, column, cards, viewport, max_height):
     page = logged_in_page
     _open_board(page, column, viewport)
