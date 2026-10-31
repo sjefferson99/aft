@@ -2,7 +2,7 @@
 Passkey (WebAuthn) endpoints.
 
 Passkeys are an alternative way to sign in, alongside the password. They are
-off unless WEBAUTHN_RP_ID is set (see webauthn_settings.py and the README).
+off unless WEBAUTHN_RP_ID is set (see webauthn_settings.py and www/docs/administration.md).
 
 Registration and sign-in are each two requests: the server issues options with
 a random challenge, the browser asks the authenticator, then the server
