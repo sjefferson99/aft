@@ -3981,7 +3981,7 @@ class BoardManager {
   }
 
   handleKeydown(e) {
-    // Don't trigger shortcuts if user is typing in an input/textarea
+    // Don't trigger shortcuts if user is typing in or choosing from a form field
     if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
       return;
     }
