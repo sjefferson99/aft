@@ -15,8 +15,8 @@ services:
     container_name: aft-db
     restart: unless-stopped
     # MySQL memory tuning, defaulted for small self-hosted installs. Each value can be
-    # overridden in .env with the MYSQL_* variable shown; see README "Database memory tuning":
-    # https://github.com/sjefferson99/aft#database-memory-tuning
+    # overridden in .env with the MYSQL_* variable shown; see the administration guide:
+    # https://github.com/sjefferson99/aft/blob/main/www/docs/administration.md#database-memory-tuning
     command:
       - --max_allowed_packet=${MYSQL_MAX_ALLOWED_PACKET:-128M}
       - --performance_schema=${MYSQL_PERFORMANCE_SCHEMA:-OFF}

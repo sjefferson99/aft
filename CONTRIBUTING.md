@@ -18,7 +18,7 @@ Before submitting any code contribution, **verify ALL items** are complete:
 - [ ] **Database Changes** - Migration created, schema validation updated (see [Database Changes](#database-changes))
 - [ ] **Import/Export Compatibility** — If adding or changing a card or board field, check whether the native AFT export (`board_routes.py` export endpoint) and import loop, and any active import handlers (`TrelloBoardImportHandler` in `server/board_import_handlers.py`, etc.), need updating. See [trello_import_feature_backlog.md](./trello_import_feature_backlog.md) for tracked gaps.
 - [ ] **Performance at Scale** — If touching a board list/read endpoint or `www/js/board.js` rendering/DOM code, check it against [Performance Considerations](#performance-considerations) below. AFT boards are used with 100+ cards per column in practice.
-- [ ] **Documentation** - README/docs updated if behaviour changed
+- [ ] **Documentation** - Guides in `www/docs` updated if behaviour changed
 - [ ] **Agent Context Updated** - If workflow/security/testing behaviour changed, update [AGENT_CONTEXT.md](./AGENT_CONTEXT.md)
 - [ ] **All Tests Pass** - Run `pytest -v` with fresh database and verify all tests pass
 

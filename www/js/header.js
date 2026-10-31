@@ -69,7 +69,6 @@ function isPublicPagePath(pathname) {
     '/register.html',
     '/logout.html',
     '/setup.html',
-    '/about.html',
     '/docs.html',
     '/public-board.html'
   ];

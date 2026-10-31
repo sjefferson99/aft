@@ -49,16 +49,46 @@
   border-bottom: 1px solid var(--primary-color);
 }
 
+.docs-toc-group {
+  margin-top: 16px;
+}
+
+.docs-toc-group:first-of-type {
+  margin-top: 0;
+}
+
+.docs-toc a.docs-toc-guide {
+  color: var(--text-bold);
+  font-weight: 600;
+}
+
+.docs-toc-group ul {
+  column-width: 240px;
+  column-gap: 24px;
+}
+
+.docs-guide-title {
+  margin: 36px 0 16px;
+  color: var(--text-bold);
+  font-size: 26px;
+  font-weight: 600;
+  scroll-margin-top: 100px;
+}
+
 .docs-section {
   background: var(--page-panel-background);
   border-radius: 8px;
   padding: 24px;
   margin-bottom: 20px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  overflow-wrap: anywhere;
+}
+
+.docs-section :is(h2, h3, h4) {
   scroll-margin-top: 100px;
 }
 
-.docs-section h3 {
+.docs-section h2 {
   margin-top: 0;
   margin-bottom: 16px;
   color: var(--text-bold);
@@ -68,13 +98,31 @@
   padding-bottom: 8px;
 }
 
+.docs-section h3 {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  color: var(--text-bold);
+  font-size: 16px;
+  font-weight: 600;
+  border-left: 4px solid var(--primary-color);
+  padding-left: 12px;
+}
+
+.docs-section h4 {
+  margin-top: 20px;
+  margin-bottom: 8px;
+  color: var(--text-bold);
+  font-size: 15px;
+  font-weight: 600;
+}
+
 .docs-section p {
   margin: 12px 0;
   line-height: 1.6;
   color: var(--text-color);
 }
 
-.docs-section ul {
+.docs-section :is(ul, ol) {
   margin: 12px 0;
   padding-left: 24px;
 }
@@ -94,36 +142,39 @@
 .docs-section a:hover {
   text-decoration: underline;
 }
-.docs-section h4 {
-  margin-top: 24px;
-  margin-bottom: 12px;
-  color: var(--text-bold);
-  font-size: 16px;
-  font-weight: 600;
-  border-left: 4px solid var(--primary-color);
+
+.docs-section blockquote {
+  margin: 12px 0;
   padding-left: 12px;
+  border-left: 4px solid var(--border-color);
 }
 
-.docs-shortcuts {
+.docs-table-scroll {
+  overflow-x: auto;
+}
+
+.docs-section table {
   width: 100%;
+  min-width: 640px;
   margin: 12px 0;
   border-collapse: collapse;
   color: var(--text-color);
 }
 
-.docs-shortcuts th,
-.docs-shortcuts td {
+.docs-section :is(th, td) {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-color);
   text-align: left;
+  vertical-align: top;
   line-height: 1.6;
+  overflow-wrap: normal;
 }
 
-.docs-shortcuts th {
+.docs-section th {
   color: var(--text-bold);
 }
 
-.docs-shortcuts kbd {
+.docs-section kbd {
   display: inline-block;
   min-width: 20px;
   padding: 2px 6px;
@@ -136,16 +187,34 @@
   text-align: center;
 }
 
-.docs-image-container {
-  margin: 20px 0;
-  text-align: center;
+.docs-section code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--background-light);
+  font-size: 0.9em;
 }
 
-.docs-image {
+.docs-section pre {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--background-light);
+  color: var(--text-color);
+  overflow-x: auto;
+}
+
+.docs-section pre code {
+  padding: 0;
+  background: none;
+  overflow-wrap: normal;
+}
+
+.docs-section img {
+  display: block;
   max-width: 100%;
   height: auto;
+  margin: 20px auto;
   border-radius: 8px;
   border: 1px solid var(--border-color);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  margin: 12px 0;
 }

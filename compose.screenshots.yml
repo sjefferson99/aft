@@ -1,0 +1,17 @@
+# Overlay for taking docs screenshots, used with scripts/screenshots.py. The
+# database and backups live in memory, so demo data never touches ./data and
+# real data can't end up in a public image. See docs/SCREENSHOTS.md.
+#
+#   docker compose -f compose.yml -f compose.screenshots.yml up -d --build
+
+services:
+  db:
+    volumes: !reset []
+    tmpfs:
+      - /var/lib/mysql
+
+  server:
+    volumes: !override
+      - backgrounds_volume:/var/www/images/backgrounds
+    tmpfs:
+      - /app/backups:uid=1000,gid=1000
