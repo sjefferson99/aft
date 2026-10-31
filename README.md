@@ -157,6 +157,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 ### 🎴 Card Management
 - **Create Cards** - Add task cards with titles and descriptions
 - **Move Cards** - Drag cards between columns to track progress
+- **Create Cards** - New cards can start with dates, a duration, assignees, a checklist and a schedule, using the same keyboard rules as editing
 - **Update Cards** - Edit card details, titles, descriptions, and comments. Edited comments are marked as edited. Changes save as you leave each field, with a small "Saved" indicator. Enter saves and closes the card, Shift+Enter adds a new line, and Escape reverts the field you're editing, then closes. On touchscreens Enter adds a new line in descriptions and comments
 - **Assign Responsibility** - Set a primary assignee and optional secondary assignees per card from users with board access
 - **Assignee Avatars** - Cards show the primary assignee initials in a bottom-left avatar circle using the assignee's profile colour
