@@ -215,6 +215,8 @@ class ChecklistManager {
     this.onItemAdded = options.onItemAdded || (() => {});
     this.onItemChanged = options.onItemChanged || (() => {});
     this.deleteButtonClass = options.deleteButtonClass || 'checklist-delete-btn-temp';
+    // Leave an empty new row in place on blur, so the content below doesn't jump.
+    this.keepEmptyOnBlur = options.keepEmptyOnBlur || false;
     
     // Set up event delegation
     this.setupEventDelegation();
@@ -250,7 +252,7 @@ class ChecklistManager {
 
     // Single event listener for edit buttons
     this.container.addEventListener('click', (e) => {
-      if (e.target.matches('.checklist-edit-btn')) {
+      if (e.target.matches('.checklist-edit-btn[data-temp-id]')) {
         const tempId = Number(e.target.getAttribute('data-temp-id'));
         const itemElement = e.target.closest('.checklist-item');
         const nameSpan = itemElement.querySelector('.checklist-item-name');
@@ -280,7 +282,7 @@ class ChecklistManager {
 
     // Single event listener for blur on inputs
     this.container.addEventListener('blur', (e) => {
-      if (e.target.classList.contains('checklist-item-input')) {
+      if (e.target.matches('.checklist-item-input[data-temp-id]')) {
         const isEditing = e.target.getAttribute('data-editing') === 'true';
         
         if (isEditing) {
@@ -328,7 +330,7 @@ class ChecklistManager {
 
     // Single event listener for Enter key on inputs
     this.container.addEventListener('keydown', (e) => {
-      if (e.target.classList.contains('checklist-item-input')) {
+      if (e.target.matches('.checklist-item-input[data-temp-id]')) {
         const isEditing = e.target.getAttribute('data-editing') === 'true';
         
         if (e.key === 'Enter') {
@@ -345,6 +347,8 @@ class ChecklistManager {
             // Mark that we want to add an item after this one commits
             if (inputValue) {
               e.target.dataset.addItemAfterCommit = 'true';
+            } else {
+              e.target.dataset.removeIfEmpty = 'true';
             }
             
             // Trigger commit
@@ -368,6 +372,13 @@ class ChecklistManager {
           if (itemElement) {
             itemElement.draggable = true;
           }
+        } else if (e.key === 'Escape' && this.keepEmptyOnBlur) {
+          // Abandon a new item
+          e.preventDefault();
+          e.stopPropagation();
+          e.target.value = '';
+          e.target.dataset.removeIfEmpty = 'true';
+          this.commitInput(e.target);
         }
       }
     });
@@ -434,7 +445,7 @@ class ChecklistManager {
           }));
         }
       }
-    } else {
+    } else if (!this.keepEmptyOnBlur || inputElement.dataset.removeIfEmpty === 'true') {
       // Remove empty item
       const index = this.pendingItems.findIndex(i => i.tempId === tempId);
       if (index > -1) {
@@ -474,6 +485,15 @@ class ChecklistManager {
   }
 
   addItem(insertAtTop = false) {
+    if (this.keepEmptyOnBlur) {
+      const emptyInput = Array.from(this.container.querySelectorAll('input.checklist-item-input[data-temp-id]'))
+        .find((input) => !input.value.trim());
+      if (emptyInput) {
+        emptyInput.focus();
+        return;
+      }
+    }
+
     const tempId = Date.now() + Math.random();
     const { item, itemHtml } = this.createItemElement(tempId);
 
@@ -7222,9 +7242,13 @@ class BoardManager {
       existingModal.remove();
     }
     
-    // Store original values for change detection
-    const originalTitle = cardData.title;
-    const originalDescription = cardData.description || '';
+    // Last saved values, for change detection and for Escape to revert to
+    let savedTitle = cardData.title;
+    let savedDescription = cardData.description || '';
+
+    // Touch keyboards have no Shift+Enter, so Enter stays a new line there.
+    const enterAddsNewLine = window.matchMedia('(pointer: coarse)').matches
+      || document.body.classList.contains('touchscreen-mode');
 
     // Datetime-local controls expect local wall time strings (no timezone suffix).
     const toDatetimeLocalValue = (value) => {
@@ -7275,10 +7299,6 @@ class BoardManager {
     const plannerBtnTitle = hasInitialAnchorDate ? 'View in Planner' : 'Place in Planner';
     const actionBtnContent = (icon, label) => `<span class="btn-icon" aria-hidden="true">${icon}</span><span class="btn-label">${label}</span>`;
     
-    // Track changes
-    let hasUnsavedChanges = false;
-    let checklistOrderChanged = false;
-    
     // Create modal HTML
     const modalHtml = `
       <div class="modal" id="edit-card-modal">
@@ -7304,12 +7324,12 @@ class BoardManager {
                 ${!isReadOnly && canDeleteCard ? `<button type="button" class="btn btn-danger" id="delete-card-detail-btn" data-card-id="${cardData.id}" title="Delete" aria-label="Delete">${actionBtnContent('🗑', 'Delete')}</button>` : ''}
               </div>
               <div class="modal-action-group modal-action-group-end">
-                <button type="button" class="btn btn-secondary" id="cancel-edit-card-btn">${isReadOnly ? 'Close' : 'Cancel'}</button>
-                ${!isReadOnly ? '<button type="submit" form="edit-card-form" class="btn btn-primary">Save</button>' : ''}
+                <button type="button" class="btn btn-secondary" id="cancel-edit-card-btn">Close</button>
               </div>
             </div>
             <h2>
               ${modalTitle}
+              ${!isReadOnly ? '<span class="card-save-status" id="card-save-status" role="status"></span>' : ''}
               <span class="card-ref-number">Ref: #${cardData.id}</span>
             </h2>
           </div>
@@ -7418,7 +7438,7 @@ class BoardManager {
                 <h3>Comments</h3>
               </div>
               ${!isReadOnly ? `<div class="comment-input-container">
-                <textarea id="new-comment-input" placeholder="Add a comment..." rows="3" maxlength="50000"></textarea>
+                <textarea id="new-comment-input" placeholder="${enterAddsNewLine ? 'Add a comment...' : 'Add a comment... (Enter to post, Shift+Enter for a new line)'}" rows="3" maxlength="50000"></textarea>
                 <button type="button" class="btn btn-primary btn-sm" id="post-comment-btn">Post Comment</button>
               </div>` : ''}
               <div class="comments-list" id="comments-list">
@@ -7455,15 +7475,73 @@ class BoardManager {
       titleInput.select();
     }
 
-    // Track changes in title and description
-    titleInput.addEventListener('input', () => {
-      hasUnsavedChanges = titleInput.value.trim() !== originalTitle;
-    });
-    
     const descriptionInput = document.getElementById('edit-card-description');
-    descriptionInput.addEventListener('input', () => {
-      hasUnsavedChanges = hasUnsavedChanges || descriptionInput.value.trim() !== originalDescription;
-    });
+    const saveStatus = document.getElementById('card-save-status');
+
+    // Saves run one at a time, so a slow request can't overwrite a newer one.
+    let saveQueue = Promise.resolve();
+    let activeSaves = 0;
+    let saveFailed = false;
+    let boardNeedsRefresh = false;
+    let saveStatusTimer = null;
+
+    const showSaveStatus = (text, isError = false) => {
+      clearTimeout(saveStatusTimer);
+      saveStatus.textContent = text;
+      saveStatus.classList.toggle('is-error', isError);
+    };
+
+    const queueSave = (save) => {
+      activeSaves += 1;
+      showSaveStatus('Saving...');
+      saveQueue = saveQueue.then(async () => {
+        let success = false;
+        try {
+          success = await save();
+        } catch (err) {
+          console.error('Error saving card:', err);
+        }
+        saveFailed = !success;
+        activeSaves -= 1;
+        if (success) boardNeedsRefresh = true;
+        if (activeSaves === 0) {
+          showSaveStatus(saveFailed ? 'Not saved' : 'Saved', saveFailed);
+          if (!saveFailed) {
+            saveStatusTimer = setTimeout(() => showSaveStatus(''), 2000);
+          }
+        }
+      });
+      return saveQueue;
+    };
+
+    const saveText = () => {
+      const title = titleInput.value.trim();
+      const description = descriptionInput.value.trim();
+      if (!title) {
+        this.showErrorToast('Card title cannot be empty');
+        titleInput.value = savedTitle;
+        titleInput.dispatchEvent(new Event('input'));
+      }
+
+      const fields = {};
+      if (title && title !== savedTitle) fields.title = title;
+      if (description !== savedDescription) fields.description = description;
+      if (Object.keys(fields).length === 0) return;
+
+      queueSave(async () => {
+        const success = await this.updateCardFields(cardId, fields);
+        if (success) {
+          if ('title' in fields) savedTitle = fields.title;
+          if ('description' in fields) savedDescription = fields.description;
+        }
+        return success;
+      });
+    };
+
+    if (!isReadOnly) {
+      titleInput.addEventListener('blur', saveText);
+      descriptionInput.addEventListener('blur', saveText);
+    }
 
     // Keep start date, end date, and duration in sync. Whichever field was
     // just edited recalculates the missing one of the other two; if both
@@ -7529,18 +7607,42 @@ class BoardManager {
       viewPlannerBtn.setAttribute('aria-label', title);
     };
 
-    // Auto-save start/end date once at least one resolves to a real value
-    // (dates are the first field migrated to save-on-update; title/
-    // description still require the Save button for now). A duration typed
-    // in with no anchor date yet has nothing to save - the planner
+    let savedStart = defaultStartDate;
+    let savedEnd = defaultEndDate;
+    let savedDuration = `${defaultDurationDays}|${defaultDurationHours}`;
+    const currentDuration = () => `${durationDaysInput.value}|${durationHoursInput.value}`;
+
+    // A duration typed with no anchor date has nothing to save - the planner
     // click-to-place flow supplies the missing start date instead.
-    const autoSaveDates = async () => {
-      if (!startDateInput.value && !endDateInput.value) return;
-      const success = await this.updateCardDates(cardId, startDateInput.value, endDateInput.value);
-      if (success) {
-        cardData.start_date = startDateInput.value ? new Date(startDateInput.value).toISOString() : null;
-        cardData.end_date = endDateInput.value ? new Date(endDateInput.value).toISOString() : null;
+    const saveDates = () => {
+      // Half-typed dates read as empty, which must not clear the saved date.
+      if (startDateInput.validity.badInput || endDateInput.validity.badInput) return;
+
+      const start = startDateInput.value;
+      const end = endDateInput.value;
+      if (start === savedStart && end === savedEnd) {
+        savedDuration = currentDuration();
+        return;
       }
+      if (start && end && new Date(end) < new Date(start)) {
+        this.showErrorToast('End date cannot be before start date');
+        return;
+      }
+
+      const duration = currentDuration();
+      queueSave(async () => {
+        const startDate = start ? new Date(start).toISOString() : null;
+        const endDate = end ? new Date(end).toISOString() : null;
+        const success = await this.updateCardFields(cardId, { start_date: startDate, end_date: endDate });
+        if (success) {
+          savedStart = start;
+          savedEnd = end;
+          savedDuration = duration;
+          cardData.start_date = startDate;
+          cardData.end_date = endDate;
+        }
+        return success;
+      });
     };
     const setDerivedStart = (value) => {
       startDateInput.value = value;
@@ -7557,7 +7659,6 @@ class BoardManager {
     };
 
     startDateInput.addEventListener('input', () => {
-      hasUnsavedChanges = true;
       if (!startDateInput.value) { startIsReal = false; refreshViewPlannerButtonState(); return; }
       startIsReal = true;
 
@@ -7571,7 +7672,6 @@ class BoardManager {
     });
 
     const recalcFromDuration = () => {
-      hasUnsavedChanges = true;
       if (!hasDurationValue()) { durationIsReal = false; refreshViewPlannerButtonState(); return; }
       durationIsReal = true;
 
@@ -7587,7 +7687,6 @@ class BoardManager {
     durationHoursInput.addEventListener('input', recalcFromDuration);
 
     endDateInput.addEventListener('input', () => {
-      hasUnsavedChanges = true;
       if (!endDateInput.value) { endIsReal = false; refreshViewPlannerButtonState(); return; }
       endIsReal = true;
 
@@ -7600,11 +7699,45 @@ class BoardManager {
       refreshViewPlannerButtonState();
     });
 
-    // Dates auto-save on update/unfocus rather than waiting for the Save
-    // button (the first field migrated to this pattern).
-    [startDateInput, endDateInput, durationDaysInput, durationHoursInput].forEach((input) => {
-      input.addEventListener('blur', autoSaveDates);
-    });
+    const dateInputs = [startDateInput, endDateInput, durationDaysInput, durationHoursInput];
+    if (!isReadOnly) {
+      dateInputs.forEach((input) => input.addEventListener('blur', saveDates));
+    }
+
+    const hasUnsavedFields = () => !isReadOnly && (
+      (!!titleInput.value.trim() && titleInput.value.trim() !== savedTitle)
+      || descriptionInput.value.trim() !== savedDescription
+      || startDateInput.value !== savedStart
+      || endDateInput.value !== savedEnd
+      || pendingNewItems.some((item) => item.name)
+    );
+
+    // Saves anything outstanding. Returns false if something couldn't be saved.
+    const flushSaves = async () => {
+      if (isReadOnly) return true;
+      if (modal.contains(document.activeElement)) {
+        document.activeElement.blur();
+      }
+      // Checklist inputs commit on the next tick after blur.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      saveText();
+      saveDates();
+      pendingNewItems.filter((item) => item.name).forEach(savePendingItem);
+      await saveQueue;
+      return !hasUnsavedFields();
+    };
+
+    const refreshBoardIfEdited = async () => {
+      if (!boardNeedsRefresh) return;
+      boardNeedsRefresh = false;
+      await this.loadBoard();
+    };
+
+    const leaveModal = async () => {
+      await flushSaves();
+      modal.remove();
+      await refreshBoardIfEdited();
+    };
 
     // Helper to check for unposted comment
     const hasUnpostedComment = () => {
@@ -7621,13 +7754,14 @@ class BoardManager {
 
     if (moveCardDetailBtn) {
       moveCardDetailBtn.addEventListener('click', async () => {
-        modal.remove();
+        await leaveModal();
         await this.openMoveCardModal(cardId);
       });
     }
 
     if (viewPlannerBtn) {
-      viewPlannerBtn.addEventListener('click', () => {
+      viewPlannerBtn.addEventListener('click', async () => {
+        await flushSaves();
         let render;
         if (hasAnchorDate()) {
           const anchorDate = getPlannerViewAnchorDate();
@@ -7635,10 +7769,10 @@ class BoardManager {
         } else {
           const rawDurationMs = getCurrentDurationMs();
           const durationMs = (rawDurationMs !== null && rawDurationMs > 0) ? rawDurationMs : ONE_HOUR_MS;
-          render = (plannerView) => plannerView.enterPlacementMode(cardId, cardData.title, durationMs, new Date());
+          render = (plannerView) => plannerView.enterPlacementMode(cardId, savedTitle, durationMs, new Date());
         }
 
-        modal.remove();
+        await leaveModal();
         // Routed through the 'viewChanged' switch (rather than calling
         // plannerView directly here) so there's only ever one render firing
         // when the planner view appears - see showPlannerView().
@@ -7677,9 +7811,9 @@ class BoardManager {
     // Handle archive button
     if (archiveBtn) {
       archiveBtn.addEventListener('click', async () => {
+        await leaveModal();
         // Get the card element for visual feedback
         const cardElement = document.querySelector(`.card[data-card-id="${cardId}"]`);
-        modal.remove();
         await this.archiveCard(cardId, cardElement);
       });
     }
@@ -7687,9 +7821,9 @@ class BoardManager {
     // Handle unarchive button
     if (unarchiveBtn) {
       unarchiveBtn.addEventListener('click', async () => {
+        await leaveModal();
         // Get the card element for visual feedback
         const cardElement = document.querySelector(`.card[data-card-id="${cardId}"]`);
-        modal.remove();
         await this.unarchiveCard(cardId, cardElement);
       });
     }
@@ -7698,12 +7832,14 @@ class BoardManager {
     const doneBtn = document.getElementById('done-card-detail-btn');
     if (doneBtn) {
       doneBtn.addEventListener('click', async () => {
+        await flushSaves();
         const cardElement = document.querySelector(`.card[data-card-id="${cardId}"]`);
         // Toggle done status
         const newDoneStatus = !cardData.done;
         // Wait for update to complete before removing modal
         await this.updateCardDoneStatus(cardId, newDoneStatus, cardElement);
         modal.remove();
+        await refreshBoardIfEdited();
       });
     }
 
@@ -7711,12 +7847,12 @@ class BoardManager {
     const editScheduleFromTemplateBtn = document.getElementById('edit-schedule-from-template-btn');
     if (editScheduleFromTemplateBtn) {
       editScheduleFromTemplateBtn.addEventListener('click', async () => {
-        // Check for unsaved changes
-        if (hasUnsavedChanges || hasUnpostedComment()) {
-          if (!await showConfirm('You have unsaved changes. Are you sure you want to open the schedule editor? Your changes will be lost.', 'Confirm Action')) {
+        if (hasUnpostedComment()) {
+          if (!await showConfirm('You have an unposted comment. Are you sure you want to open the schedule editor? It will be lost.', 'Confirm Action')) {
             return;
           }
         }
+        await flushSaves();
         
         const hasSchedule = editScheduleFromTemplateBtn.getAttribute('data-has-schedule') === 'true';
         
@@ -7730,6 +7866,7 @@ class BoardManager {
           await this.openScheduleModal(cardId, cardData, hasSchedule);
           // Only remove edit card modal if schedule modal opened successfully
           modal.remove();
+          await refreshBoardIfEdited();
         } catch (err) {
           console.error('Error opening schedule modal:', err);
           // Re-enable button on error
@@ -7743,12 +7880,12 @@ class BoardManager {
     const scheduleBtn = document.getElementById('schedule-card-btn');
     if (scheduleBtn) {
       scheduleBtn.addEventListener('click', async () => {
-        // Check for unsaved changes
-        if (hasUnsavedChanges || hasUnpostedComment()) {
-          if (!await showConfirm('You have unsaved changes. Are you sure you want to open the schedule editor? Your changes will be lost.', 'Confirm Action')) {
+        if (hasUnpostedComment()) {
+          if (!await showConfirm('You have an unposted comment. Are you sure you want to open the schedule editor? It will be lost.', 'Confirm Action')) {
             return;
           }
         }
+        await flushSaves();
         
         const hasSchedule = scheduleBtn.getAttribute('data-has-schedule') === 'true';
         
@@ -7762,6 +7899,7 @@ class BoardManager {
           await this.openScheduleModal(cardId, cardData, hasSchedule);
           // Only remove edit card modal if schedule modal opened successfully
           modal.remove();
+          await refreshBoardIfEdited();
         } catch (err) {
           console.error('Error opening schedule modal:', err);
           // Re-enable button on error
@@ -7771,46 +7909,105 @@ class BoardManager {
       });
     }
 
-    // Handle cancel with warning if there are unsaved changes
+    // Everything saves as it goes, so closing only has to save what's left
     let isCancelling = false;
     const handleCancel = async () => {
-      // Atomic check-and-set: if already cancelling, return immediately
+      // Atomic check-and-set: if already closing, return immediately
       if (isCancelling) return;
       isCancelling = true;
       
-      // Disable cancel button immediately to prevent double-clicks
-      const wasCancelDisabled = cancelBtn.disabled;
+      // Disable the button immediately to prevent double-clicks
       cancelBtn.disabled = true;
+      const stayOpen = () => {
+        cancelBtn.disabled = false;
+        isCancelling = false;
+      };
       
       try {
-        if (hasUnpostedComment()) {
-          if (!await showConfirm('You have an unposted comment. Are you sure you want to cancel?', 'Confirm Action')) {
-            // User cancelled the cancellation, re-enable button
-            cancelBtn.disabled = wasCancelDisabled;
-            isCancelling = false;
+        const editedCard = boardNeedsRefresh || hasUnsavedFields();
+        if (!await flushSaves()) {
+          if (!await showConfirm('Some changes could not be saved. Close anyway?', 'Confirm Close')) {
+            stayOpen();
             return;
           }
         }
-        if (hasUnsavedChanges || checklistOrderChanged) {
-          if (await showConfirm('You have unsaved changes. Are you sure you want to cancel?', 'Confirm Cancellation')) {
-            modal.remove();
-          } else {
-            // User cancelled the cancellation, re-enable button
-            cancelBtn.disabled = wasCancelDisabled;
-            isCancelling = false;
+        if (hasUnpostedComment()) {
+          if (!await showConfirm('You have an unposted comment. Close without posting it?', 'Confirm Action')) {
+            stayOpen();
+            return;
           }
-        } else {
-          modal.remove();
         }
+        // Template cards need a schedule to create task cards
+        if (editedCard && isTemplate && !cardData.schedule) {
+          if (await showConfirm('This is a template card without a schedule. Template cards need a schedule to automatically create task cards.\n\nWould you like to create a schedule for this template now?', 'Create Schedule?')) {
+            modal.remove();
+            await refreshBoardIfEdited();
+            try {
+              await this.openScheduleModal(cardId, cardData, false);
+            } catch (err) {
+              await showAlert('Failed to open the schedule modal. Please try again.\n\nError: ' + (err && err.message ? err.message : err), 'Error');
+            }
+            return;
+          }
+        }
+        modal.remove();
+        await refreshBoardIfEdited();
       } catch (err) {
-        // Re-enable button on error
-        cancelBtn.disabled = wasCancelDisabled;
-        isCancelling = false;
-        console.error('Error during cancel:', err);
+        stayOpen();
+        console.error('Error during close:', err);
       }
     };
     
     cancelBtn.addEventListener('click', handleCancel);
+
+    // Escape first reverts the field being edited, then closes the modal
+    const revertFocusedField = () => {
+      const field = document.activeElement;
+      if (field === titleInput && titleInput.value !== savedTitle) {
+        titleInput.value = savedTitle;
+        titleInput.dispatchEvent(new Event('input'));
+        return true;
+      }
+      if (field === descriptionInput && descriptionInput.value !== savedDescription) {
+        descriptionInput.value = savedDescription;
+        return true;
+      }
+      const datesChanged = startDateInput.value !== savedStart
+        || endDateInput.value !== savedEnd
+        || currentDuration() !== savedDuration;
+      if (dateInputs.includes(field) && datesChanged) {
+        startDateInput.value = savedStart;
+        endDateInput.value = savedEnd;
+        [durationDaysInput.value, durationHoursInput.value] = savedDuration.split('|');
+        startIsReal = !!savedStart;
+        endIsReal = !!savedEnd;
+        durationIsReal = hasDurationValue();
+        refreshViewPlannerButtonState();
+        return true;
+      }
+      return false;
+    };
+
+    const handleEscape = () => {
+      if (!isReadOnly && revertFocusedField()) return undefined;
+      return handleCancel();
+    };
+
+    // Enter saves and closes from any field. Shift+Enter adds a line in the
+    // description, and comments and checklist inputs handle their own keys.
+    form.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      const isFormField = e.target === descriptionInput || dateInputs.includes(e.target);
+      if (!isFormField) return;
+      if (e.target === descriptionInput && (e.shiftKey || enterAddsNewLine)) return;
+      e.preventDefault();
+      form.requestSubmit();
+    });
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleCancel();
+    });
     
     // Helper to update edit modal checklist summary
     const updateEditModalSummary = () => {
@@ -7825,24 +8022,9 @@ class BoardManager {
       }
     };
 
-    // Handle checklist item checkbox changes (defer save until form submit)
-    let checklistCheckboxChanges = new Map(); // Track checkbox changes: itemId -> checked state
-    
-    document.querySelectorAll('.checklist-checkbox').forEach(checkbox => {
-      checkbox.addEventListener('change', (e) => {
-        const itemId = parseInt(e.target.getAttribute('data-item-id'));
-        const checked = e.target.checked;
-        checklistCheckboxChanges.set(itemId, checked);
-        hasUnsavedChanges = true;
-        
-        // Update the summary
-        updateEditModalSummary();
-      });
-    });
-
     // Handle add checklist item buttons with inline editing
     let checklistVisible = hasChecklist;
-    let pendingNewItems = []; // Track new items not yet saved
+    const pendingNewItems = []; // New items not yet saved
     
     const showChecklistUI = () => {
       if (!checklistVisible) {
@@ -7855,230 +8037,216 @@ class BoardManager {
     };
     
     const checklistContainer = document.getElementById('checklist-items');
-    
-    // Set up drag and drop once with event delegation
-    this.setupChecklistDragAndDrop(cardId, () => {
-      checklistOrderChanged = true;
-    });
-    
-    // Create checklist manager for new items with event delegation
-    const checklistManager = new ChecklistManager(checklistContainer, pendingNewItems, {
-      updateSummary: updateEditModalSummary,
-      deleteButtonClass: 'checklist-delete-btn-temp',
-      onItemCommitted: () => {
-        hasUnsavedChanges = true;
-      },
-      onItemChanged: () => {
-        hasUnsavedChanges = true;
+
+    // Rows with a name, in their on-screen order. Empty new rows don't count.
+    const savedChecklistRows = () => Array.from(checklistContainer.querySelectorAll('.checklist-item'))
+      .filter((row) => !row.querySelector('input.checklist-item-input[data-temp-id]:not([data-editing])'));
+
+    const createNameSpan = (name) => {
+      const span = document.createElement('span');
+      span.className = 'checklist-item-name';
+      span.innerHTML = linkifyUrls(this.escapeHtml(name));
+      return span;
+    };
+
+    // Turn a saved new item into a normal one, so it edits and deletes the same way
+    const markItemSaved = (row, itemId) => {
+      row.removeAttribute('data-temp-id');
+      row.setAttribute('data-item-id', itemId);
+      row.classList.remove('update-failed');
+      row.querySelectorAll('[data-temp-id]').forEach((el) => {
+        el.removeAttribute('data-temp-id');
+        el.setAttribute('data-item-id', itemId);
+      });
+      const deleteBtn = row.querySelector('.checklist-delete-btn-temp');
+      if (deleteBtn) {
+        deleteBtn.classList.replace('checklist-delete-btn-temp', 'checklist-delete-btn');
       }
-    });
+    };
 
-    const addTopBtn = document.getElementById('add-checklist-item-top-btn');
-    const addBottomBtn = document.getElementById('add-checklist-item-bottom-btn');
-    const addInitialBtn = document.getElementById('add-checklist-item-initial-btn');
+    const savePendingItem = (item) => {
+      if (item.saving) return;
+      item.saving = true;
+      queueSave(async () => {
+        const row = checklistContainer.querySelector(`.checklist-item[data-temp-id="${item.tempId}"]`);
+        item.saving = false;
+        if (!row) return true; // Deleted while waiting to save
 
-    if (addTopBtn) {
-      addTopBtn.addEventListener('click', () => {
-        showChecklistUI();
-        checklistManager.addItem(true);
+        const created = await this.createChecklistItem(cardId, item.name, savedChecklistRows().indexOf(row), item.checked);
+        if (!created) {
+          // Keep it so it can be retried when the modal closes
+          row.classList.add('update-failed');
+          return false;
+        }
+        markItemSaved(row, created.id);
+        pendingNewItems.splice(pendingNewItems.indexOf(item), 1);
+        return true;
       });
-    }
-    if (addBottomBtn) {
-      addBottomBtn.addEventListener('click', () => {
-        showChecklistUI();
-        checklistManager.addItem(false);
-      });
-    }
-    if (addInitialBtn) {
-      addInitialBtn.addEventListener('click', () => {
-        showChecklistUI();
-        checklistManager.addItem(false);
-      });
-    }
+    };
 
-    // Handle edit checklist item buttons - inline editing
-    document.querySelectorAll('.checklist-edit-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const itemId = parseInt(e.target.getAttribute('data-item-id'));
-        const itemElement = e.target.closest('.checklist-item');
-        const nameSpan = itemElement.querySelector('.checklist-item-name');
-        const currentName = nameSpan.textContent;
-        
-        // Replace span with input for inline editing
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'checklist-item-input';
-        input.value = currentName;
-        input.setAttribute('data-item-id', itemId);
-        nameSpan.replaceWith(input);
-        input.focus();
-        input.select();
-        
-        // Disable dragging while editing
-        itemElement.draggable = false;
-        
-        const saveEdit = async () => {
-          const newName = input.value.trim();
-          if (newName && newName !== currentName) {
-            // Show saving state
-            input.disabled = true;
-            
-            const success = await this.updateChecklistItem(itemId, { name: newName });
-            
-            if (success) {
-              const newNameSpan = document.createElement('span');
-              newNameSpan.className = 'checklist-item-name';
-              newNameSpan.innerHTML = linkifyUrls(this.escapeHtml(newName));
-              input.replaceWith(newNameSpan);
-              hasUnsavedChanges = false; // This action was already saved
-            } else {
-              // Error toast already shown, restore input and re-enable
-              input.disabled = false;
-              input.focus();
-              input.select();
-              return; // Stay in edit mode to allow retry
-            }
-          } else if (newName) {
-            // No change, just restore
-            const newNameSpan = document.createElement('span');
-            newNameSpan.className = 'checklist-item-name';
-            newNameSpan.innerHTML = linkifyUrls(this.escapeHtml(currentName));
-            input.replaceWith(newNameSpan);
-          } else {
-            // Empty name, restore original
-            const newNameSpan = document.createElement('span');
-            newNameSpan.className = 'checklist-item-name';
-            newNameSpan.innerHTML = linkifyUrls(this.escapeHtml(currentName));
-            input.replaceWith(newNameSpan);
-          }
-          // Re-enable dragging
-          itemElement.draggable = true;
-        };
-        
-        // Save on blur
-        input.addEventListener('blur', () => {
-          setTimeout(saveEdit, 100);
-        });
-        
-        // Save on Enter
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            input.blur();
-          } else if (e.key === 'Escape') {
-            // Cancel edit
-            const newNameSpan = document.createElement('span');
-            newNameSpan.className = 'checklist-item-name';
-            newNameSpan.textContent = currentName;
-            input.replaceWith(newNameSpan);
-            itemElement.draggable = true;
-          }
-        });
-      });
-    });
-
-    // Handle delete checklist item buttons
-    const createDeleteHandler = (btn) => {
-      return async (e) => {
-        if (await showConfirm('Delete this checklist item?', 'Confirm Deletion')) {
-          const itemId = parseInt(e.target.getAttribute('data-item-id'));
-          const itemElement = e.target.closest('.checklist-item');
-          
-          // Store item data for potential restoration
-          const itemData = {
-            id: itemId,
-            html: itemElement.outerHTML,
-            parentNode: itemElement.parentNode,
-            nextSibling: itemElement.nextSibling
-          };
-          
-          // Remove item from DOM
-          itemElement.remove();
-          updateEditModalSummary();
-          
-          // Attempt to delete from server
-          const success = await this.deleteChecklistItem(itemId, cardId);
-          
-          if (success) {
-            hasUnsavedChanges = false; // This action was already saved
-            
-            // Update the card in board view to reflect deletion
-            const cardElement = document.querySelector(`.card[data-card-id="${cardId}"]`);
-            if (cardElement) {
-              const checklistElement = cardElement.querySelector('.card-checklist');
-              const remainingItems = modal.querySelectorAll('.checklist-item').length;
-              
-              // If no items left, remove the entire checklist section
-              if (remainingItems === 0 && checklistElement) {
-                checklistElement.remove();
-              } else if (checklistElement) {
-                // Update the checklist item count and remove this specific item from board view
-                const boardChecklistItem = checklistElement.querySelector(`input[data-item-id="${itemId}"]`)?.closest('.card-checklist-item');
-                if (boardChecklistItem) {
-                  boardChecklistItem.remove();
-                }
-                
-                // Update summary in board view
-                const summaryElement = checklistElement.querySelector('.card-checklist-summary');
-                if (summaryElement) {
-                  const boardCheckboxes = checklistElement.querySelectorAll('.card-checklist-checkbox');
-                  const total = boardCheckboxes.length;
-                  const checked = Array.from(boardCheckboxes).filter(cb => cb.checked).length;
-                  const items = Array.from(boardCheckboxes).map(cb => ({ checked: cb.checked }));
-                  const percentage = calculateChecklistPercentage(items);
-                  summaryElement.textContent = `${checked}/${total} (${percentage}%)`;
-                }
-              }
-            }
-          } else {
-            // Restore item to DOM on failure
-            if (itemData.nextSibling) {
-              itemData.parentNode.insertBefore(document.createRange().createContextualFragment(itemData.html).firstChild, itemData.nextSibling);
-            } else {
-              itemData.parentNode.appendChild(document.createRange().createContextualFragment(itemData.html).firstChild);
-            }
-            
-            // Reattach event listeners to restored element
-            const restoredElement = itemData.parentNode.querySelector(`[data-item-id="${itemId}"]`);
-            if (restoredElement) {
-              const deleteBtn = restoredElement.querySelector('.checklist-delete-btn');
-              const editBtn = restoredElement.querySelector('.checklist-edit-btn');
-              const checkbox = restoredElement.querySelector('.checklist-checkbox');
-              
-              // Re-attach delete handler using the factory function
-              if (deleteBtn) {
-                deleteBtn.addEventListener('click', createDeleteHandler(deleteBtn));
-              }
-              
-              // Re-attach edit handler (simplified - full handler is complex, just show it's restorable)
-              if (editBtn) {
-                editBtn.addEventListener('click', async (e) => {
-                  this.showErrorToast('Please refresh the modal to edit this item after a failed delete.');
-                });
-              }
-              
-              // Re-attach checkbox handler
-              if (checkbox) {
-                checkbox.addEventListener('change', (e) => {
-                  const itemId = parseInt(e.target.getAttribute('data-item-id'));
-                  const checked = e.target.checked;
-                  checklistCheckboxChanges.set(itemId, checked);
-                  hasUnsavedChanges = true;
-                  updateEditModalSummary();
-                });
-              }
-            }
-            
-            updateEditModalSummary();
+    const saveChecklistOrder = () => {
+      const rows = savedChecklistRows();
+      queueSave(async () => {
+        let success = true;
+        // PERF: Sequential updates - could use bulk update endpoint
+        for (let i = 0; i < rows.length; i++) {
+          const itemId = parseInt(rows[i].getAttribute('data-item-id'), 10);
+          if (itemId && !await this.updateChecklistItem(itemId, { order: i })) {
+            success = false;
           }
         }
-      };
+        return success;
+      });
     };
-    
-    // Attach delete handlers to all delete buttons
-    document.querySelectorAll('.checklist-delete-btn').forEach(btn => {
-      btn.addEventListener('click', createDeleteHandler(btn));
-    });
+
+    const editChecklistItem = (row) => {
+      const nameSpan = row.querySelector('.checklist-item-name');
+      if (!nameSpan) return; // Already being edited
+
+      const itemId = parseInt(row.getAttribute('data-item-id'), 10);
+      const currentName = nameSpan.textContent;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'checklist-item-input';
+      input.value = currentName;
+      nameSpan.replaceWith(input);
+      input.focus();
+      input.select();
+
+      // Disable dragging while editing
+      row.draggable = false;
+
+      let finished = false;
+      const finishEdit = (name) => {
+        finished = true;
+        input.replaceWith(createNameSpan(name));
+        row.draggable = true;
+      };
+
+      input.addEventListener('blur', () => {
+        if (finished) return;
+        const newName = input.value.trim();
+        if (!newName || newName === currentName) {
+          finishEdit(currentName);
+          return;
+        }
+
+        // Stay in edit mode until saved, to allow a retry
+        finished = true;
+        input.disabled = true;
+        queueSave(async () => {
+          const success = await this.updateChecklistItem(itemId, { name: newName });
+          if (success) {
+            finishEdit(newName);
+          } else {
+            finished = false;
+            input.disabled = false;
+          }
+          return success;
+        });
+      });
+
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          input.blur();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          finishEdit(currentName);
+        }
+      });
+    };
+
+    const deleteChecklistItem = async (row) => {
+      if (!await showConfirm('Delete this checklist item?', 'Confirm Deletion')) return;
+
+      const itemId = parseInt(row.getAttribute('data-item-id'), 10);
+      const parent = row.parentNode;
+      const nextSibling = row.nextSibling;
+      row.remove();
+      updateEditModalSummary();
+
+      queueSave(async () => {
+        const success = await this.deleteChecklistItem(itemId, cardId);
+        if (!success) {
+          parent.insertBefore(row, nextSibling);
+          updateEditModalSummary();
+        }
+        return success;
+      });
+    };
+
+    if (!isReadOnly) {
+      // Set up drag and drop once with event delegation
+      this.setupChecklistDragAndDrop(cardId, saveChecklistOrder);
+
+      // Create checklist manager for new items with event delegation
+      const checklistManager = new ChecklistManager(checklistContainer, pendingNewItems, {
+        updateSummary: updateEditModalSummary,
+        deleteButtonClass: 'checklist-delete-btn-temp',
+        keepEmptyOnBlur: true,
+        onItemCommitted: (tempId) => {
+          savePendingItem(pendingNewItems.find((item) => item.tempId === tempId));
+        }
+      });
+
+      const addTopBtn = document.getElementById('add-checklist-item-top-btn');
+      const addBottomBtn = document.getElementById('add-checklist-item-bottom-btn');
+      const addInitialBtn = document.getElementById('add-checklist-item-initial-btn');
+
+      if (addTopBtn) {
+        addTopBtn.addEventListener('click', () => {
+          showChecklistUI();
+          checklistManager.addItem(true);
+        });
+      }
+      if (addBottomBtn) {
+        addBottomBtn.addEventListener('click', () => {
+          showChecklistUI();
+          checklistManager.addItem(false);
+        });
+      }
+      if (addInitialBtn) {
+        addInitialBtn.addEventListener('click', () => {
+          showChecklistUI();
+          checklistManager.addItem(false);
+        });
+      }
+
+      // One set of listeners, so items saved after the modal opened work too
+      checklistContainer.addEventListener('change', (e) => {
+        if (!e.target.matches('.checklist-checkbox[data-item-id]')) return;
+        const checkbox = e.target;
+        const checked = checkbox.checked;
+        updateEditModalSummary();
+        queueSave(async () => {
+          const itemId = parseInt(checkbox.getAttribute('data-item-id'), 10);
+          const success = await this.updateChecklistItem(itemId, { checked });
+          if (!success) {
+            checkbox.checked = !checked;
+            updateEditModalSummary();
+          }
+          return success;
+        });
+      });
+
+      checklistContainer.addEventListener('click', (e) => {
+        const row = e.target.closest('.checklist-item[data-item-id]');
+        if (!row) return;
+        if (e.target.matches('.checklist-edit-btn')) {
+          editChecklistItem(row);
+        } else if (e.target.matches('.checklist-delete-btn')) {
+          deleteChecklistItem(row);
+        }
+      });
+
+      checklistContainer.addEventListener('dblclick', (e) => {
+        if (!e.target.closest('.checklist-item-name')) return;
+        const row = e.target.closest('.checklist-item[data-item-id]');
+        if (row) editChecklistItem(row);
+      });
+    }
 
     // Handle post comment button (only if comments section exists)
     const postCommentBtn = document.getElementById('post-comment-btn');
@@ -8086,6 +8254,13 @@ class BoardManager {
     const MAX_COMMENT_LENGTH = 50000;
     
     if (postCommentBtn && newCommentInput) {
+      newCommentInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !enterAddsNewLine) {
+          e.preventDefault();
+          postCommentBtn.click();
+        }
+      });
+
       postCommentBtn.addEventListener('click', async () => {
         const commentText = newCommentInput.value.trim();
         if (!commentText) return;
@@ -8185,184 +8360,9 @@ class BoardManager {
       });
     });
 
-    // Handle form submit
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      
-      // Check for unposted comment
-      if (hasUnpostedComment()) {
-        if (!await showConfirm('You have an unposted comment. Are you sure you want to save without posting it?', 'Confirm Action')) {
-          return;
-        }
-      }
-      
-      const title = titleInput.value.trim();
-      const description = document.getElementById('edit-card-description').value.trim();
-      const startDateValue = startDateInput.value;
-      const endDateValue = endDateInput.value;
-      // Save button is in modal header, not in form
-      const saveBtn = modal.querySelector('button[type="submit"]');
-
-      if (startDateValue && endDateValue && new Date(endDateValue) < new Date(startDateValue)) {
-        this.showErrorToast('End date cannot be before start date');
-        return;
-      }
-
-      if (title) {
-        // Validate that template cards have a schedule
-        if (isTemplate && !cardData.schedule) {
-          const createSchedule = await showConfirm(
-            'This is a template card without a schedule. Template cards need a schedule to automatically create task cards.\n\nWould you like to create a schedule for this template now?',
-            'Create Schedule?'
-          );
-          
-          if (createSchedule) {
-            // Save changes first, then open schedule modal
-            saveBtn.disabled = true;
-            saveBtn.textContent = 'Saving...';
-            
-            const success = await this.updateCard(cardId, title, description, startDateValue, endDateValue);
-            
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'Save';
-            
-            if (!success) {
-              // Error toast already shown by updateCard
-              return; // Stay in modal to allow retry
-            }
-            
-            modal.remove();
-            
-            // Open schedule modal for this template
-            try {
-              this.openScheduleModal(cardData.id);
-            } catch (err) {
-              await showAlert('Failed to open the schedule modal. Please try again.\n\nError: ' + (err && err.message ? err.message : err), 'Error');
-            }
-            return;
-          } else {
-            // User chose not to create a schedule, ask if they still want to save
-            const saveAnyway = await showConfirm('Save template without a schedule? (You can add a schedule later using the Edit Schedule button)', 'Confirm Action');
-            if (!saveAnyway) {
-              return; // Don't save, stay in modal
-            }
-          }
-        }
-        
-        // Show saving state
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'Saving...';
-        
-        let allSuccessful = true;
-        
-        // TODO: PERFORMANCE - Consider creating a batch endpoint PATCH /api/cards/{id}/batch that accepts
-        // card updates + checklist item changes (creates, updates, deletes, reorders) in a single
-        // transaction. This would:
-        // - Reduce network overhead (1 request instead of N)
-        // - Ensure atomicity (all changes succeed or fail together)
-        // - Prevent race conditions from interleaved requests
-        // - Improve performance on slow connections
-        // - Use database transactions for consistency
-        // - Support bulk updates (e.g., UPDATE checklist_items SET ... WHERE id IN (...))
-        // Current implementation: N sequential API calls (can be slow for cards with many checklist items)
-        
-        // 1. Update the card
-        const cardUpdateSuccess = await this.updateCard(cardId, title, description, startDateValue, endDateValue);
-        if (!cardUpdateSuccess) {
-          allSuccessful = false;
-        }
-        
-        // 2. Save checkbox changes for existing items
-        // PERF: Sequential updates - could be batched
-        for (const [itemId, checked] of checklistCheckboxChanges.entries()) {
-          const success = await this.updateChecklistItem(itemId, { checked });
-          if (!success) {
-            allSuccessful = false;
-            // Rollback checkbox in UI
-            const checkbox = modal.querySelector(`.checklist-checkbox[data-item-id="${itemId}"]`);
-            if (checkbox) {
-              checkbox.checked = !checked;
-            }
-          }
-        }
-        
-        // 3. Save any pending new checklist items in their current DOM order
-        const checklistContainer = document.getElementById('checklist-items');
-        const allItems = Array.from(checklistContainer.querySelectorAll('.checklist-item'));
-        
-        for (let i = 0; i < allItems.length; i++) {
-          const el = allItems[i];
-          const tempId = el.getAttribute('data-temp-id');
-          
-          // Check if this is a pending new item
-          if (tempId) {
-            const pendingItem = pendingNewItems.find(item => item.tempId === Number(tempId));
-            if (pendingItem && pendingItem.name) {
-              // Save with the current position index and checked state
-              const success = await this.createChecklistItem(cardId, pendingItem.name, i, pendingItem.checked);
-              if (!success) {
-                allSuccessful = false;
-                // Mark the item as failed (keep it in UI so user can retry)
-                el.classList.add('update-failed');
-              }
-            }
-          }
-        }
-        
-        // 4. Update order for existing items if changed
-        // PERF: Sequential updates - could use bulk update endpoint
-        if (checklistOrderChanged) {
-          for (let i = 0; i < allItems.length; i++) {
-            const el = allItems[i];
-            const itemId = el.getAttribute('data-item-id');
-            if (itemId && itemId !== 'null') {
-              const success = await this.updateChecklistItem(parseInt(itemId), { order: i });
-              if (!success) {
-                allSuccessful = false;
-              }
-            }
-          }
-        }
-        
-        // Re-enable save button
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Save';
-        
-        // Reload board if card update succeeded, even if checklist operations failed
-        // This ensures the card title/description changes are visible
-        if (cardUpdateSuccess || allSuccessful) {
-          await this.loadBoard();
-        }
-        
-        if (allSuccessful) {
-          hasUnsavedChanges = false;
-          checklistOrderChanged = false;
-          checklistCheckboxChanges.clear();
-          modal.remove();
-        } else {
-          // Some operations failed - stay in modal for retry
-          // Clear the checkbox changes that succeeded so they won't be retried
-          for (const [itemId, checked] of checklistCheckboxChanges.entries()) {
-            const checkbox = modal.querySelector(`.checklist-checkbox[data-item-id="${itemId}"]`);
-            if (checkbox && checkbox.checked === checked) {
-              // This one succeeded, remove from pending changes
-              checklistCheckboxChanges.delete(itemId);
-            }
-          }
-          
-          // Show appropriate message based on what succeeded
-          if (cardUpdateSuccess) {
-            this.showErrorToast('Card updated, but some checklist changes failed. Please review and try again.');
-          } else {
-            this.showErrorToast('Failed to save changes. Please try again.');
-          }
-        }
-      }
-    });
-
-    // Close modal on background click with warning (ignore text selection drags)
+    // Close modal on background click (ignore text selection drags)
     setupModalBackgroundClose(modal, handleCancel);
-    setupModalEscapeClose(modal, handleCancel);
+    setupModalEscapeClose(modal, handleEscape);
   }
 
   async getCardData(cardId) {
@@ -8518,7 +8518,7 @@ class BoardManager {
       }
       // Update card timestamp in UI
       await this.updateCardTimestamp(cardId);
-      return true;
+      return data.checklist_item;
     } catch (err) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
@@ -8607,7 +8607,7 @@ class BoardManager {
     }
   }
 
-  async updateCardDates(cardId, startDate, endDate) {
+  async updateCardFields(cardId, fields) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
@@ -8617,10 +8617,7 @@ class BoardManager {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          start_date: startDate ? new Date(startDate).toISOString() : null,
-          end_date: endDate ? new Date(endDate).toISOString() : null
-        }),
+        body: JSON.stringify(fields),
         signal: controller.signal
       });
 
@@ -8631,14 +8628,14 @@ class BoardManager {
         this.refreshPlannerIfVisible();
         return true;
       }
-      this.showErrorToast(`Failed to save dates: ${data.message}`);
+      this.showErrorToast(`Failed to save card: ${data.message}`);
       return false;
     } catch (err) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
-        this.showErrorToast('Save dates timed out (5s). Please check your connection.');
+        this.showErrorToast('Save card timed out (5s). Please check your connection.');
       } else {
-        this.showErrorToast(`Error saving dates: ${err.message}`);
+        this.showErrorToast(`Error saving card: ${err.message}`);
       }
       return false;
     }
