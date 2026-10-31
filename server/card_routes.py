@@ -1197,7 +1197,7 @@ def update_card(card_id):
               type: string
               enum: [top, bottom]
               example: "bottom"
-              description: Place the card at the top or bottom of the target column. Computed server-side from the target column's existing cards. Use instead of order when moving to a different board.
+              description: Place the card at the top or bottom of the target column. Computed server-side from the target column's existing cards. Use instead of order when moving to a different board. Works within a column too, and always uses the whole column.
             start_date:
               type: string
               format: date-time
@@ -1422,27 +1422,29 @@ def update_card(card_id):
                     if not target_board:
                         return create_error_response("Access denied to target board", 403)
 
-                # Support position parameter as alternative to explicit order
-                if "position" in data:
-                    position_val = data["position"]
-                    if position_val not in ["top", "bottom"]:
-                        return create_error_response("Position must be 'top' or 'bottom'", 400)
-                    min_order, max_order = db.query(
-                        func.min(Card.order),
-                        func.max(Card.order),
-                    ).filter(
-                        Card.column_id == new_column_id,
-                        Card.archived.is_(False),
-                    ).one()
-                    if min_order is None:
-                        new_order = 0
-                    elif position_val == "top":
-                        new_order = int(min_order)
-                    else:
-                        new_order = int(max_order) + 1
-
                 # Moving to different column is a state change - update timestamp
                 user_content_changed = True
+
+            # Support position parameter as alternative to explicit order. This
+            # uses the whole column, including cards a client has filtered out.
+            if "position" in data:
+                position_val = data["position"]
+                if position_val not in ["top", "bottom"]:
+                    return create_error_response("Position must be 'top' or 'bottom'", 400)
+                moving_column = new_column_id != old_column_id
+                min_order, max_order = db.query(
+                    func.min(Card.order),
+                    func.max(Card.order),
+                ).filter(
+                    Card.column_id == new_column_id,
+                    Card.archived.is_(False),
+                ).one()
+                if min_order is None:
+                    new_order = 0 if moving_column else old_order
+                elif position_val == "top":
+                    new_order = int(min_order)
+                else:
+                    new_order = int(max_order) + (1 if moving_column else 0)
 
             # If moving to a different column
             if new_column_id != old_column_id:

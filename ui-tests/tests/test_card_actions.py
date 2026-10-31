@@ -8,6 +8,7 @@ BUTTONS = {
     "done": ".card-done-btn",
     "archive": ".card-archive-btn",
     "move": ".card-move-btn",
+    "top": ".card-top-btn",
     "delete": ".card-delete-btn",
 }
 

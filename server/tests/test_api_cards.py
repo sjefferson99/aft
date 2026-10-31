@@ -970,6 +970,69 @@ class TestCardsAPI:
         })
         assert response.status_code == 403
 
+    def _column_titles(self, api_client, authenticated_session, cards):
+        """Titles in order, read back from the API."""
+        fetched = [
+            authenticated_session.get(f'{api_client}/api/cards/{card["id"]}').json()['card']
+            for card in cards
+        ]
+        return [card['title'] for card in sorted(fetched, key=lambda card: card['order'])]
+
+    def _create_cards(self, api_client, authenticated_session, sample_column, titles):
+        cards = []
+        for title in titles:
+            response = authenticated_session.post(
+                f'{api_client}/api/columns/{sample_column["id"]}/cards',
+                json={'title': title}
+            )
+            assert response.status_code == 201
+            cards.append(response.json()['card'])
+        return cards
+
+    def test_position_top_within_column(self, api_client, authenticated_session, sample_column):
+        """Position works without an order, using the column's real top."""
+        cards = self._create_cards(api_client, authenticated_session, sample_column, ['A', 'B', 'C'])
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/cards/{cards[2]["id"]}',
+            json={'column_id': sample_column['id'], 'position': 'top'}
+        )
+
+        assert response.status_code == 200
+        assert self._column_titles(api_client, authenticated_session, cards) == ['C', 'A', 'B']
+
+    def test_position_bottom_within_column(self, api_client, authenticated_session, sample_column):
+        cards = self._create_cards(api_client, authenticated_session, sample_column, ['A', 'B', 'C'])
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/cards/{cards[0]["id"]}',
+            json={'column_id': sample_column['id'], 'position': 'bottom'}
+        )
+
+        assert response.status_code == 200
+        assert self._column_titles(api_client, authenticated_session, cards) == ['B', 'C', 'A']
+
+    def test_position_top_keeps_first_card_first(self, api_client, authenticated_session, sample_column):
+        cards = self._create_cards(api_client, authenticated_session, sample_column, ['A', 'B'])
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/cards/{cards[0]["id"]}',
+            json={'column_id': sample_column['id'], 'position': 'top'}
+        )
+
+        assert response.status_code == 200
+        assert self._column_titles(api_client, authenticated_session, cards) == ['A', 'B']
+
+    def test_invalid_position_within_column(self, api_client, authenticated_session, sample_column):
+        cards = self._create_cards(api_client, authenticated_session, sample_column, ['A'])
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/cards/{cards[0]["id"]}',
+            json={'column_id': sample_column['id'], 'position': 'middle'}
+        )
+
+        assert response.status_code == 400
+
     def test_move_card_within_column(self, api_client, authenticated_session, sample_column):
         """Test moving a card to a different position within the same column."""
         # Create multiple cards

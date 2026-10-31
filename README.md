@@ -158,6 +158,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 - **Create Cards** - Add task cards with titles and descriptions
 - **Move Cards** - Drag cards between columns to track progress
 - **Create Cards** - New cards can start with dates, a duration, assignees, a checklist and a schedule, using the same keyboard rules as editing
+- **Move to Top** - Send a card to the top of its column from the edit card modal, with the T shortcut, or from the card itself by choosing Move to top in your Card Actions setting. It always goes to the top of the whole column, even when a search, filter or view hides other cards, so you can filter to find a card, move it up, and see it first when you clear the filter
 - **Update Cards** - Edit card details, titles, descriptions, and comments. Edited comments are marked as edited. Changes save as you leave each field, with a small "Saved" indicator. Enter saves and closes the card, Shift+Enter adds a new line, and Escape reverts the field you're editing, then closes. On touchscreens Enter adds a new line in descriptions and comments
 - **Assign Responsibility** - Set a primary assignee and optional secondary assignees per card from users with board access
 - **Assignee Avatars** - Cards show the primary assignee initials in a bottom-left avatar circle using the assignee's profile colour
@@ -291,7 +292,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 
 ### � Documentation
 - **Comprehensive Docs** - Full documentation available in-app via the Docs page
-- **Keyboard Shortcuts** - Quick reference for board shortcuts (N for a card at the top, M for a card at the bottom, C for a column nearest the mouse)
+- **Keyboard Shortcuts** - Quick reference for board shortcuts (N for a card at the top, M for a card at the bottom, C for a column nearest the mouse, T to move the card under the mouse to the top)
 - **Adding Columns** - The ways to add a column, including between existing columns
 - **Working Style Guide** - Detailed guide on using different working styles:
   - Available working style options and when to use each
