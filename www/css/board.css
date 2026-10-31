@@ -2705,3 +2705,74 @@ button.readonly-disabled,
     padding: 1px 4px;
   }
 }
+
+/* Touchscreen mode: board.js handles touch scrolling and card dragging at any
+   width, as it does at mobile widths. */
+body.touchscreen-mode .columns-container {
+  scroll-snap-type: none;
+  touch-action: none;
+}
+
+body.touchscreen-mode .column-cards {
+  touch-action: none;
+}
+
+@media (min-width: 901px) {
+  body.touchscreen-mode .column-insert-btn {
+    display: none;
+  }
+
+  body.touchscreen-mode .column-edit-btn,
+  body.touchscreen-mode .column-add-card-btn,
+  body.touchscreen-mode .column-menu-btn,
+  body.touchscreen-mode .column-move-left-btn,
+  body.touchscreen-mode .column-move-right-btn,
+  body.touchscreen-mode .column-delete-cards-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 26px;
+  }
+
+  /* The action row sits over the card, so make room for the larger buttons. */
+  body.touchscreen-mode .card:has(.card-action-buttons:not(.readonly-hidden)) {
+    padding-top: 56px;
+  }
+
+  /* The row is above the title here, so the title can use the full width. */
+  body.touchscreen-mode .card-title,
+  body.touchscreen-mode .card.card--done-toggle .card-title {
+    padding-right: 0;
+  }
+
+  body.touchscreen-mode .card.no-schedule::before {
+    top: 21px;
+    right: auto;
+    left: 8px;
+  }
+
+  body.touchscreen-mode .card-delete-btn,
+  body.touchscreen-mode .card-move-btn,
+  body.touchscreen-mode .card-done-btn,
+  body.touchscreen-mode .card-archive-btn,
+  body.touchscreen-mode .card-unarchive-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 22px;
+  }
+
+  body.touchscreen-mode .card-expand-btn {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  body.touchscreen-mode .column-menu-item {
+    padding: 14px 16px;
+    font-size: 16px;
+  }
+}

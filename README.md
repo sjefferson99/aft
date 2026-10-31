@@ -227,6 +227,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 ### ⚙️ Settings & Configuration
 - **Customisable Settings** - Configure application preferences including default board
 - **Time Format Settings** - Choose between 12-hour (AM/PM) or 24-hour time display
+- **Touchscreen Mode** - A per-user setting for large touchscreens and kiosks: scroll boards with a finger, press and hold a card to drag it, and use larger buttons, with menus that open by tap
 - **Instance Default Theme (Global)** - In Instance Global Settings, users with `branding.edit` can choose a default theme for:
   - New users at account creation time
   - Anonymous public board viewers

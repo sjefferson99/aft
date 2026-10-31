@@ -197,6 +197,44 @@ async function preloadUserTimezone() {
 }
 
 /**
+ * Turn touchscreen mode on or off for this page and remember it for the next one.
+ * @param {boolean} enabled
+ */
+function applyTouchscreenMode(enabled) {
+  document.body.classList.toggle('touchscreen-mode', enabled);
+  sessionStorage.setItem('touchscreenMode', enabled ? '1' : '0');
+}
+
+/**
+ * Apply the signed-in user's touchscreen mode setting. The session storage copy
+ * only avoids a flash of the normal layout, so this always checks the server:
+ * a shared kiosk tab can change user.
+ * @returns {Promise<void>}
+ */
+async function loadTouchscreenMode() {
+  if (!window.currentUser) {
+    applyTouchscreenMode(false);
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/settings/touchscreen_mode');
+    if (response.ok) {
+      const data = await response.json();
+      applyTouchscreenMode(data.success && data.value === true);
+    } else if (response.status === 404) {
+      applyTouchscreenMode(false);
+    }
+  } catch (err) {
+    console.error('Error loading touchscreen mode:', err);
+  }
+}
+
+if (document.body && sessionStorage.getItem('touchscreenMode') === '1') {
+  document.body.classList.add('touchscreen-mode');
+}
+
+/**
  * Preload the time format preference into session storage.
  * Call this early on page load to avoid fallbacks in synchronous formatting.
  * @returns {Promise<void>}

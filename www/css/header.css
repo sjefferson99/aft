@@ -1638,4 +1638,89 @@ body.board-page:not(.public-board-page) .board-search-control {
   }
 }
 
+/* Touchscreen mode: larger targets on the full-size header. Below 901px the
+   mobile header already suits touch. */
+@media (min-width: 901px) {
+  /* Touch leaves :hover stuck on, so menus open by tap only. */
+  body.touchscreen-mode .boards-dropdown:hover .boards-dropdown-menu,
+  body.touchscreen-mode .settings-dropdown:hover .settings-dropdown-menu:not(.pinned),
+  body.touchscreen-mode .user-dropdown:hover .user-dropdown-menu:not(.pinned),
+  body.touchscreen-mode .notifications-dropdown:hover .notifications-popup:not(.pinned):not(.show) {
+    display: none;
+  }
 
+  body.touchscreen-mode .btn {
+    min-height: 44px;
+  }
+
+  body.touchscreen-mode .nav-link {
+    padding: 14px 24px;
+  }
+
+  body.touchscreen-mode .icon-link {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  body.touchscreen-mode .icon-svg {
+    width: 30px;
+    height: 30px;
+  }
+
+  body.touchscreen-mode .views-dropdown-btn {
+    min-height: 44px;
+  }
+
+  body.touchscreen-mode .board-search-input {
+    height: 44px;
+    padding-right: 84px;
+    font-size: 15px;
+  }
+
+  body.touchscreen-mode .board-search-clear-btn,
+  body.touchscreen-mode .board-search-filter-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  body.touchscreen-mode .board-search-clear-btn {
+    right: 44px;
+  }
+
+  body.touchscreen-mode .public-board-badge-btn {
+    flex-basis: 32px;
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
+  body.touchscreen-mode .boards-dropdown-item,
+  body.touchscreen-mode .settings-dropdown-item,
+  body.touchscreen-mode .user-dropdown-item,
+  body.touchscreen-mode .views-dropdown-item {
+    padding: 16px 20px;
+    font-size: 16px;
+  }
+
+  body.touchscreen-mode .notification-action-btn,
+  body.touchscreen-mode .mark-all-read-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  body.touchscreen-mode .notification-action-btn {
+    height: 44px;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1200px) {
+  body.touchscreen-mode.board-page:not(.public-board-page) .board-search-control.is-collapsed {
+    width: 44px;
+    min-width: 44px;
+  }
+
+  body.touchscreen-mode .board-search-toggle-btn {
+    width: 44px;
+    height: 44px;
+  }
+}

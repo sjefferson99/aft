@@ -2065,7 +2065,10 @@ class BoardManager {
 
   isMobileTouchViewport() {
     const hasTouchSupport = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    return hasTouchSupport && window.matchMedia(`(max-width: ${MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX}px)`).matches;
+    return hasTouchSupport && (
+      document.body.classList.contains('touchscreen-mode') ||
+      window.matchMedia(`(max-width: ${MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX}px)`).matches
+    );
   }
 
   logMobileCardLongPressDebug(eventName, details = {}) {
