@@ -721,9 +721,11 @@ class Header {
     if (navBoardNameText) {
       if (boardName) {
         navBoardNameText.textContent = boardName;
+        navBoardNameText.setAttribute('title', boardName);
         document.title = `AFT - ${boardName}`;
       } else {
         navBoardNameText.textContent = '';
+        navBoardNameText.removeAttribute('title');
         document.title = 'AFT';
       }
     }
