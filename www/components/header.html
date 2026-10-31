@@ -172,14 +172,26 @@
           </svg>
         </a>
         <div class="settings-dropdown-menu" id="settings-dropdown-menu">
-          <a href="javascript:void(0)" class="settings-dropdown-item" id="toggle-board-style-menu-item" style="display: none;">Style: Kanban</a>
-          <a href="javascript:void(0)" class="settings-dropdown-item" id="toggle-board-visibility-menu-item" style="display: none;">Visibility: Private</a>
-          <a href="javascript:void(0)" class="settings-dropdown-item" id="archive-board-menu-item" style="display: none;">Archive Board</a>
-          <a href="javascript:void(0)" class="settings-dropdown-item" id="copy-public-link-menu-item" style="display: none;">Copy Public Link</a>
-          <a href="javascript:void(0)" class="settings-dropdown-item" id="rotate-public-link-menu-item" style="display: none;">Rotate Public Link</a>
-          <a href="javascript:void(0)" class="settings-dropdown-item" id="copy-embed-code-menu-item" style="display: none;">Copy Embed Code</a>
-          <a href="javascript:void(0)" class="settings-dropdown-item" id="reassign-board-menu-item" style="display: none;">Reassign Board</a>
+          <div class="settings-dropdown-item board-menu-toggle" id="toggle-board-style-menu-item" style="display: none;" role="group" aria-label="Board style">
+            <span class="board-menu-toggle-label">Board style</span>
+            <span class="board-menu-segments">
+              <button type="button" data-value="kanban" aria-pressed="true">Kanban</button>
+              <button type="button" data-value="agile" aria-pressed="false">Agile</button>
+            </span>
+          </div>
+          <div class="settings-dropdown-item board-menu-toggle" id="toggle-board-visibility-menu-item" style="display: none;" role="group" aria-label="Visibility">
+            <span class="board-menu-toggle-label">Visibility</span>
+            <span class="board-menu-segments">
+              <button type="button" data-value="private" aria-pressed="true">Private</button>
+              <button type="button" data-value="public" aria-pressed="false">Public</button>
+            </span>
+          </div>
+          <a href="javascript:void(0)" class="settings-dropdown-item board-menu-sub" id="copy-public-link-menu-item" style="display: none;">Copy Public Link</a>
+          <a href="javascript:void(0)" class="settings-dropdown-item board-menu-sub" id="rotate-public-link-menu-item" style="display: none;">Rotate Public Link</a>
+          <a href="javascript:void(0)" class="settings-dropdown-item board-menu-sub" id="copy-embed-code-menu-item" style="display: none;">Copy Embed Code</a>
           <a href="javascript:void(0)" class="settings-dropdown-item" id="clear-board-filters-menu-item" style="display: none;">Clear Filters</a>
+          <a href="javascript:void(0)" class="settings-dropdown-item" id="reassign-board-menu-item" style="display: none;">Reassign Board</a>
+          <a href="javascript:void(0)" class="settings-dropdown-item" id="archive-board-menu-item" style="display: none;">Archive Board</a>
           <a href="/backup-restore.html" class="settings-dropdown-item">Backup & Restore</a>
           <a href="/theme-builder.html" class="settings-dropdown-item">Theme Builder</a>
           <a href="/user-management.html" class="settings-dropdown-item">User Management</a>
@@ -296,14 +308,26 @@
             </span>
           </summary>
           <div class="mobile-tree-items">
-            <button type="button" class="mobile-menu-link" id="mobile-toggle-board-style-menu-item" style="display: none;">Style: Kanban</button>
-            <button type="button" class="mobile-menu-link" id="mobile-toggle-board-visibility-menu-item" style="display: none;">Visibility: Private</button>
-            <button type="button" class="mobile-menu-link" id="mobile-archive-board-menu-item" style="display: none;">Archive Board</button>
-            <button type="button" class="mobile-menu-link" id="mobile-copy-public-link-menu-item" style="display: none;">Copy Public Link</button>
-            <button type="button" class="mobile-menu-link" id="mobile-rotate-public-link-menu-item" style="display: none;">Rotate Public Link</button>
-            <button type="button" class="mobile-menu-link" id="mobile-copy-embed-code-menu-item" style="display: none;">Copy Embed Code</button>
-            <button type="button" class="mobile-menu-link" id="mobile-reassign-board-menu-item" style="display: none;">Reassign Board</button>
+            <div class="mobile-menu-link board-menu-toggle" id="mobile-toggle-board-style-menu-item" style="display: none;" role="group" aria-label="Board style">
+              <span class="board-menu-toggle-label">Board style</span>
+              <span class="board-menu-segments">
+                <button type="button" data-value="kanban" aria-pressed="true">Kanban</button>
+                <button type="button" data-value="agile" aria-pressed="false">Agile</button>
+              </span>
+            </div>
+            <div class="mobile-menu-link board-menu-toggle" id="mobile-toggle-board-visibility-menu-item" style="display: none;" role="group" aria-label="Visibility">
+              <span class="board-menu-toggle-label">Visibility</span>
+              <span class="board-menu-segments">
+                <button type="button" data-value="private" aria-pressed="true">Private</button>
+                <button type="button" data-value="public" aria-pressed="false">Public</button>
+              </span>
+            </div>
+            <button type="button" class="mobile-menu-link board-menu-sub" id="mobile-copy-public-link-menu-item" style="display: none;">Copy Public Link</button>
+            <button type="button" class="mobile-menu-link board-menu-sub" id="mobile-rotate-public-link-menu-item" style="display: none;">Rotate Public Link</button>
+            <button type="button" class="mobile-menu-link board-menu-sub" id="mobile-copy-embed-code-menu-item" style="display: none;">Copy Embed Code</button>
             <button type="button" class="mobile-menu-link" id="mobile-clear-board-filters-menu-item" style="display: none;">Clear Filters</button>
+            <button type="button" class="mobile-menu-link" id="mobile-reassign-board-menu-item" style="display: none;">Reassign Board</button>
+            <button type="button" class="mobile-menu-link" id="mobile-archive-board-menu-item" style="display: none;">Archive Board</button>
             <a href="/backup-restore.html" class="mobile-menu-link">Backup & Restore</a>
             <a href="/theme-builder.html" class="mobile-menu-link">Theme Builder</a>
             <a href="/user-management.html" class="mobile-menu-link">User Management</a>
