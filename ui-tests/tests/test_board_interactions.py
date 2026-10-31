@@ -669,6 +669,23 @@ def test_done_view_stays_above_compact_cards_toggle(logged_in_page, api_session,
 
 
 @pytest.mark.ui
+def test_mobile_done_view_survives_a_cached_header_without_the_toggle(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """header.html has no version value, so new header.js can briefly run against the old markup."""
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+
+    def strip_toggle(route):
+        response = route.fetch()
+        html = response.text().replace('id="mobile-compact-cards-toggle"', 'id="removed-toggle"')
+        route.fulfill(response=response, body=html)
+
+    page.context.route("**/components/header.html", strip_toggle)
+    page.goto(f"/board.html?id={data['board']['id']}")
+    page.locator('.mobile-view-item[data-view="done"]').wait_for(state="attached", timeout=8000)
+
+
+@pytest.mark.ui
 def test_compact_cards_toggle_is_not_offered_on_boards_page(logged_in_page):
     page = logged_in_page
     page.goto("/index.html")

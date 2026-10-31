@@ -3235,8 +3235,8 @@ class Header {
               mobileToggle.setAttribute('aria-expanded', 'false');
             }
           });
-          const compactToggle = document.getElementById('mobile-compact-cards-toggle');
-          compactToggle?.parentElement.insertBefore(doneBtn, compactToggle);
+          mobileViewsSection.querySelector('.mobile-tree-items')
+            ?.insertBefore(doneBtn, document.getElementById('mobile-compact-cards-toggle'));
         }
       } else if (mobileDoneItem) {
         mobileDoneItem.remove();
