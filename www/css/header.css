@@ -253,7 +253,7 @@
   display: none;
   position: absolute;
   top: 100%;
-  left: 0;
+  right: 0;
   padding-top: 5px;
   background-color: var(--header-menu-background);
   border-radius: 8px;
@@ -307,7 +307,7 @@
   display: none;
   position: absolute;
   top: 100%;
-  left: 0;
+  right: 0;
   padding-top: 5px;
   background-color: var(--header-menu-background);
   border-radius: 8px;
@@ -1065,6 +1065,84 @@ body.board-page:not(.public-board-page) .board-search-control {
   display: none;
 }
 
+/* Portrait and narrow screens: keep the desktop controls but collapse search
+   so the board title keeps its space. Keep the width in step with
+   headerSearchCollapseBreakpoint in board.js. */
+@media (max-width: 1200px) {
+  .header {
+    padding: 15px 14px;
+  }
+
+  .header-container {
+    gap: 12px;
+  }
+
+  .header-right {
+    gap: 12px;
+  }
+
+  .nav-board-name {
+    padding: 0 8px;
+  }
+
+  /* Stay compact when unhealthy too. The dot still changes colour and the
+     full message stays in the tooltip. */
+  .db-status {
+    padding: 8px 10px;
+    min-width: 30px;
+    border-radius: 999px;
+  }
+
+  .db-status .status-line {
+    gap: 0;
+  }
+
+  .db-status .status-text,
+  .db-status .version-line {
+    display: none;
+  }
+
+  body.board-page:not(.public-board-page) .board-search-control {
+    width: 180px;
+  }
+
+  body.board-page:not(.public-board-page) .board-search-control.is-collapsed {
+    flex: 0 0 auto;
+    width: 34px;
+    min-width: 34px;
+  }
+
+  body.board-page:not(.public-board-page) .board-search-control.is-collapsed .board-search-input-wrap {
+    display: none;
+  }
+
+  body.board-page:not(.public-board-page) .board-search-control.is-collapsed .board-search-toggle-btn {
+    display: inline-flex;
+  }
+
+  body.board-page:not(.public-board-page) .board-search-control:not(.is-collapsed) .board-search-toggle-btn {
+    display: none;
+  }
+
+  .board-search-toggle-btn {
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--header-button-background);
+    color: var(--header-text-color);
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .board-search-toggle-btn:hover,
+  .board-search-toggle-btn:focus-visible {
+    background: var(--header-button-hover);
+  }
+}
+
 @media (max-width: 900px) {
   .header {
     padding: 10px 14px;
@@ -1144,42 +1222,6 @@ body.board-page:not(.public-board-page) .board-search-control {
     width: auto;
     max-width: none;
     min-width: 0;
-  }
-
-  body.board-page:not(.public-board-page) .board-search-control.is-collapsed {
-    flex: 0 0 auto;
-    width: 34px;
-    min-width: 34px;
-  }
-
-  body.board-page:not(.public-board-page) .board-search-control.is-collapsed .board-search-input-wrap {
-    display: none;
-  }
-
-  body.board-page:not(.public-board-page) .board-search-control.is-collapsed .board-search-toggle-btn {
-    display: inline-flex;
-  }
-
-  body.board-page:not(.public-board-page) .board-search-control:not(.is-collapsed) .board-search-toggle-btn {
-    display: none;
-  }
-
-  .board-search-toggle-btn {
-    width: 34px;
-    height: 34px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    background: var(--header-button-background);
-    color: var(--header-text-color);
-    padding: 0;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-  }
-
-  .board-search-toggle-btn:hover,
-  .board-search-toggle-btn:focus-visible {
-    background: var(--header-button-hover);
   }
 
   .board-search-input {

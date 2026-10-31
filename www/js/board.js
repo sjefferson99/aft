@@ -995,7 +995,7 @@ class BoardManager {
     this.searchFocusRestoreTargetId = null;
     this.searchFocusRestoreEnabled = false;
     this.searchTooltipText = null;
-    this.mobileHeaderBreakpoint = 900;
+    this.headerSearchCollapseBreakpoint = 1200; // Keep in step with header.css
     this.headerSearchCollapsed = true;
     this.boardFiltersToggleRequestHandler = this.handleBoardFiltersToggleRequest.bind(this);
     this.boardFiltersStateRequestHandler = this.handleBoardFiltersStateRequest.bind(this);
@@ -1225,7 +1225,7 @@ class BoardManager {
   isCollapsibleHeaderSearchViewport() {
     return document.body.classList.contains('board-page') &&
       !document.body.classList.contains('public-board-page') &&
-      window.innerWidth <= this.mobileHeaderBreakpoint;
+      window.innerWidth <= this.headerSearchCollapseBreakpoint;
   }
 
   applyHeaderSearchCollapsedState(options = {}) {
@@ -1395,11 +1395,6 @@ class BoardManager {
 
           this.searchFocusRestoreEnabled = false;
           this.searchFocusRestoreTargetId = null;
-
-          if (input.id === 'board-header-search-input' && this.searchQueryRaw.length === 0) {
-            this.headerSearchCollapsed = true;
-            this.applyHeaderSearchCollapsedState();
-          }
         }, 0);
       });
       input.dataset.boundSearchInput = 'true';
@@ -1431,8 +1426,28 @@ class BoardManager {
       headerSearchToggle.dataset.boundSearchToggle = 'true';
     }
 
+    // Collapse only when focus leaves the whole control, so moving from the
+    // input to its buttons doesn't hide them mid-click or mid-tab.
+    const headerSearchControl = document.getElementById('board-header-search-control');
+    if (headerSearchControl && headerSearchControl.dataset.boundSearchCollapse !== 'true') {
+      headerSearchControl.addEventListener('focusout', () => {
+        window.setTimeout(() => {
+          if (!headerSearchControl.contains(document.activeElement) && this.searchQueryRaw.length === 0) {
+            this.headerSearchCollapsed = true;
+            this.applyHeaderSearchCollapsedState();
+          }
+        }, 0);
+      });
+      headerSearchControl.dataset.boundSearchCollapse = 'true';
+    }
+
     const openFiltersButton = document.getElementById('board-header-search-filters-btn');
     if (openFiltersButton && openFiltersButton.dataset.boundSearchFilters !== 'true') {
+      // Keep focus in the input: Safari doesn't focus buttons on click, which
+      // would read as focus leaving the control.
+      openFiltersButton.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+      });
       openFiltersButton.addEventListener('click', () => {
         window.dispatchEvent(new CustomEvent('boardFiltersToggleRequested'));
       });
