@@ -1,6 +1,11 @@
 """Tests for database backup and restore API endpoints."""
-import pytest
+import re
+import threading
 import time
+import uuid
+
+import pytest
+import requests
 
 
 @pytest.mark.api
@@ -342,3 +347,83 @@ class TestDatabaseBackupsAPI:
                 except (ValueError, AssertionError):
                     # Response might not be JSON if the request was malformed
                     pass
+
+
+@pytest.mark.api
+class TestRestoreProgressAPI:
+    """Test cases for /api/database/restore/progress (issue #590)."""
+
+    def test_unknown_id_has_no_progress(self, api_client):
+        """Needs no session, because the page polls while the database is down."""
+        response = requests.get(f'{api_client}/api/database/restore/progress/{uuid.uuid4().hex}')
+
+        assert response.status_code == 200
+        assert response.json() == {'success': True, 'progress': None}
+
+    @pytest.mark.parametrize('progress_id', ['short', 'A' * 32, 'g' * 32, 'a' * 33])
+    def test_invalid_id_rejected(self, api_client, progress_id):
+        response = requests.get(f'{api_client}/api/database/restore/progress/{progress_id}')
+
+        assert response.status_code == 400
+        assert response.json()['success'] is False
+
+    def test_failed_validation_leaves_last_step_readable(self, api_client, authenticated_session):
+        progress_id = uuid.uuid4().hex
+
+        response = authenticated_session.post(
+            f'{api_client}/api/database/restore',
+            headers={'X-Restore-Progress-Id': progress_id},
+            files={'file': ('bad.sql', b'not a backup', 'application/sql')},
+        )
+
+        assert response.status_code == 400
+        progress = requests.get(f'{api_client}/api/database/restore/progress/{progress_id}').json()
+        assert progress['progress'] == {'message': 'Checking the backup file'}
+
+    def test_invalid_progress_id_does_not_stop_a_restore_request(self, api_client, authenticated_session):
+        response = authenticated_session.post(
+            f'{api_client}/api/database/backups/restore/aft_backup_19990101_000000.sql',
+            headers={'X-Restore-Progress-Id': 'not-valid'},
+        )
+
+        assert response.status_code == 404
+
+    def test_progress_is_readable_throughout_a_real_restore(self, api_client, authenticated_session):
+        """The database is dropped partway, and polling must keep working."""
+        backup_response = authenticated_session.post(f'{api_client}/api/database/backup/manual')
+        assert backup_response.status_code == 200
+        filename = backup_response.json()['filename']
+        progress_id = uuid.uuid4().hex
+        restore_result = {}
+
+        def run_restore():
+            restore_result['response'] = authenticated_session.post(
+                f'{api_client}/api/database/backups/restore/{filename}',
+                headers={'X-Restore-Progress-Id': progress_id},
+            )
+
+        restore = threading.Thread(target=run_restore)
+        statuses = set()
+        messages = []
+        restore.start()
+        try:
+            while restore.is_alive():
+                response = requests.get(f'{api_client}/api/database/restore/progress/{progress_id}')
+                statuses.add(response.status_code)
+                progress = response.json()['progress']
+                if progress and progress['message'] not in messages:
+                    messages.append(progress['message'])
+                time.sleep(0.05)
+        finally:
+            restore.join()
+
+        try:
+            assert restore_result['response'].status_code == 200
+            assert statuses == {200}
+            assert 'Clearing the existing database' in messages
+
+            final = requests.get(f'{api_client}/api/database/restore/progress/{progress_id}').json()
+            assert 0 < final['progress']['bytes_done'] <= final['progress']['bytes_total']
+            assert re.fullmatch(r'Restoring table \d+ of \d+: \w+', final['progress']['message'])
+        finally:
+            authenticated_session.delete(f'{api_client}/api/database/backups/delete/{filename}')
