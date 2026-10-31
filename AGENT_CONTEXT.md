@@ -100,6 +100,7 @@ Non-obvious behaviour that is easy to break:
 - **Header widths**: at 900px and below the header uses the mobile drawer. From 901px to 1200px it keeps the desktop controls but collapses search to an icon so the board title keeps its space. That 1200px value is in both `www/css/header.css` and `headerSearchCollapseBreakpoint` in `www/js/board.js`, so change them together.
 - **Custom logo favicon**: `header.js` applies the instance logo to the favicon. Pages that don't load it (login, setup, register, logout) use `www/js/custom-favicon.js` instead, so a new page without the header needs that script.
 - **Frontend modals**: reuse the existing modal structure and styles, and use the CSS variables so themes work. Don't hardcode colours. Use danger styling only for destructive actions.
+- **Scheduler locks**: a container restart keeps `/tmp` and PIDs repeat, so a new worker can find a lock naming its own PID. `is_scheduler_lock_stale` treats a lock with this PID that predates the process as stale. Don't remove that check, or restarted instances report stopped services until the container is recreated.
 
 ## PR review workflow
 
