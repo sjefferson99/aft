@@ -243,7 +243,7 @@ function applyCardActions(cardActions) {
   ['desktop', 'mobile'].forEach((screen) => {
     const chosen = cardActions ? cardActions[screen] : null;
     document.body.classList.toggle(`${screen}-card-actions`, Array.isArray(chosen));
-    ['done', 'archive', 'move', 'delete'].forEach((action) => {
+    ['done', 'archive', 'move', 'top', 'delete'].forEach((action) => {
       document.body.classList.toggle(`${screen}-card-action-${action}`, Array.isArray(chosen) && chosen.includes(action));
     });
     document.body.style.setProperty(`--${screen}-card-action-count`, Array.isArray(chosen) ? chosen.length : 0);

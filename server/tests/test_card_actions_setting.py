@@ -18,6 +18,7 @@ class TestCardActionsSetting:
     @pytest.mark.parametrize('value', [
         {'desktop': ['done', 'archive', 'delete'], 'mobile': ['done', 'move']},
         {'desktop': ['move'], 'mobile': []},
+        {'desktop': ['top', 'move'], 'mobile': ['top']},
         None,
     ])
     def test_set_and_get(self, api_client, authenticated_session, value):
