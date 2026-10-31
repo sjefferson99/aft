@@ -248,11 +248,11 @@ def backup_sql(authenticated_session):
     return response.content
 
 
-def _restore_during_setup(content, headers=None):
+def _restore_during_setup(content, progress_id=None):
     return requests.post(
         f"{API_BASE_URL}/api/auth/setup/restore",
         files={"file": ("backup.sql", content, "application/sql")},
-        headers=headers,
+        headers={"X-Restore-Progress-Id": progress_id or uuid.uuid4().hex},
     )
 
 
@@ -264,6 +264,30 @@ class TestSetupRestore:
 
         assert response.status_code == 403
         assert 'already' in response.json()['message'].lower()
+
+    @pytest.mark.parametrize('headers', [{}, {"X-Restore-Progress-Id": "not-valid"}])
+    def test_refuses_requests_without_a_valid_progress_id(self, empty_database, headers):
+        """Other sites can post multipart forms, but can't add this header without a preflight."""
+        response = requests.post(
+            f"{API_BASE_URL}/api/auth/setup/restore",
+            files={"file": ("backup.sql", b"not a backup", "application/sql")},
+            headers={"Origin": "https://evil.example", **headers},
+        )
+
+        assert response.status_code == 400
+        assert response.json()['message'] == "Invalid progress id"
+
+    def test_preflight_from_another_site_is_not_allowed(self):
+        response = requests.options(
+            f"{API_BASE_URL}/api/auth/setup/restore",
+            headers={
+                "Origin": "https://evil.example",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "x-restore-progress-id",
+            },
+        )
+
+        assert 'Access-Control-Allow-Origin' not in response.headers
 
     def test_rejects_invalid_file(self, empty_database):
         response = _restore_during_setup(b"not a backup")
@@ -280,7 +304,7 @@ class TestSetupRestore:
     def test_restores_backup_and_accounts_can_sign_in(self, backup_sql, empty_database):
         progress_id = uuid.uuid4().hex
 
-        response = _restore_during_setup(backup_sql, headers={"X-Restore-Progress-Id": progress_id})
+        response = _restore_during_setup(backup_sql, progress_id)
 
         assert response.status_code == 200
         assert response.json()['success'] is True
@@ -317,9 +341,7 @@ class TestSetupRestore:
         result = {}
 
         def run_restore():
-            result['response'] = _restore_during_setup(
-                backup_sql, headers={"X-Restore-Progress-Id": progress_id}
-            )
+            result['response'] = _restore_during_setup(backup_sql, progress_id)
 
         restore = threading.Thread(target=run_restore)
         restore.start()

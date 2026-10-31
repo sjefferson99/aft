@@ -558,13 +558,13 @@ def setup_restore():
       - in: header
         name: X-Restore-Progress-Id
         type: string
-        required: false
+        required: true
         description: Random 32 character hex id for reading progress from /api/database/restore/progress/{progress_id}
     responses:
       200:
         description: Database restored. Sign in with an account from the backup.
       400:
-        description: Invalid backup file
+        description: Invalid backup file, or missing or invalid progress id
       403:
         description: Setup already complete
       409:
@@ -572,6 +572,12 @@ def setup_restore():
       500:
         description: Restore failed and the instance was returned to first-time setup
     """
+    # There's no session for SameSite to protect, and this is multipart, so other
+    # sites could post here. Requiring a custom header makes browsers preflight.
+    progress_id = request.headers.get(RESTORE_PROGRESS_HEADER)
+    if not is_valid_progress_id(progress_id):
+        return jsonify({"success": False, "message": "Invalid progress id"}), 400
+
     if not claim_setup_restore():
         return jsonify({"success": False, "message": "A restore is already running"}), 409
 
@@ -591,7 +597,7 @@ def setup_restore():
                 "message": "Setup is already complete. Please use the login page.",
             }), 403
 
-        progress = RestoreProgress(request.headers.get(RESTORE_PROGRESS_HEADER))
+        progress = RestoreProgress(progress_id)
         try:
             return restore_uploaded_file(progress)
         except Exception as e:
