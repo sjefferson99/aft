@@ -60,8 +60,11 @@
       if (!isPublicPagePath(window.location.pathname)) {
         console.error('Authentication required, redirecting to login page');
         // Store the current page to redirect back after login
-        sessionStorage.setItem('redirectAfterLogin', window.location.pathname + window.location.search);
-        window.location.href = '/login.html';
+        // Embedded pages send the whole window, so login doesn't open inside the tab
+        const isEmbedded = document.documentElement.classList.contains('embedded-page');
+        const targetWindow = isEmbedded ? window.top : window;
+        sessionStorage.setItem('redirectAfterLogin', targetWindow.location.pathname + targetWindow.location.search);
+        targetWindow.location.href = '/login.html';
       }
       return response;
     }
@@ -953,6 +956,9 @@ window.currentUser = null;
  * Use this to wait for user data before checking permissions.
  */
 window.userDataReady = false;
+
+// Holding any of these opens Instance Settings, which shows only what each one allows.
+window.INSTANCE_SETTINGS_PERMISSIONS = ['branding.edit', 'admin.database', 'user.manage', 'user.role', 'role.manage'];
 
 /**
  * Check if the current user has a specific permission.

@@ -461,7 +461,7 @@ class UserManagement {
       return;
     }
 
-    this.activeUsersContainer.style.display = 'block';
+    this.activeUsersContainer.style.display = 'flex';
     this.activeUsersEmpty.style.display = 'none';
 
     // A reload can leave fewer users than the page being shown
