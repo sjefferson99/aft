@@ -399,6 +399,36 @@
   gap: 10px;
 }
 
+.restore-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+
+.restore-progress[hidden] {
+  display: none;
+}
+
+.restore-progress .spinner {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-color: var(--border-color);
+  border-top-color: var(--primary-color);
+}
+
+.restore-progress span:not(.spinner) {
+  flex: 1;
+  min-width: 0;
+}
+
+#restoreProgressBar {
+  width: 100%;
+  accent-color: var(--primary-color);
+}
+
 .backup-status {
   padding: 8px 12px;
   border-radius: 6px;

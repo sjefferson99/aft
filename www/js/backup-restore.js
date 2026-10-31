@@ -319,13 +319,14 @@ class BackupRestore {
       // Update modal to show progress
       titleElement.textContent = 'Restoring Database';
       titleElement.style.color = 'var(--primary-color)';
-      messageElement.textContent = 'Restoring database... This may take several minutes for large databases. Please wait.';
+      messageElement.textContent = 'This may take several minutes for large databases. Please wait.';
       confirmBtn.style.display = 'none';
       cancelBtn.style.display = 'none';
 
       this.restoreBtn.disabled = true;
 
       try {
+        const progressId = this.startRestoreProgress('Uploading the backup file');
         const formData = new FormData();
         formData.append('file', file);
 
@@ -335,6 +336,7 @@ class BackupRestore {
 
         const response = await fetch('/api/database/restore', {
           method: 'POST',
+          headers: { 'X-Restore-Progress-Id': progressId },
           body: formData,
           signal: controller.signal
         });
@@ -807,7 +809,7 @@ class BackupRestore {
       // Update modal to show progress
       titleElement.textContent = 'Restoring Database';
       titleElement.style.color = 'var(--primary-color)';
-      messageElement.textContent = 'Restoring database... This may take several minutes for large databases. Please wait.';
+      messageElement.textContent = 'This may take several minutes for large databases. Please wait.';
       confirmBtn.style.display = 'none';
       cancelBtn.style.display = 'none';
 
@@ -816,12 +818,15 @@ class BackupRestore {
       restoreButtons.forEach(btn => btn.disabled = true);
 
       try {
+        const progressId = this.startRestoreProgress('Starting the restore');
+
         // Set up timeout for 25 minutes (slightly less than backend 30 min timeout)
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 25 * 60 * 1000);
 
         const response = await fetch(`/api/database/backups/restore/${filename}`, {
           method: 'POST',
+          headers: { 'X-Restore-Progress-Id': progressId },
           signal: controller.signal
         });
 
@@ -872,7 +877,70 @@ class BackupRestore {
     cancelBtn.addEventListener('click', handleCancel);
   }
 
+  // Shows the spinner and polls for progress until stopRestoreProgress().
+  // Returns the id to send with the restore request.
+  startRestoreProgress(initialText) {
+    const modal = document.getElementById('restoreModal');
+    const progressId = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+      .map(byte => byte.toString(16).padStart(2, '0'))
+      .join('');
+
+    // A restore can't be cancelled, so Escape must not hide it
+    setupModalEscapeClose(modal, () => {});
+
+    document.getElementById('restoreProgressText').textContent = initialText;
+    document.getElementById('restoreProgressBar').hidden = true;
+    document.getElementById('restoreProgress').hidden = false;
+
+    const poll = { active: true, timeoutId: null };
+    this.restoreProgressPoll = poll;
+
+    const check = async () => {
+      try {
+        const response = await fetch(`/api/database/restore/progress/${progressId}`);
+        const data = response.ok ? await response.json() : null;
+        if (poll.active && data?.progress) {
+          this.showRestoreProgress(data.progress);
+        }
+      } catch (error) {
+        // The restore request reports any real failure. Keep showing the spinner.
+        console.warn('Could not read restore progress:', error);
+      }
+      if (poll.active) {
+        poll.timeoutId = setTimeout(check, 1000);
+      }
+    };
+    poll.timeoutId = setTimeout(check, 1000);
+
+    return progressId;
+  }
+
+  showRestoreProgress(progress) {
+    const bar = document.getElementById('restoreProgressBar');
+    const hasBytes = progress.bytes_total > 0;
+
+    let text = progress.message;
+    if (hasBytes) {
+      const percent = Math.floor((progress.bytes_done / progress.bytes_total) * 100);
+      bar.value = percent;
+      text += ` (${percent}%)`;
+    }
+    bar.hidden = !hasBytes;
+    document.getElementById('restoreProgressText').textContent = text;
+  }
+
+  stopRestoreProgress() {
+    if (this.restoreProgressPoll) {
+      this.restoreProgressPoll.active = false;
+      clearTimeout(this.restoreProgressPoll.timeoutId);
+      this.restoreProgressPoll = null;
+    }
+    document.getElementById('restoreProgress').hidden = true;
+  }
+
   showRestoreResultInModal(title, message, success) {
+    this.stopRestoreProgress();
+
     const modal = document.getElementById('restoreModal');
     const titleElement = document.getElementById('restoreModalTitle');
     const messageElement = document.getElementById('restoreModalMessage');

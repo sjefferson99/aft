@@ -315,6 +315,11 @@ else:
 @app.before_request
 def before_request():
     """Load authenticated user into Flask g object and check setup status."""
+    # Restore progress is read while the database is unavailable, so this route
+    # can't touch it, even to load the user.
+    if request.path.startswith('/api/database/restore/progress/'):
+        return
+
     # Skip setup check for setup/auth endpoints, health checks, and static files
     if (
         request.path.startswith('/api/auth/setup') or

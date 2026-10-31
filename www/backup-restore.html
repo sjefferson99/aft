@@ -213,6 +213,11 @@
       </div>
       <div class="modal-body">
         <p id="restoreModalMessage"></p>
+        <div id="restoreProgress" class="restore-progress" role="status" hidden>
+          <span class="spinner" aria-hidden="true"></span>
+          <span id="restoreProgressText"></span>
+          <progress id="restoreProgressBar" max="100" aria-label="Backup data sent to the database" hidden></progress>
+        </div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="restoreModalCancelBtn" style="display: none;">Cancel</button>

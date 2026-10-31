@@ -288,6 +288,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 - Backup health monitoring with status indicators
 - Overdue backup detection
 - Backups saved to host filesystem via bind mount (`./backups/`)
+- Restores show a spinner with the current step, and while data is loading, the table being restored and how much of the backup has been sent to the database
 
 ![Backup Settings](images/backup_configuration.png)
 
@@ -586,7 +587,7 @@ Apply changes with `docker compose up -d server`. Invalid values, such as `0`, `
 
 Multi-worker support is unchanged. Socket.IO broadcasts go through Redis, and the schedulers use file and database locks, so raising `GUNICORN_WORKERS` needs no other configuration.
 
-**During a large database restore** with a single worker, other requests can slow to a few seconds while the backup file is read and validated, because that work runs in the same process. Requests return `503` while the database itself is being reloaded, whatever the worker count. In testing, a 75 MB restore took about 25 seconds in total.
+**During a large database restore** with a single worker, other requests can slow to a few seconds while the backup file is read and validated, because that work runs in the same process. Requests return `503` while the database itself is being reloaded, whatever the worker count. The only exception is the progress route the restore page polls, `GET /api/database/restore/progress/<id>`, which doesn't use the database. In testing, a 75 MB restore took about 25 seconds in total.
 
 ### Sign-in rate limits
 AFT slows down password guessing. After too many failed attempts, further attempts get a "Too many attempts" message until the block ends. Blocks end by themselves, and people who are already signed in aren't affected. A blocked account can still sign in with a passkey. Failed passwords count across sign-in, password changes and adding a passkey, and only failures count. Limits apply to unknown usernames too, so a block doesn't show whether an account exists.

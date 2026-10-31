@@ -17,6 +17,12 @@ from security_validators import (
     validate_schema_integrity,
 )
 from notification_utils import create_notification as create_notification_internal
+from restore_progress import (
+    RESTORE_PROGRESS_HEADER,
+    RestoreProgress,
+    is_valid_progress_id,
+    read_progress,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +30,9 @@ backup_bp = Blueprint("backup", __name__)
 
 # Maximum backup file size for validation (MB) - actual content size limit
 MAX_BACKUP_FILE_SIZE_MB = 100
+
+# mysqldump writes this comment above each table in a backup
+TABLE_COMMENT_PATTERN = re.compile(rb'^-- Table structure for table `([A-Za-z0-9_]{1,64})`')
 
 # Populated by configure_backup_routes()
 _APP_VERSION = "unknown"
@@ -87,6 +96,44 @@ def create_database_with_retry(db_host, db_root_password, db_name, max_retries=5
 
     logger.error(f"Failed to create database after {max_retries} attempts: {last_stderr}")
     raise Exception(f"Failed to create database after {max_retries} attempts: {last_stderr}")
+
+
+# ---------------------------------------------------------------------------
+# Helper: backup import with progress
+# ---------------------------------------------------------------------------
+
+def import_sql_file(mysql_cmd, sql_path, progress):
+    """Feed a backup file to mysql a line at a time, reporting what was sent."""
+    with open(sql_path, "rb") as f:
+        table_count = sum(1 for line in f if TABLE_COMMENT_PATTERN.match(line))
+
+    bytes_total = os.path.getsize(sql_path)
+    bytes_done = 0
+    table_number = 0
+    table = None
+
+    # stderr goes to a file so a noisy mysql can't fill a pipe and deadlock
+    with tempfile.TemporaryFile() as stderr_file, open(sql_path, "rb") as f:
+        with subprocess.Popen(mysql_cmd, stdin=subprocess.PIPE, stderr=stderr_file) as process:
+            try:
+                with process.stdin:
+                    for line in f:
+                        match = TABLE_COMMENT_PATTERN.match(line)
+                        if match:
+                            table_number += 1
+                            table = match.group(1).decode("ascii")
+                        process.stdin.write(line)
+                        bytes_done += len(line)
+                        progress.importing(table_number, table_count, table, bytes_done, bytes_total)
+            except BrokenPipeError:
+                # mysql stopped early. Its exit code and stderr say why.
+                logger.warning("mysql closed its input before the whole backup was sent")
+
+        if process.returncode != 0:
+            stderr_file.seek(0)
+            stderr = stderr_file.read().decode("utf-8", errors="replace")
+            logger.error(f"MySQL restore failed with return code {process.returncode}: {stderr}")
+            raise Exception(f"MySQL restore failed: {stderr}")
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +346,11 @@ def restore_database():
         type: file
         required: true
         description: SQL backup file to restore
+      - in: header
+        name: X-Restore-Progress-Id
+        type: string
+        required: false
+        description: Random 32 character hex id for reading progress from /api/database/restore/progress/{progress_id}
     responses:
       200:
         description: Database restored successfully
@@ -332,6 +384,7 @@ def restore_database():
               type: string
     """
     logger.info(f"=== Starting manual restore from uploaded file ===")
+    progress = RestoreProgress(request.headers.get(RESTORE_PROGRESS_HEADER))
     try:
         # Check if file was uploaded
         logger.info(f"Step 1: Validating file upload")
@@ -354,6 +407,7 @@ def restore_database():
         logger.info(f"File saved to: {temp_path}")
 
         logger.info(f"Step 3: Validating file size and security")
+        progress.step("Checking the backup file")
         # File size validation: Check for reasonable size
         is_valid_size, size_error = validate_backup_file_size(temp_path, max_size_mb=MAX_BACKUP_FILE_SIZE_MB)
         if not is_valid_size:
@@ -435,6 +489,7 @@ def restore_database():
         db_host = "db"
 
         logger.info(f"Step 6: Dropping all existing tables")
+        progress.step("Clearing the existing database")
 
         # Close any existing database sessions in this request context to avoid connection issues
         logger.info(f"Step 6.0: Closing request database sessions before killing connections")
@@ -571,16 +626,8 @@ def restore_database():
             db_name,
         ]
 
-        with open(temp_path, "r") as f:
-            result = subprocess.run(
-                mysql_cmd, stdin=f, stderr=subprocess.PIPE, text=True
-            )
-
+        import_sql_file(mysql_cmd, temp_path, progress)
         os.unlink(temp_path)
-
-        if result.returncode != 0:
-            logger.error(f"MySQL restore failed with return code {result.returncode}: {result.stderr}")
-            raise Exception(f"MySQL restore failed: {result.stderr}")
 
         logger.info(f"MySQL restore completed successfully")
 
@@ -628,6 +675,7 @@ def restore_database():
         # If backup version differs from current, run migrations to upgrade
         if backup_version != current_version:
             logger.info(f"Step 8: Running Alembic migrations from {backup_version} to {current_version}")
+            progress.step("Upgrading the restored database")
             logger.info(
                 f"Migrating database from {backup_version} to {current_version}"
             )
@@ -668,6 +716,49 @@ def restore_database():
         if "temp_path" in locals() and os.path.exists(temp_path):
             os.unlink(temp_path)
         return jsonify({"success": False, "message": str(e)}), 500
+
+
+@backup_bp.route("/api/database/restore/progress/<progress_id>", methods=["GET"])
+def restore_progress(progress_id):
+    """Get the progress of a running restore.
+
+    Needs no session, because the database is unavailable for part of a
+    restore. The id is a random value the page sent with the restore request.
+    ---
+    tags:
+      - Database
+    parameters:
+      - name: progress_id
+        in: path
+        type: string
+        required: true
+        description: The 32 character hex id sent in the X-Restore-Progress-Id header of the restore request
+    responses:
+      200:
+        description: The latest progress, or null if the restore has not reported any yet
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            progress:
+              type: object
+              properties:
+                message:
+                  type: string
+                bytes_done:
+                  type: integer
+                  description: Bytes of the backup sent to MySQL, only while importing
+                bytes_total:
+                  type: integer
+                  description: Size of the backup, only while importing
+      400:
+        description: Invalid progress id
+    """
+    if not is_valid_progress_id(progress_id):
+        return jsonify({"success": False, "message": "Invalid progress id"}), 400
+
+    return jsonify({"success": True, "progress": read_progress(progress_id)})
 
 
 @backup_bp.route("/api/database/backups/list", methods=["GET"])
@@ -747,6 +838,11 @@ def restore_backup_from_file(filename):
         type: string
         required: true
         description: The backup filename to restore from
+      - in: header
+        name: X-Restore-Progress-Id
+        type: string
+        required: false
+        description: Random 32 character hex id for reading progress from /api/database/restore/progress/{progress_id}
     responses:
       200:
         description: Database restored successfully
@@ -758,6 +854,7 @@ def restore_backup_from_file(filename):
         description: Failed to restore backup
     """
     logger.info(f"=== Starting restore from backup: {filename} ===")
+    progress = RestoreProgress(request.headers.get(RESTORE_PROGRESS_HEADER))
     try:
         # Validate filename to prevent path traversal
         # Allow both auto_backup and manual backup filenames (aft_backup)
@@ -789,6 +886,7 @@ def restore_backup_from_file(filename):
             return jsonify({"success": False, "message": "Backup file not found"}), 404
 
         logger.info(f"Step 3: Validating file size and security")
+        progress.step("Checking the backup file")
         # File size validation
         is_valid_size, size_error = validate_backup_file_size(resolved_backup_path, max_size_mb=MAX_BACKUP_FILE_SIZE_MB)
         if not is_valid_size:
@@ -857,6 +955,7 @@ def restore_backup_from_file(filename):
         db_host = "db"
 
         logger.info(f"Step 6: Dropping all existing tables")
+        progress.step("Clearing the existing database")
 
         # Close any existing database sessions in this request context to avoid connection issues
         logger.info(f"Step 6.0: Closing request database sessions before killing connections")
@@ -989,14 +1088,7 @@ def restore_backup_from_file(filename):
             db_name,
         ]
 
-        with open(resolved_backup_path, 'r') as f:
-            result = subprocess.run(
-                mysql_cmd, stdin=f, stderr=subprocess.PIPE, text=True
-            )
-
-        if result.returncode != 0:
-            logger.error(f"MySQL restore failed with return code {result.returncode}: {result.stderr}")
-            raise Exception(f"MySQL restore failed: {result.stderr}")
+        import_sql_file(mysql_cmd, resolved_backup_path, progress)
 
         logger.info(f"MySQL restore completed successfully")
 
@@ -1021,6 +1113,7 @@ def restore_backup_from_file(filename):
         # Run migrations if needed
         if backup_version != current_version:
             logger.info(f"Step 8: Running Alembic migrations from {backup_version} to {current_version}")
+            progress.step("Upgrading the restored database")
             # Use stdout=None, stderr=None to avoid subprocess deadlock from filled pipes
             # Output will flow to parent process logs
             upgrade_result = subprocess.run(

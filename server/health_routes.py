@@ -546,6 +546,7 @@ def get_permissions_mapping():
             'GET /api/database/backup': {'permission': 'admin.database', 'description': 'Download database backup'},
             'POST /api/database/backup/manual': {'permission': 'admin.database', 'description': 'Create manual backup'},
             'POST /api/database/restore': {'permission': 'admin.database', 'description': 'Restore database'},
+            'GET /api/database/restore/progress/:id': {'mode': 'public', 'description': 'Get restore progress (needs the random id sent with the restore)'},
             'GET /api/database/backups/list': {'permission': 'admin.database', 'description': 'List all backups'},
             'POST /api/database/backups/restore/:filename': {'permission': 'admin.database', 'description': 'Restore specific backup'},
             'DELETE /api/database/backups/delete/:filename': {'permission': 'admin.database', 'description': 'Delete backup'},
