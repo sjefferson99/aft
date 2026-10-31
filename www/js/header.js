@@ -3835,6 +3835,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof loadTouchscreenMode === 'function') {
       loadTouchscreenMode();
     }
+    if (typeof loadCardActions === 'function') {
+      loadCardActions();
+    }
 
     // Preload time format preference
     if (typeof preloadTimeFormat === 'function') {

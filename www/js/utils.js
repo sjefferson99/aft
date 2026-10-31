@@ -235,6 +235,55 @@ if (document.body && sessionStorage.getItem('touchscreenMode') === '1') {
 }
 
 /**
+ * Show the chosen card actions on this page and remember them for the next one.
+ * CSS does the hiding at each width, so nothing re-renders.
+ * @param {{desktop: string[], mobile: string[]}|null} cardActions - Null keeps the defaults
+ */
+function applyCardActions(cardActions) {
+  ['desktop', 'mobile'].forEach((screen) => {
+    const chosen = cardActions ? cardActions[screen] : null;
+    document.body.classList.toggle(`${screen}-card-actions`, Array.isArray(chosen));
+    ['done', 'archive', 'move', 'delete'].forEach((action) => {
+      document.body.classList.toggle(`${screen}-card-action-${action}`, Array.isArray(chosen) && chosen.includes(action));
+    });
+    document.body.style.setProperty(`--${screen}-card-action-count`, Array.isArray(chosen) ? chosen.length : 0);
+  });
+  sessionStorage.setItem('cardActions', JSON.stringify(cardActions));
+}
+
+/**
+ * Apply the signed-in user's card actions. As with touchscreen mode, the session
+ * storage copy only avoids a flash, because a shared tab can change user.
+ * @returns {Promise<void>}
+ */
+async function loadCardActions() {
+  if (!window.currentUser) {
+    applyCardActions(null);
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/settings/card_actions');
+    if (response.ok) {
+      const data = await response.json();
+      applyCardActions(data.success ? data.value : null);
+    } else if (response.status === 404) {
+      applyCardActions(null);
+    }
+  } catch (err) {
+    console.error('Error loading card actions:', err);
+  }
+}
+
+if (document.body) {
+  try {
+    applyCardActions(JSON.parse(sessionStorage.getItem('cardActions')));
+  } catch (err) {
+    applyCardActions(null);
+  }
+}
+
+/**
  * Preload the time format preference into session storage.
  * Call this early on page load to avoid fallbacks in synchronous formatting.
  * @returns {Promise<void>}

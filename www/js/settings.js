@@ -1,4 +1,7 @@
 // Settings page functionality
+const DEFAULT_CARD_ACTIONS = { desktop: ['done', 'archive', 'delete'], mobile: ['done', 'move'] };
+const MAX_CARD_ACTIONS_PER_SCREEN = 3;
+
 class Settings {
   constructor() {
     this.globalSettingsPanel = document.getElementById('global-settings-panel');
@@ -6,6 +9,7 @@ class Settings {
     this.timeFormatRadios = document.querySelectorAll('input[name="time-format"]');
     this.timezoneSelect = document.getElementById('timezone-select');
     this.touchscreenModeCheckbox = document.getElementById('touchscreen-mode');
+    this.cardActionCheckboxes = Array.from(document.querySelectorAll('[data-card-action]'));
     this.themeSelect = document.getElementById('theme-select');
     this.instanceDefaultThemeSelect = document.getElementById('instance-default-theme');
     this.instanceDefaultThemeSaveBtn = document.getElementById('instance-default-theme-save-btn');
@@ -487,6 +491,18 @@ class Settings {
           console.error('Error loading touchscreen mode:', touchscreenResponse.statusText);
         }
       }
+
+      if (this.cardActionCheckboxes.length > 0) {
+        const cardActionsResponse = await fetch('/api/settings/card_actions');
+        if (cardActionsResponse.ok) {
+          const data = await cardActionsResponse.json();
+          this.showCardActions((data.success && data.value) || DEFAULT_CARD_ACTIONS);
+        } else if (cardActionsResponse.status === 404) {
+          this.showCardActions(DEFAULT_CARD_ACTIONS);
+        } else {
+          console.error('Error loading card actions:', cardActionsResponse.statusText);
+        }
+      }
     } catch (err) {
       console.error('Error loading settings:', err);
     }
@@ -930,6 +946,67 @@ class Settings {
     }
   }
 
+  showCardActions(cardActions) {
+    this.cardActionCheckboxes.forEach((checkbox) => {
+      checkbox.checked = cardActions[checkbox.dataset.cardActionScreen].includes(checkbox.dataset.cardAction);
+    });
+    this.limitCardActions();
+  }
+
+  // Unchecked boxes are disabled once a screen has its maximum.
+  limitCardActions() {
+    const chosen = this.getChosenCardActions();
+    this.cardActionCheckboxes.forEach((checkbox) => {
+      const atLimit = chosen[checkbox.dataset.cardActionScreen].length >= MAX_CARD_ACTIONS_PER_SCREEN;
+      checkbox.disabled = atLimit && !checkbox.checked;
+    });
+  }
+
+  getChosenCardActions() {
+    const chosen = { desktop: [], mobile: [] };
+    this.cardActionCheckboxes.forEach((checkbox) => {
+      if (checkbox.checked) {
+        chosen[checkbox.dataset.cardActionScreen].push(checkbox.dataset.cardAction);
+      }
+    });
+    return chosen;
+  }
+
+  async saveCardActions(changedCheckbox) {
+    const cardActions = this.getChosenCardActions();
+    this.limitCardActions();
+
+    try {
+      this.showStatus('Saving...', 'info');
+
+      const response = await fetch('/api/settings/card_actions', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ value: cardActions })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      }
+
+      applyCardActions(cardActions);
+      this.showStatus('Saved', 'success');
+
+      setTimeout(() => {
+        this.statusElement.textContent = '';
+        this.statusElement.className = 'settings-status';
+      }, 2000);
+    } catch (err) {
+      changedCheckbox.checked = !changedCheckbox.checked;
+      this.limitCardActions();
+      this.showStatus('Error: ' + err.message, 'error');
+    }
+  }
+
   async saveTouchscreenMode() {
     const enabled = this.touchscreenModeCheckbox.checked;
 
@@ -1086,6 +1163,10 @@ class Settings {
     if (this.touchscreenModeCheckbox) {
       this.touchscreenModeCheckbox.addEventListener('change', () => this.saveTouchscreenMode());
     }
+
+    this.cardActionCheckboxes.forEach((checkbox) => {
+      checkbox.addEventListener('change', () => this.saveCardActions(checkbox));
+    });
 
     if (this.timezoneSelect) {
       this.timezoneSelect.addEventListener('change', () => {

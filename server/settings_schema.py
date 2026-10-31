@@ -12,6 +12,9 @@ WORKING_STYLE_AGILE = "agile"
 WORKING_STYLE_LEGACY_BOARD_TASK_CATEGORY = "board_task_category"
 WORKING_STYLE_ALLOWED_VALUES = [WORKING_STYLE_KANBAN, WORKING_STYLE_AGILE]
 
+CARD_ACTIONS_ALLOWED_VALUES = ["done", "archive", "move", "delete"]
+CARD_ACTIONS_MAX_PER_SCREEN = 3
+
 
 def _validate_time_format(time_str):
     """Validate HH:MM time format."""
@@ -47,6 +50,22 @@ def _validate_timezone(timezone_name):
         return True
     except ZoneInfoNotFoundError:
         return False
+
+
+def _validate_card_actions(value):
+    """Validate the card actions chosen for desktop and mobile."""
+    if not isinstance(value, dict) or set(value) != {"desktop", "mobile"}:
+        return False
+
+    for actions in value.values():
+        if not isinstance(actions, list) or len(actions) > CARD_ACTIONS_MAX_PER_SCREEN:
+            return False
+        if any(not isinstance(action, str) or action not in CARD_ACTIONS_ALLOWED_VALUES for action in actions):
+            return False
+        if len(set(actions)) != len(actions):
+            return False
+
+    return True
 
 
 SETTINGS_SCHEMA = {
@@ -116,6 +135,12 @@ SETTINGS_SCHEMA = {
         "nullable": False,
         "description": "IANA timezone name used when rendering UTC timestamps (for example 'UTC' or 'Europe/London')",
         "validate": _validate_timezone,
+    },
+    "card_actions": {
+        "type": "object",
+        "nullable": True,
+        "description": "Actions shown on board cards: 'desktop' and 'mobile' lists of up to 3 of done, archive, move and delete. Null uses the defaults",
+        "validate": _validate_card_actions,
     },
     "touchscreen_mode": {
         "type": "boolean",
