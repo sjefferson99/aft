@@ -276,6 +276,165 @@
   gap: 6px;
 }
 
+/* Compact rows in the combined Users panel. Scoped to beat role-management.css,
+   which loads after this file and has its own .user-card and .user-roles rules. */
+#active-users-list {
+  gap: 10px;
+}
+
+.active-user-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px 16px;
+}
+
+.active-user-card .user-avatar {
+  width: 36px;
+  height: 36px;
+}
+
+.active-user-card .user-avatar svg {
+  width: 20px;
+  height: 20px;
+}
+
+.active-user-card .user-info {
+  align-items: flex-start;
+}
+
+.active-user-card .user-details {
+  min-width: 0;
+}
+
+.active-user-card .user-meta {
+  margin-top: 2px;
+}
+
+.active-user-card .user-roles {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.active-user-card .user-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-shrink: 1;
+  max-width: 45%;
+}
+
+.user-you-badge {
+  background: var(--primary-color);
+  color: white;
+}
+
+.filter-bar-action {
+  margin-left: auto;
+}
+
+/* Users paging */
+.users-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 15px;
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+.users-page-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.users-page-size .setting-select {
+  width: auto;
+  padding: 6px 8px;
+}
+
+.users-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Role chips */
+.user-role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 4px 2px 10px;
+  background: var(--page-panel-background);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-color);
+}
+
+.user-role-chip-name {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.user-role-chip-scope {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.user-role-chip-remove {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 20px;
+  color: var(--text-secondary);
+}
+
+.user-role-chip-remove:hover,
+.user-role-chip-remove:focus-visible {
+  background: var(--error-color);
+  color: white;
+}
+
+.user-role-add {
+  padding: 2px 10px;
+  background: none;
+  border: 1px dashed var(--border-color);
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--text-color);
+}
+
+.user-role-add:hover,
+.user-role-add:focus-visible {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.user-role-note {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
 /* Badges */
 .role-badge {
   display: inline-block;
@@ -524,6 +683,30 @@
   .user-actions {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .active-user-card {
+    align-items: stretch;
+  }
+
+  .active-user-card .user-avatar {
+    display: none;
+  }
+
+  .active-user-card .btn-sm {
+    white-space: nowrap;
+  }
+
+  .active-user-card .user-actions {
+    justify-content: flex-start;
+    max-width: none;
+    margin-top: 0;
+  }
+
+  .filter-bar-action {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
   }
 
   .btn-sm {
