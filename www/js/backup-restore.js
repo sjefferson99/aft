@@ -32,6 +32,7 @@ class BackupRestore {
     this.backupsEmpty = document.getElementById('backupsEmpty');
     this.backupsList = document.getElementById('backupsList');
     this.restoreStatus = document.getElementById('restoreStatus');
+    this.restoreProgress = new RestoreProgressDisplay();
     this.deleteSelectedBtn = document.getElementById('deleteSelectedBtn');
     
     // Track selected backups
@@ -877,69 +878,16 @@ class BackupRestore {
     cancelBtn.addEventListener('click', handleCancel);
   }
 
-  // Shows the spinner and polls for progress until stopRestoreProgress().
   // Returns the id to send with the restore request.
   startRestoreProgress(initialText) {
-    const modal = document.getElementById('restoreModal');
-    const progressId = Array.from(crypto.getRandomValues(new Uint8Array(16)))
-      .map(byte => byte.toString(16).padStart(2, '0'))
-      .join('');
-
     // A restore can't be cancelled, so Escape must not hide it
-    setupModalEscapeClose(modal, () => {});
+    setupModalEscapeClose(document.getElementById('restoreModal'), () => {});
 
-    document.getElementById('restoreProgressText').textContent = initialText;
-    document.getElementById('restoreProgressBar').hidden = true;
-    document.getElementById('restoreProgress').hidden = false;
-
-    const poll = { active: true, timeoutId: null };
-    this.restoreProgressPoll = poll;
-
-    const check = async () => {
-      try {
-        const response = await fetch(`/api/database/restore/progress/${progressId}`);
-        const data = response.ok ? await response.json() : null;
-        if (poll.active && data?.progress) {
-          this.showRestoreProgress(data.progress);
-        }
-      } catch (error) {
-        // The restore request reports any real failure. Keep showing the spinner.
-        console.warn('Could not read restore progress:', error);
-      }
-      if (poll.active) {
-        poll.timeoutId = setTimeout(check, 1000);
-      }
-    };
-    poll.timeoutId = setTimeout(check, 1000);
-
-    return progressId;
-  }
-
-  showRestoreProgress(progress) {
-    const bar = document.getElementById('restoreProgressBar');
-    const hasBytes = progress.bytes_total > 0;
-
-    let text = progress.message;
-    if (hasBytes) {
-      const percent = Math.floor((progress.bytes_done / progress.bytes_total) * 100);
-      bar.value = percent;
-      text += ` (${percent}%)`;
-    }
-    bar.hidden = !hasBytes;
-    document.getElementById('restoreProgressText').textContent = text;
-  }
-
-  stopRestoreProgress() {
-    if (this.restoreProgressPoll) {
-      this.restoreProgressPoll.active = false;
-      clearTimeout(this.restoreProgressPoll.timeoutId);
-      this.restoreProgressPoll = null;
-    }
-    document.getElementById('restoreProgress').hidden = true;
+    return this.restoreProgress.start(initialText);
   }
 
   showRestoreResultInModal(title, message, success) {
-    this.stopRestoreProgress();
+    this.restoreProgress.stop();
 
     const modal = document.getElementById('restoreModal');
     const titleElement = document.getElementById('restoreModalTitle');

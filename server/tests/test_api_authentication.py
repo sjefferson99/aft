@@ -17,6 +17,7 @@ import time
 import os
 import hashlib
 import re
+import threading
 import uuid
 from pathlib import Path
 from flask import Flask
@@ -237,6 +238,114 @@ class TestSetupFlow:
         })
         assert response.status_code == 403
         assert 'already' in response.json()['message'].lower()
+
+
+@pytest.fixture
+def backup_sql(authenticated_session):
+    """A real backup of the database, taken before empty_database clears it."""
+    response = authenticated_session.get(f"{API_BASE_URL}/api/database/backup")
+    assert response.status_code == 200
+    return response.content
+
+
+def _restore_during_setup(content, headers=None):
+    return requests.post(
+        f"{API_BASE_URL}/api/auth/setup/restore",
+        files={"file": ("backup.sql", content, "application/sql")},
+        headers=headers,
+    )
+
+
+class TestSetupRestore:
+    """Test restoring a backup from the first-time setup page (issue #499)."""
+
+    def test_refused_once_setup_is_complete(self):
+        response = _restore_during_setup(b"-- Alembic Version: abc")
+
+        assert response.status_code == 403
+        assert 'already' in response.json()['message'].lower()
+
+    def test_rejects_invalid_file(self, empty_database):
+        response = _restore_during_setup(b"not a backup")
+
+        assert response.status_code == 400
+        assert requests.get(f"{API_BASE_URL}/api/auth/setup/status").json()['setup_complete'] is False
+
+    def test_rejects_dangerous_sql(self, backup_sql, empty_database):
+        response = _restore_during_setup(backup_sql + b"\nGRANT ALL ON *.* TO 'x'@'%';\n")
+
+        assert response.status_code == 400
+        assert 'dangerous' in response.json()['message'].lower()
+
+    def test_restores_backup_and_accounts_can_sign_in(self, backup_sql, empty_database):
+        progress_id = uuid.uuid4().hex
+
+        response = _restore_during_setup(backup_sql, headers={"X-Restore-Progress-Id": progress_id})
+
+        assert response.status_code == 200
+        assert response.json()['success'] is True
+        status = requests.get(f"{API_BASE_URL}/api/auth/setup/status").json()
+        assert status['setup_complete'] is True
+        login = requests.post(f"{API_BASE_URL}/api/auth/login", json={
+            "email": "test-admin@localhost",
+            "password": "TestAdmin123!",
+        })
+        assert login.status_code == 200
+        progress = requests.get(f"{API_BASE_URL}/api/database/restore/progress/{progress_id}").json()
+        assert progress['progress'] is not None
+
+    def test_failed_import_returns_to_setup_without_leaking_errors(self, backup_sql, empty_database):
+        """Bad SQL passes validation, then fails after the database was dropped."""
+        response = _restore_during_setup(backup_sql + b"\nTHIS IS NOT VALID SQL;\n")
+
+        assert response.status_code == 500
+        message = response.json()['message']
+        assert 'SQL' not in message and 'syntax' not in message
+        status = requests.get(f"{API_BASE_URL}/api/auth/setup/status")
+        assert status.status_code == 200
+        assert status.json()['setup_complete'] is False
+
+        admin = requests.post(f"{API_BASE_URL}/api/auth/setup/admin", json={
+            "email": "admin@localhost",
+            "username": "admin",
+            "password": "AdminPass123!",
+        })
+        assert admin.status_code == 201
+
+    def test_second_restore_and_admin_creation_wait_for_a_running_restore(self, backup_sql, empty_database):
+        progress_id = uuid.uuid4().hex
+        result = {}
+
+        def run_restore():
+            result['response'] = _restore_during_setup(
+                backup_sql, headers={"X-Restore-Progress-Id": progress_id}
+            )
+
+        restore = threading.Thread(target=run_restore)
+        restore.start()
+        try:
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                progress = requests.get(
+                    f"{API_BASE_URL}/api/database/restore/progress/{progress_id}"
+                ).json()['progress']
+                if progress:
+                    break
+                time.sleep(0.05)
+            assert progress, "the restore never reported progress"
+
+            second = _restore_during_setup(backup_sql)
+            admin = requests.post(f"{API_BASE_URL}/api/auth/setup/admin", json={
+                "email": "late@localhost",
+                "username": "late",
+                "password": "LatePass123!",
+            })
+        finally:
+            restore.join()
+
+        assert second.status_code == 409
+        assert admin.status_code == 409
+        assert result['response'].status_code == 200
 
 
 class TestRegistration:

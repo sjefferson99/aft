@@ -406,7 +406,7 @@ def validate_request():
     2. Validate Content-Type for JSON requests
     """
     # Exclude restore endpoints from size check (they use Flask's MAX_CONTENT_LENGTH instead)
-    restore_endpoints = ['/api/database/restore', '/api/database/backups/restore/']
+    restore_endpoints = ['/api/database/restore', '/api/database/backups/restore/', '/api/auth/setup/restore']
     is_restore_endpoint = any(request.path.startswith(endpoint) for endpoint in restore_endpoints)
     
     # Check request size for non-restore endpoints

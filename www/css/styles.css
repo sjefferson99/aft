@@ -276,3 +276,42 @@ body {
   margin: 0;
   padding: 0;
 }
+
+/* Restore progress, on the Backup & Restore and setup pages */
+.restore-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+
+.restore-progress[hidden] {
+  display: none;
+}
+
+.restore-progress .spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: restore-progress-spin 0.8s linear infinite;
+}
+
+.restore-progress span:not(.spinner) {
+  flex: 1;
+  min-width: 0;
+}
+
+#restoreProgressBar {
+  width: 100%;
+  accent-color: var(--primary-color);
+}
+
+@keyframes restore-progress-spin {
+  to { transform: rotate(360deg); }
+}

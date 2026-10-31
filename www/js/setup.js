@@ -7,6 +7,12 @@ const errorMessage = document.getElementById('errorMessage');
 const setupButton = document.getElementById('setupButton');
 const passwordInput = document.getElementById('password');
 const passwordStrengthBar = document.getElementById('passwordStrengthBar');
+const restoreControls = document.getElementById('restoreControls');
+const restoreFileInput = document.getElementById('restoreFile');
+const restoreButton = document.getElementById('restoreButton');
+const restoreProgress = new RestoreProgressDisplay();
+const MAX_BACKUP_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const RESTORE_TIMEOUT_MS = 25 * 60 * 1000;
 const createTimeoutController = window.NetworkTimeoutUtils?.createTimeoutController ||
     ((baseTimeoutMs = 5000) => {
         const controller = new AbortController();
@@ -155,5 +161,71 @@ form.addEventListener('submit', async (e) => {
         if (timeoutId) {
             clearTimeout(timeoutId);
         }
+    }
+});
+
+restoreFileInput.addEventListener('change', () => {
+    restoreButton.disabled = restoreFileInput.files.length === 0;
+});
+
+function showRestoreError(message) {
+    errorMessage.textContent = message;
+    errorMessage.classList.add('show');
+    errorMessage.scrollIntoView({ block: 'nearest' });
+}
+
+function endFailedRestore(message) {
+    restoreProgress.stop();
+    form.hidden = false;
+    restoreControls.hidden = false;
+    showRestoreError(message);
+}
+
+restoreButton.addEventListener('click', async () => {
+    const file = restoreFileInput.files[0];
+    if (!file) {
+        return;
+    }
+
+    errorMessage.classList.remove('show');
+    if (file.size > MAX_BACKUP_FILE_SIZE_BYTES) {
+        showRestoreError('The backup file is larger than the 100MB limit.');
+        return;
+    }
+
+    form.hidden = true;
+    restoreControls.hidden = true;
+    const progressId = restoreProgress.start('Uploading the backup file');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), RESTORE_TIMEOUT_MS);
+
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch('/api/auth/setup/restore', {
+            method: 'POST',
+            headers: { 'X-Restore-Progress-Id': progressId },
+            credentials: 'include',
+            body: formData,
+            signal: controller.signal
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            restoreProgress.stop();
+            document.getElementById('restoreComplete').hidden = false;
+            // The login page returns here if the backup had no usable accounts
+            setTimeout(() => {
+                window.location.href = '/login.html';
+            }, 1500);
+        } else {
+            endFailedRestore(data.message || 'The restore failed. Please try again.');
+        }
+    } catch (error) {
+        console.error('Restore error:', error);
+        endFailedRestore('The restore may still be running on the server. Wait a few minutes, then refresh this page to check.');
+    } finally {
+        clearTimeout(timeoutId);
     }
 });

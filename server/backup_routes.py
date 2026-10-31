@@ -9,6 +9,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from database import SessionLocal, engine
+from models import User
 from sqlalchemy import text
 from utils import require_permission
 from security_validators import (
@@ -20,8 +21,10 @@ from notification_utils import create_notification as create_notification_intern
 from restore_progress import (
     RESTORE_PROGRESS_HEADER,
     RestoreProgress,
+    claim_setup_restore,
     is_valid_progress_id,
     read_progress,
+    release_setup_restore,
 )
 
 logger = logging.getLogger(__name__)
@@ -96,6 +99,148 @@ def create_database_with_retry(db_host, db_root_password, db_name, max_retries=5
 
     logger.error(f"Failed to create database after {max_retries} attempts: {last_stderr}")
     raise Exception(f"Failed to create database after {max_retries} attempts: {last_stderr}")
+
+
+# ---------------------------------------------------------------------------
+# Helper: clearing the database
+# ---------------------------------------------------------------------------
+
+def clear_database():
+    """Drop and recreate the database, leaving it empty with no schema."""
+    # Get database credentials
+    db_user = os.environ.get("MYSQL_USER")
+    db_password = os.environ.get("MYSQL_PASSWORD")
+    db_name = os.environ.get("MYSQL_DATABASE")
+    db_host = "db"
+
+    # Close any existing database sessions in this request context to avoid connection issues
+    logger.info(f"Step 6.0: Closing request database sessions before killing connections")
+    request_db = g.pop('db', None)
+    if request_db:
+        try:
+            request_db.close()
+            logger.info(f"Closed request database session")
+        except Exception as e:
+            logger.warning(f"Error closing request database session: {e}")
+
+    # Dispose of SQLAlchemy engine connection pool so it creates fresh connections
+    try:
+        engine.dispose()
+        logger.info(f"Disposed SQLAlchemy engine connection pool")
+    except Exception as e:
+        logger.warning(f"Error disposing engine pool: {e}")
+
+    # Kill all other database connections first to release locks
+    logger.info(f"Step 6.0.1: Killing all other database connections to release locks")
+    get_pids_cmd = [
+        "mysql",
+        f"-h{db_host}",
+        f"-u{db_user}",
+        f"-p{db_password}",
+        "--skip-ssl",
+        "-N",
+        "-e",
+        f"SELECT id FROM INFORMATION_SCHEMA.PROCESSLIST WHERE db = '{db_name}' AND id != CONNECTION_ID();"
+    ]
+
+    try:
+        result = subprocess.run(get_pids_cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and result.stdout.strip():
+            pids = [pid.strip() for pid in result.stdout.strip().split('\n') if pid.strip()]
+            logger.info(f"Found {len(pids)} active connections to kill: {pids}")
+
+            for pid in pids:
+                logger.info(f"Killing connection: {pid}")
+                kill_cmd = [
+                    "mysql",
+                    f"-h{db_host}",
+                    f"-u{db_user}",
+                    f"-p{db_password}",
+                    "--skip-ssl",
+                    "-e",
+                    f"KILL {pid};"
+                ]
+                try:
+                    subprocess.run(kill_cmd, capture_output=True, text=True, timeout=5)
+                    logger.info(f"Killed connection: {pid}")
+                except Exception as e:
+                    logger.warning(f"Could not kill connection {pid}: {e}")
+
+            logger.info(f"Step 6.0.2: Waiting 2 seconds for connections to terminate")
+            time.sleep(2)
+        else:
+            logger.info(f"No active connections to kill")
+    except Exception as e:
+        logger.warning(f"Error killing connections: {e}")
+
+    # Use DROP DATABASE / CREATE DATABASE for a completely clean slate
+    logger.info(f"Step 6.1: Using DROP DATABASE / CREATE DATABASE for clean slate")
+
+    # Get root credentials for database operations
+    db_root_password = os.environ.get("MYSQL_ROOT_PASSWORD")
+
+    # Drop and recreate the database - this is the most reliable way to clear everything
+    logger.info(f"Step 6.1.1: Dropping database {db_name}")
+    drop_db_cmd = [
+        "mysql",
+        f"-h{db_host}",
+        "-uroot",
+        f"-p{db_root_password}",
+        "--skip-ssl",
+        "-e",
+        f"DROP DATABASE IF EXISTS `{db_name}`;"
+    ]
+
+    try:
+        result = subprocess.run(drop_db_cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            logger.error(f"Failed to drop database: {result.stderr}")
+            raise Exception(f"Failed to drop database: {result.stderr}")
+        logger.info(f"Database {db_name} dropped successfully")
+    except subprocess.TimeoutExpired:
+        logger.error(f"Timeout while dropping database")
+        raise Exception("Timeout while dropping database")
+
+    # Recreate the database
+    logger.info(f"Step 6.1.2: Creating fresh database {db_name}")
+    create_database_with_retry(db_host, db_root_password, db_name)
+
+    # Grant permissions to the application user
+    logger.info(f"Step 6.1.3: Granting permissions to user {db_user}")
+    grant_cmd = [
+        "mysql",
+        f"-h{db_host}",
+        "-uroot",
+        f"-p{db_root_password}",
+        "--skip-ssl",
+        "-e",
+        f"GRANT ALL PRIVILEGES ON `{db_name}`.* TO '{db_user}'@'%'; FLUSH PRIVILEGES;"
+    ]
+
+    try:
+        result = subprocess.run(grant_cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            logger.warning(f"Failed to grant permissions: {result.stderr}")
+            # Don't fail here, permissions might already exist
+        else:
+            logger.info(f"Permissions granted successfully")
+    except Exception as e:
+        logger.warning(f"Error granting permissions: {e}")
+
+    logger.info(f"Step 6.2: Database completely reset and ready for restore")
+
+    # Give a moment for database to be ready
+    logger.info(f"Step 6.3: Waiting 2 seconds for database to be ready")
+    time.sleep(2)
+
+
+def reset_to_empty_instance():
+    """Rebuild the schema after a failed setup restore, so setup can be tried again."""
+    try:
+        clear_database()
+        subprocess.run(["alembic", "upgrade", "head"], cwd="/app", check=True, timeout=300)
+    except Exception as e:
+        logger.error(f"Could not reset the database after a failed setup restore: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -383,8 +528,90 @@ def restore_database():
             message:
               type: string
     """
-    logger.info(f"=== Starting manual restore from uploaded file ===")
     progress = RestoreProgress(request.headers.get(RESTORE_PROGRESS_HEADER))
+    try:
+        return restore_uploaded_file(progress)
+    except Exception as e:
+        logger.error(f"=== Manual restore FAILED ===")
+        logger.error(f"Error: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@backup_bp.route("/api/auth/setup/restore", methods=["POST"])
+def setup_restore():
+    """Restore a backup instead of creating the first administrator.
+
+    Needs no session, because no accounts exist yet. It only works until setup
+    is complete, the same as creating the first administrator.
+    ---
+    tags:
+      - Authentication
+    consumes:
+      - multipart/form-data
+    parameters:
+      - in: formData
+        name: file
+        type: file
+        required: true
+        description: SQL backup file to restore
+      - in: header
+        name: X-Restore-Progress-Id
+        type: string
+        required: false
+        description: Random 32 character hex id for reading progress from /api/database/restore/progress/{progress_id}
+    responses:
+      200:
+        description: Database restored. Sign in with an account from the backup.
+      400:
+        description: Invalid backup file
+      403:
+        description: Setup already complete
+      409:
+        description: A restore is already running
+      500:
+        description: Restore failed and the instance was returned to first-time setup
+    """
+    if not claim_setup_restore():
+        return jsonify({"success": False, "message": "A restore is already running"}), 409
+
+    try:
+        db = SessionLocal()
+        try:
+            user_count = db.query(User).filter(
+                User.is_active == True,
+                User.password_hash.isnot(None)
+            ).count()
+        finally:
+            db.close()
+
+        if user_count > 0:
+            return jsonify({
+                "success": False,
+                "message": "Setup is already complete. Please use the login page.",
+            }), 403
+
+        progress = RestoreProgress(request.headers.get(RESTORE_PROGRESS_HEADER))
+        try:
+            return restore_uploaded_file(progress)
+        except Exception as e:
+            logger.error(f"Restore during setup failed: {e}\n{traceback.format_exc()}")
+            reset_to_empty_instance()
+            return jsonify({
+                "success": False,
+                "message": "The backup could not be restored. Check the server logs for details.",
+            }), 500
+    except Exception as e:
+        logger.error(f"Restore during setup could not run: {e}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "message": "The backup could not be restored"}), 500
+    finally:
+        release_setup_restore()
+
+
+def restore_uploaded_file(progress):
+    """Replace the database with the backup uploaded in the current request."""
+    logger.info(f"=== Starting manual restore from uploaded file ===")
+    temp_path = None
     try:
         # Check if file was uploaded
         logger.info(f"Step 1: Validating file upload")
@@ -482,134 +709,14 @@ def restore_database():
                 "Will attempt to restore and upgrade."
             )
 
-        # Get database credentials
+        logger.info(f"Step 6: Dropping all existing tables")
+        progress.step("Clearing the existing database")
+        clear_database()
+
         db_user = os.environ.get("MYSQL_USER")
         db_password = os.environ.get("MYSQL_PASSWORD")
         db_name = os.environ.get("MYSQL_DATABASE")
         db_host = "db"
-
-        logger.info(f"Step 6: Dropping all existing tables")
-        progress.step("Clearing the existing database")
-
-        # Close any existing database sessions in this request context to avoid connection issues
-        logger.info(f"Step 6.0: Closing request database sessions before killing connections")
-        request_db = g.pop('db', None)
-        if request_db:
-            try:
-                request_db.close()
-                logger.info(f"Closed request database session")
-            except Exception as e:
-                logger.warning(f"Error closing request database session: {e}")
-
-        # Dispose of SQLAlchemy engine connection pool so it creates fresh connections
-        try:
-            engine.dispose()
-            logger.info(f"Disposed SQLAlchemy engine connection pool")
-        except Exception as e:
-            logger.warning(f"Error disposing engine pool: {e}")
-
-        # Kill all other database connections first to release locks
-        logger.info(f"Step 6.0.1: Killing all other database connections to release locks")
-        get_pids_cmd = [
-            "mysql",
-            f"-h{db_host}",
-            f"-u{db_user}",
-            f"-p{db_password}",
-            "--skip-ssl",
-            "-N",
-            "-e",
-            f"SELECT id FROM INFORMATION_SCHEMA.PROCESSLIST WHERE db = '{db_name}' AND id != CONNECTION_ID();"
-        ]
-
-        try:
-            result = subprocess.run(get_pids_cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0 and result.stdout.strip():
-                pids = [pid.strip() for pid in result.stdout.strip().split('\n') if pid.strip()]
-                logger.info(f"Found {len(pids)} active connections to kill: {pids}")
-
-                for pid in pids:
-                    logger.info(f"Killing connection: {pid}")
-                    kill_cmd = [
-                        "mysql",
-                        f"-h{db_host}",
-                        f"-u{db_user}",
-                        f"-p{db_password}",
-                        "--skip-ssl",
-                        "-e",
-                        f"KILL {pid};"
-                    ]
-                    try:
-                        subprocess.run(kill_cmd, capture_output=True, text=True, timeout=5)
-                        logger.info(f"Killed connection: {pid}")
-                    except Exception as e:
-                        logger.warning(f"Could not kill connection {pid}: {e}")
-
-                logger.info(f"Step 6.0.2: Waiting 2 seconds for connections to terminate")
-                time.sleep(2)
-            else:
-                logger.info(f"No active connections to kill")
-        except Exception as e:
-            logger.warning(f"Error killing connections: {e}")
-
-        # Use DROP DATABASE / CREATE DATABASE for a completely clean slate
-        logger.info(f"Step 6.1: Using DROP DATABASE / CREATE DATABASE for clean slate")
-
-        # Get root credentials for database operations
-        db_root_password = os.environ.get("MYSQL_ROOT_PASSWORD")
-
-        # Drop and recreate the database - this is the most reliable way to clear everything
-        logger.info(f"Step 6.1.1: Dropping database {db_name}")
-        drop_db_cmd = [
-            "mysql",
-            f"-h{db_host}",
-            "-uroot",
-            f"-p{db_root_password}",
-            "--skip-ssl",
-            "-e",
-            f"DROP DATABASE IF EXISTS `{db_name}`;"
-        ]
-
-        try:
-            result = subprocess.run(drop_db_cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                logger.error(f"Failed to drop database: {result.stderr}")
-                raise Exception(f"Failed to drop database: {result.stderr}")
-            logger.info(f"Database {db_name} dropped successfully")
-        except subprocess.TimeoutExpired:
-            logger.error(f"Timeout while dropping database")
-            raise Exception("Timeout while dropping database")
-
-        # Recreate the database
-        logger.info(f"Step 6.1.2: Creating fresh database {db_name}")
-        create_database_with_retry(db_host, db_root_password, db_name)
-
-        # Grant permissions to the application user
-        logger.info(f"Step 6.1.3: Granting permissions to user {db_user}")
-        grant_cmd = [
-            "mysql",
-            f"-h{db_host}",
-            "-uroot",
-            f"-p{db_root_password}",
-            "--skip-ssl",
-            "-e",
-            f"GRANT ALL PRIVILEGES ON `{db_name}`.* TO '{db_user}'@'%'; FLUSH PRIVILEGES;"
-        ]
-
-        try:
-            result = subprocess.run(grant_cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                logger.warning(f"Failed to grant permissions: {result.stderr}")
-                # Don't fail here, permissions might already exist
-            else:
-                logger.info(f"Permissions granted successfully")
-        except Exception as e:
-            logger.warning(f"Error granting permissions: {e}")
-
-        logger.info(f"Step 6.2: Database completely reset and ready for restore")
-
-        # Give a moment for database to be ready
-        logger.info(f"Step 6.3: Waiting 2 seconds for database to be ready")
-        time.sleep(2)
 
         logger.info(f"Step 7: Restoring data from backup file using mysql command")
         logger.info(f"Restoring database from backup (version {backup_version})")
@@ -709,13 +816,9 @@ def restore_database():
                 {"success": True, "message": "Database restored successfully"}
             )
 
-    except Exception as e:
-        logger.error(f"=== Manual restore FAILED ===")
-        logger.error(f"Error: {str(e)}")
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        if "temp_path" in locals() and os.path.exists(temp_path):
+    finally:
+        if temp_path and os.path.exists(temp_path):
             os.unlink(temp_path)
-        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @backup_bp.route("/api/database/restore/progress/<progress_id>", methods=["GET"])

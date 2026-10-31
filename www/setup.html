@@ -29,7 +29,7 @@
             <p>You're creating the first user account, which will have full administrator privileges. You'll be able to create additional users later.</p>
         </div>
 
-        <div id="errorMessage" class="error-message"></div>
+        <div id="errorMessage" class="error-message" role="alert"></div>
 
         <form id="setupForm">
             <div class="form-group">
@@ -68,9 +68,28 @@
                 Complete Setup
             </button>
         </form>
+
+        <section class="setup-restore" aria-labelledby="restoreHeading">
+            <h2 id="restoreHeading">Restore from a backup</h2>
+            <div id="restoreControls">
+                <p>Moving an existing AFT instance? Restore its backup instead of creating an account, then sign in with an account from the backup. The maximum file size is 100MB.</p>
+                <div class="form-group">
+                    <label for="restoreFile">Backup file</label>
+                    <input type="file" id="restoreFile" accept=".sql">
+                </div>
+                <button type="button" class="btn-restore" id="restoreButton" disabled>Restore Backup</button>
+            </div>
+            <div id="restoreProgress" class="restore-progress" role="status" hidden>
+                <span class="spinner" aria-hidden="true"></span>
+                <span id="restoreProgressText"></span>
+                <progress id="restoreProgressBar" max="100" aria-label="Backup data sent to the database" hidden></progress>
+            </div>
+            <p id="restoreComplete" role="status" hidden>✓ Backup restored. Redirecting to sign in...</p>
+        </section>
     </div>
 
     <script src="js/network-timeout.js"></script>
+    <script src="js/restore-progress.js"></script>
     <script src="js/setup.js"></script>
 </body>
 </html>

@@ -677,6 +677,7 @@ The application includes a multi-user security model with authentication, role-b
 - **Controlled Role Assignment** - Role changes require role-management permissions, with backend checks to prevent unauthorised escalation and invalid global vs board-specific assignments.
 - **Registration and Approval Workflow** - New user registrations are created in a pending state and must be approved by an administrator before login access is granted.
 - **First Admin Initial Setup** - A dedicated setup flow creates the first administrator account, auto-approves it, and completes initial bootstrap for the instance.
+- **Restore During Setup** - To move an existing instance, upload a backup on the first-time setup page instead of creating an account, then sign in with an account from the backup. This only works until setup is complete. If the restore fails, the instance returns to first-time setup.
 - **User Profile Colours** - Each user is assigned a default avatar/profile colour (RGB hex) on account creation and can update it from the Profile page.
 
 For implementation details and extension guidance:
