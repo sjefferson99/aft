@@ -991,6 +991,7 @@ class BoardManager {
     this.boardHorizontalScrollLeft = 0;
     this.persistBoardHorizontalScrollTimeoutId = null;
     this.expandedCardIds = new Set();
+    this.compactCards = false;
     this.autoScrollHoverTimeoutId = null;
     this.autoScrollRafId = null;
     this.autoScrollContainer = null;
@@ -1020,6 +1021,7 @@ class BoardManager {
     this.boardFiltersToggleRequestHandler = this.handleBoardFiltersToggleRequest.bind(this);
     this.boardFiltersStateRequestHandler = this.handleBoardFiltersStateRequest.bind(this);
     this.boardFiltersClearRequestHandler = this.handleBoardFiltersClearRequest.bind(this);
+    this.compactCardsToggleHandler = this.toggleCompactCards.bind(this);
     this.boardWorkingStyleChangedHandler = this.handleBoardWorkingStyleChanged.bind(this);
     this.assigneeFilterVisibilityLoadedForUserId = null;
     this.assigneeFilterVisibilityWatcherId = null;
@@ -1043,6 +1045,10 @@ class BoardManager {
 
   getBoardHorizontalScrollStorageKey() {
     return this.boardId ? `aft:board:${this.boardId}:horizontal-scroll` : null;
+  }
+
+  getCompactCardsStorageKey() {
+    return this.boardId ? `aft:board:${this.boardId}:compact-cards` : null;
   }
 
   getExpandedCardsStorageKey() {
@@ -1627,6 +1633,46 @@ class BoardManager {
     } catch (error) {
       console.warn('Failed to load expanded card state:', error);
       this.expandedCardIds = new Set();
+    }
+  }
+
+  loadPersistedCompactCards() {
+    const storageKey = this.getCompactCardsStorageKey();
+    if (!storageKey) return;
+
+    try {
+      this.applyCompactCards(localStorage.getItem(storageKey) === '1');
+    } catch (error) {
+      console.warn('Failed to load compact cards state:', error);
+    }
+  }
+
+  // CSS does the hiding, so toggling costs no re-render on a large board.
+  applyCompactCards(enabled) {
+    this.compactCards = enabled;
+    document.body.classList.toggle('compact-cards', enabled);
+    window.dispatchEvent(new CustomEvent('compactCardsChanged'));
+  }
+
+  toggleCompactCards() {
+    this.applyCompactCards(!this.compactCards);
+
+    const storageKey = this.getCompactCardsStorageKey();
+    if (storageKey) {
+      try {
+        localStorage.setItem(storageKey, this.compactCards ? '1' : '0');
+      } catch (error) {
+        console.warn('Failed to persist compact cards state:', error);
+      }
+    }
+
+    // Cards rendered while compact were measured without their content.
+    if (!this.compactCards) {
+      requestAnimationFrame(() => {
+        if (this.collapseOverflowingCards(document.querySelectorAll('.card'))) {
+          this.restoreExpandedCardState();
+        }
+      });
     }
   }
 
@@ -3017,6 +3063,8 @@ class BoardManager {
       this.loadPersistedColumnScrollPositions();
       this.loadPersistedBoardHorizontalScrollPosition();
       this.loadPersistedExpandedCardState();
+      this.loadPersistedCompactCards();
+      window.addEventListener('compactCardsToggleRequested', this.compactCardsToggleHandler);
       window.addEventListener('beforeunload', this.beforeUnloadHandler);
 
       if (!this.isPublicMode) {
@@ -4002,6 +4050,7 @@ class BoardManager {
     document.removeEventListener('mousemove', this.mouseMoveHandler);
     document.removeEventListener('click', this.closeDropdownHandler);
     window.removeEventListener('beforeunload', this.beforeUnloadHandler);
+    window.removeEventListener('compactCardsToggleRequested', this.compactCardsToggleHandler);
     window.removeEventListener('boardFiltersToggleRequested', this.boardFiltersToggleRequestHandler);
     window.removeEventListener('boardFiltersStateRequest', this.boardFiltersStateRequestHandler);
     window.removeEventListener('boardFiltersClearRequest', this.boardFiltersClearRequestHandler);

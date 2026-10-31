@@ -68,6 +68,8 @@ def test_header_targets_are_finger_sized(logged_in_page, touchscreen_mode, colum
     page = logged_in_page
     _open_board(page, column["board_id"], width)
     page.locator("#views-dropdown").wait_for(state="visible", timeout=8000)
+    # The header transitions its padding when the mode class lands, so measure once it settles.
+    page.evaluate("Promise.allSettled(document.getAnimations().map(animation => animation.finished))")
 
     for selector in ("#notifications-icon-link", ".settings-dropdown .icon-link", ".user-dropdown .icon-link",
                      "#views-dropdown-btn", ".nav-link"):

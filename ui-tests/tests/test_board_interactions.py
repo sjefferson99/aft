@@ -596,6 +596,104 @@ def _is_archived(api_session, ui_base_url, card_id):
     return api_session.get(f"{ui_base_url}/api/cards/{card_id}").json()["card"]["archived"]
 
 
+def _toggle_compact_cards(page):
+    page.locator("#views-dropdown-btn").click()
+    page.locator("#compact-cards-toggle").click()
+
+
+@pytest.mark.ui
+def test_compact_cards_show_titles_only_and_persist(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """The board toggle hides everything but the title and survives a reload (issue #300)."""
+    page = logged_in_page
+    data = board_with_cards
+    long_id = data["long_card"]["id"]
+    api_session.patch(f"{ui_base_url}/api/cards/{long_id}", json={"description": "Some detail"})
+    _open_board_for_patching(page, data["board"]["id"])
+    card = _card(page, long_id)
+    full_height = card.bounding_box()["height"]
+    assert card.locator(".card-checklist").is_visible()
+
+    _toggle_compact_cards(page)
+    assert page.locator("#compact-cards-toggle").get_attribute("aria-pressed") == "true"
+    assert card.locator(".card-title").is_visible()
+    for hidden in (".card-description", ".card-checklist", ".card-expand-btn"):
+        assert not card.locator(hidden).is_visible()
+    assert card.bounding_box()["height"] < full_height / 2
+
+    page.reload()
+    card.wait_for(state="visible", timeout=8000)
+    assert not card.locator(".card-checklist").is_visible()
+    page.wait_for_function(
+        "() => document.getElementById('compact-cards-toggle')?.getAttribute('aria-pressed') === 'true'",
+        timeout=8000,
+    )
+
+    _toggle_compact_cards(page)
+    assert card.locator(".card-checklist").is_visible()
+    # Rendered while compact, so the overflow has to be measured again when it's turned off.
+    page.wait_for_function(
+        "(id) => document.querySelector(`.card[data-card-id=\"${id}\"]`).classList.contains('collapsed')",
+        arg=long_id,
+        timeout=5000,
+    )
+    assert card.locator(".card-expand-btn").is_visible()
+
+
+@pytest.mark.ui
+def test_compact_cards_only_applies_to_its_board(logged_in_page, api_session, ui_base_url, board_with_cards):
+    page = logged_in_page
+    data = board_with_cards
+    other = api_session.post(f"{ui_base_url}/api/boards", json={"name": f"Other {uuid.uuid4().hex[:8]}"}).json()["board"]
+    try:
+        _open_board_for_patching(page, data["board"]["id"])
+        _toggle_compact_cards(page)
+        assert page.evaluate("document.body.classList.contains('compact-cards')") is True
+
+        page.goto(f"/board.html?id={other['id']}")
+        page.wait_for_function("() => window.boardManager?.hasLoadedBoardData", timeout=8000)
+        assert page.evaluate("document.body.classList.contains('compact-cards')") is False
+    finally:
+        api_session.delete(f"{ui_base_url}/api/boards/{other['id']}")
+
+
+@pytest.mark.ui
+def test_done_view_stays_above_compact_cards_toggle(logged_in_page, api_session, ui_base_url, board_with_cards):
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+    _open_board_for_patching(page, data["board"]["id"])
+
+    page.locator('.views-dropdown-item[data-view="done"]').wait_for(state="attached", timeout=8000)
+    for selector in ("#views-dropdown-menu > :last-child", ".mobile-tree-items:has(#mobile-compact-cards-toggle) > :last-child"):
+        assert "compact-cards-toggle" in page.locator(selector).get_attribute("class")
+
+
+@pytest.mark.ui
+def test_mobile_done_view_survives_a_cached_header_without_the_toggle(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """header.html has no version value, so new header.js can briefly run against the old markup."""
+    page = logged_in_page
+    data = board_with_cards
+    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+
+    def strip_toggle(route):
+        response = route.fetch()
+        html = response.text().replace('id="mobile-compact-cards-toggle"', 'id="removed-toggle"')
+        route.fulfill(response=response, body=html)
+
+    page.context.route("**/components/header.html", strip_toggle)
+    page.goto(f"/board.html?id={data['board']['id']}")
+    page.locator('.mobile-view-item[data-view="done"]').wait_for(state="attached", timeout=8000)
+
+
+@pytest.mark.ui
+def test_compact_cards_toggle_is_not_offered_on_boards_page(logged_in_page):
+    page = logged_in_page
+    page.goto("/index.html")
+    page.locator("#views-dropdown-btn").click()
+    assert page.locator("#compact-cards-toggle").count() == 1
+    assert not page.locator("#compact-cards-toggle").is_visible()
+
+
 @pytest.mark.ui
 def test_archive_buttons_use_archive_box_icon(logged_in_page, api_session, ui_base_url, board_with_cards):
     """The archive icon must not read as compress: it matches the Archived View box (issue #299)."""

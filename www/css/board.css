@@ -1084,6 +1084,18 @@
   stroke: var(--primary-hover);
 }
 
+body.compact-cards .card-description,
+body.compact-cards .card-meta-row,
+body.compact-cards .card-checklist,
+body.compact-cards .card .card-expand-btn,
+body.compact-cards .card.collapsed .card-content-wrapper::after {
+  display: none;
+}
+
+body.compact-cards .card.collapsed .card-content-wrapper {
+  max-height: none;
+}
+
 .card-title {
   margin: 0 0 8px 0;
   font-size: 14px;

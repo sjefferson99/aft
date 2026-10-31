@@ -1003,6 +1003,11 @@ class Header {
       });
     });
 
+    document.getElementById('mobile-compact-cards-toggle')?.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('compactCardsToggleRequested'));
+      closeMenu();
+    });
+
     // Hook mobile logout button into existing logout flow
     const mobileLogoutItem = document.getElementById('mobile-logout-menu-item');
     if (mobileLogoutItem) {
@@ -3198,7 +3203,7 @@ class Header {
           dropdownMenu.classList.remove('show');
         });
         
-        dropdownMenu.appendChild(doneItem);
+        dropdownMenu.insertBefore(doneItem, document.getElementById('compact-cards-toggle'));
       }
     } else {
       // Remove done view if it exists
@@ -3230,7 +3235,8 @@ class Header {
               mobileToggle.setAttribute('aria-expanded', 'false');
             }
           });
-          mobileViewsSection.querySelector('.mobile-tree-items')?.appendChild(doneBtn);
+          mobileViewsSection.querySelector('.mobile-tree-items')
+            ?.insertBefore(doneBtn, document.getElementById('mobile-compact-cards-toggle'));
         }
       } else if (mobileDoneItem) {
         mobileDoneItem.remove();
@@ -3312,9 +3318,16 @@ class Header {
   initializeViewsDropdown() {
     const dropdownBtn = document.getElementById('views-dropdown-btn');
     const dropdownMenu = document.getElementById('views-dropdown-menu');
-    const dropdownItems = document.querySelectorAll('.views-dropdown-item');
+    const dropdownItems = document.querySelectorAll('.views-dropdown-item[data-view]');
 
     if (!dropdownBtn || !dropdownMenu) return;
+
+    document.getElementById('compact-cards-toggle')?.addEventListener('click', () => {
+      window.dispatchEvent(new CustomEvent('compactCardsToggleRequested'));
+      dropdownMenu.classList.remove('show');
+    });
+    window.addEventListener('compactCardsChanged', () => this.syncCompactCardsToggles());
+    this.syncCompactCardsToggles();
 
     // Toggle dropdown on button click
     dropdownBtn.addEventListener('click', (e) => {
@@ -3343,6 +3356,13 @@ class Header {
         this.setView(view);
         dropdownMenu.classList.remove('show');
       });
+    });
+  }
+
+  syncCompactCardsToggles() {
+    const enabled = document.body.classList.contains('compact-cards');
+    document.querySelectorAll('.compact-cards-toggle').forEach(toggle => {
+      toggle.setAttribute('aria-pressed', String(enabled));
     });
   }
 
