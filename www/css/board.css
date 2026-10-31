@@ -1449,6 +1449,17 @@
   padding-right: 8px;
 }
 
+.modal-header h2 .card-save-status {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: normal;
+  color: var(--text-muted);
+}
+
+.modal-header h2 .card-save-status.is-error {
+  color: var(--error-color);
+}
+
 .modal-header-actions .btn {
   white-space: nowrap;
   display: inline-flex;
@@ -1516,7 +1527,7 @@
 
 /* Checklist Styles */
 .card-modal-content {
-  max-width: 600px;
+  max-width: 640px;
 }
 
 .schedule-section {
