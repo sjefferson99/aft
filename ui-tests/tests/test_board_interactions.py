@@ -592,6 +592,63 @@ def _set_view(page, view):
     page.wait_for_function("() => !window.boardManager.currentLoadController", timeout=8000)
 
 
+def _is_archived(api_session, ui_base_url, card_id):
+    return api_session.get(f"{ui_base_url}/api/cards/{card_id}").json()["card"]["archived"]
+
+
+@pytest.mark.ui
+def test_archive_buttons_use_archive_box_icon(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """The archive icon must not read as compress: it matches the Archived View box (issue #299)."""
+    page = logged_in_page
+    data = board_with_cards
+    short_id = data["short_card"]["id"]
+    assert api_session.patch(f"{ui_base_url}/api/cards/{short_id}/archive").status_code == 200
+    _open_board_for_patching(page, data["board"]["id"])
+
+    button = _card(page, data["long_card"]["id"]).locator(".card-archive-btn")
+    assert button.get_attribute("aria-label") == "Archive card"
+    assert button.locator('rect[width="22"]').count() == 1
+
+    _set_view(page, "archived")
+    button = _card(page, short_id).locator(".card-unarchive-btn")
+    assert button.get_attribute("aria-label") == "Unarchive card"
+    assert button.locator('rect[width="22"]').count() == 1
+
+
+@pytest.mark.ui
+def test_a_key_archives_hovered_card_only(logged_in_page, api_session, ui_base_url, board_with_cards):
+    page = logged_in_page
+    data = board_with_cards
+    long_id, short_id = data["long_card"]["id"], data["short_card"]["id"]
+    _open_board_for_patching(page, data["board"]["id"])
+
+    page.locator(".columns-container").hover(position={"x": 1, "y": 1})
+    page.keyboard.press("a")
+    _card(page, short_id).locator(".card-title").hover()
+    page.keyboard.press("a")
+    _card(page, short_id).wait_for(state="detached", timeout=8000)
+
+    assert _is_archived(api_session, ui_base_url, short_id) is True
+    assert _is_archived(api_session, ui_base_url, long_id) is False
+
+
+@pytest.mark.ui
+def test_a_key_ignores_key_repeat(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """Holding the key must not archive each card that moves up under the mouse."""
+    page = logged_in_page
+    data = board_with_cards
+    short_id = data["short_card"]["id"]
+    _open_board_for_patching(page, data["board"]["id"])
+
+    _card(page, short_id).locator(".card-title").hover()
+    page.evaluate(
+        "() => document.body.dispatchEvent(new KeyboardEvent('keydown', {key: 'a', repeat: true, bubbles: true}))"
+    )
+    page.wait_for_timeout(300)
+
+    assert _is_archived(api_session, ui_base_url, short_id) is False
+
+
 @pytest.mark.ui
 def test_agile_card_archives_without_being_done(logged_in_page, api_session, ui_base_url, board_with_cards):
     """Agile cards can leave the board as not done, and keep that state (issue #543)."""
