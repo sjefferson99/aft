@@ -206,6 +206,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
   - **Delete Schedules**: Remove recurring schedules when no longer needed
 - **Duplicate Control** - Prevent duplicate cards in the same column or allow multiple instances
 - **Live Preview** - See the next 4 scheduled run times before saving
+- **Create Card Now** - Create a one-off card from an existing schedule without changing its run times
 - **Scheduled View** - Dedicated view for managing template cards (separate from task view)
 - **Automatic Creation** - Cards created every minute based on enabled schedules
 - **Schedule Tracking** - Auto-generated comments track which schedule created each card

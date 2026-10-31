@@ -1103,3 +1103,59 @@ class TestColumnSpecificDuplicateChecking:
         assert len(set(card_ids)) == 3  # All unique IDs
 
 
+
+
+@pytest.mark.api
+class TestCreateCardNow:
+    """Test cases for creating a card from a schedule on request."""
+
+    def _create_schedule(self, api_client, authenticated_session, scheduled_card, schedule_data):
+        response = authenticated_session.post(f"{api_client}/api/schedules", json={
+            'card_id': scheduled_card['id'],
+            'keep_source_card': False,
+            **schedule_data
+        })
+        assert response.status_code == 201
+        return response.json()['schedule']
+
+    def _column_cards(self, api_client, authenticated_session, column_id):
+        response = authenticated_session.get(f"{api_client}/api/columns/{column_id}/cards")
+        assert response.status_code == 200
+        return response.json()['cards']
+
+    def test_creates_card_from_template(self, api_client, authenticated_session, sample_column, scheduled_card, schedule_data):
+        schedule = self._create_schedule(api_client, authenticated_session, scheduled_card, schedule_data)
+
+        response = authenticated_session.post(f"{api_client}/api/schedules/{schedule['id']}/run")
+
+        assert response.status_code == 201
+        cards = self._column_cards(api_client, authenticated_session, sample_column['id'])
+        assert [card['id'] for card in cards] == [response.json()['card_id']]
+        assert cards[0]['title'] == 'Template Card'
+        assert cards[0]['schedule'] == schedule['id']
+        assert cards[0]['scheduled'] is False
+
+    def test_ignores_allow_duplicates(self, api_client, authenticated_session, sample_column, scheduled_card, schedule_data):
+        schedule = self._create_schedule(api_client, authenticated_session, scheduled_card, schedule_data)
+        assert schedule['allow_duplicates'] is False
+
+        for _ in range(2):
+            response = authenticated_session.post(f"{api_client}/api/schedules/{schedule['id']}/run")
+            assert response.status_code == 201
+
+        assert len(self._column_cards(api_client, authenticated_session, sample_column['id'])) == 2
+
+    def test_works_on_disabled_schedule_and_leaves_it_unchanged(self, api_client, authenticated_session, scheduled_card, schedule_data):
+        schedule_data['schedule_enabled'] = False
+        schedule = self._create_schedule(api_client, authenticated_session, scheduled_card, schedule_data)
+
+        response = authenticated_session.post(f"{api_client}/api/schedules/{schedule['id']}/run")
+        assert response.status_code == 201
+
+        after = authenticated_session.get(f"{api_client}/api/schedules/{schedule['id']}").json()['schedule']
+        assert after['schedule_enabled'] is False
+        assert after['start_datetime'] == schedule['start_datetime']
+
+    def test_unknown_schedule_returns_404(self, api_client, authenticated_session):
+        response = authenticated_session.post(f"{api_client}/api/schedules/99999999/run")
+        assert response.status_code == 404

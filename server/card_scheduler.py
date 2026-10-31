@@ -503,13 +503,60 @@ class CardScheduler:
 
         _broadcast_event_callback(event_name, data, board_id)
     
-    def _create_scheduled_card(self, db, schedule: ScheduledCard, pending_broadcasts: list) -> Optional[Card]:
+    def create_card_now(self, schedule_id: int) -> Optional[int]:
+        """Create one card from a schedule on request, outside its run times.
+
+        The user asked for this card directly, so allow_duplicates doesn't apply,
+        and it works on disabled or ended schedules. Run times are not changed.
+
+        Args:
+            schedule_id: ID of the schedule to create a card from
+
+        Returns:
+            The new card's ID, or None if the schedule or its template is missing
+        """
+        db = SessionLocal()
+        pending_broadcasts = []
+        try:
+            schedule = db.query(ScheduledCard).filter(ScheduledCard.id == schedule_id).first()
+            if schedule is None:
+                return None
+
+            card = self._create_scheduled_card(db, schedule, pending_broadcasts, ignore_duplicates=True)
+            if card is None:
+                return None
+
+            card_id = card.id
+            db.commit()
+
+            for event_data in pending_broadcasts:
+                self._broadcast_event(
+                    event_name='card_created',
+                    data=event_data,
+                    board_id=event_data['board_id']
+                )
+
+            return card_id
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def _create_scheduled_card(
+        self,
+        db,
+        schedule: ScheduledCard,
+        pending_broadcasts: list,
+        ignore_duplicates: bool = False,
+    ) -> Optional[Card]:
         """Create a new card from a schedule template.
         
         Args:
             db: Database session
             schedule: ScheduledCard instance
             pending_broadcasts: List of websocket events queued for post-commit publish
+            ignore_duplicates: Create the card even if allow_duplicates would block it
         """
         try:
             # Get the template card
@@ -519,7 +566,7 @@ class CardScheduler:
                 return None
             
             # Check for duplicates if not allowed
-            if not schedule.allow_duplicates:  # type: ignore
+            if not schedule.allow_duplicates and not ignore_duplicates:  # type: ignore
                 # Check for unarchived cards in the same column with this schedule ID
                 existing_count = (
                     db.query(Card)

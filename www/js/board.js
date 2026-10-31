@@ -205,7 +205,6 @@ function appendLinkifiedText(container, text) {
   }
 }
 
-// Shared checklist management helper
 // Datetime-local controls expect local wall time strings (no timezone suffix).
 function toDatetimeLocalValue(value) {
   if (!value) return '';
@@ -328,6 +327,172 @@ function setupCardDateSync({ startInput, endInput, daysInput, hoursInput }, onCh
   });
 
   return { hasDurationValue, getDurationValues, resetTracking };
+}
+
+// Chrome and Edge's datetime-local popup scrolls its time columns too fast to
+// land on a number, and page code can't change that. This popup replaces it with
+// clickable grids. The input stays the source of truth, so typing still works
+// and everything else keeps listening to the input.
+const DATE_TIME_HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const DATE_TIME_MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
+
+let closeOpenDateTimePicker = null;
+
+function setupDateTimePickers(root) {
+  root.querySelectorAll('input[type="datetime-local"]').forEach((input) => {
+    const wrapper = document.createElement('span');
+    wrapper.className = 'date-time-field';
+    input.replaceWith(wrapper);
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'date-time-picker-btn';
+    button.textContent = '📅';
+    button.title = 'Pick date and time';
+    button.setAttribute('aria-label', `Pick ${(input.labels[0]?.textContent || 'date and time').replace(/:$/, '')}`);
+    button.setAttribute('aria-expanded', 'false');
+    button.disabled = input.disabled;
+    wrapper.append(input, button);
+
+    button.addEventListener('click', () => {
+      if (button.getAttribute('aria-expanded') === 'true') {
+        closeOpenDateTimePicker();
+      } else {
+        openDateTimePicker(input, button);
+      }
+    });
+  });
+}
+
+function openDateTimePicker(input, button) {
+  if (closeOpenDateTimePicker) closeOpenDateTimePicker();
+
+  const grid = (name, values) => values
+    .map((value) => `<button type="button" class="date-time-picker-value" data-${name}="${value}" aria-pressed="false">${value}</button>`)
+    .join('');
+
+  // The top layer keeps it clear of the modal's overflow.
+  const popover = document.createElement('div');
+  popover.className = 'date-time-popover';
+  popover.popover = 'manual';
+  popover.setAttribute('role', 'dialog');
+  popover.setAttribute('aria-label', button.getAttribute('aria-label'));
+  popover.innerHTML = `
+    <label class="date-time-picker-label">Date
+      <input type="date" class="date-time-picker-date">
+    </label>
+    <div class="date-time-picker-label">Hour</div>
+    <div class="date-time-picker-grid">${grid('hour', DATE_TIME_HOURS)}</div>
+    <div class="date-time-picker-label">Minute</div>
+    <div class="date-time-picker-grid">${grid('minute', DATE_TIME_MINUTES)}</div>
+    <div class="date-time-picker-actions">
+      <button type="button" class="btn btn-secondary btn-sm" data-action="now">Now</button>
+      ${input.required ? '' : '<button type="button" class="btn btn-secondary btn-sm" data-action="clear">Clear</button>'}
+      <button type="button" class="btn btn-primary btn-sm" data-action="done">Done</button>
+    </div>`;
+  document.body.appendChild(popover);
+  popover.showPopover();
+
+  const dateInput = popover.querySelector('.date-time-picker-date');
+  let changed = false;
+
+  const parts = () => {
+    const [date = '', time = ''] = input.value.split('T');
+    const [hour = '', minute = ''] = time.split(':');
+    return { date, hour, minute };
+  };
+
+  const refresh = () => {
+    const { date, hour, minute } = parts();
+    dateInput.value = date;
+    popover.querySelectorAll('[data-hour]').forEach((el) => {
+      el.setAttribute('aria-pressed', String(el.dataset.hour === hour));
+    });
+    popover.querySelectorAll('[data-minute]').forEach((el) => {
+      el.setAttribute('aria-pressed', String(el.dataset.minute === minute));
+    });
+  };
+
+  const setValue = (value) => {
+    input.value = value;
+    changed = true;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    refresh();
+  };
+
+  const setPart = (part) => {
+    const today = toDatetimeLocalValue(new Date()).split('T')[0];
+    const { date, hour, minute } = { ...parts(), ...part };
+    setValue(`${date || today}T${hour || '00'}:${minute || '00'}`);
+  };
+
+  const position = () => {
+    const anchor = button.parentElement.getBoundingClientRect();
+    const { width, height } = popover.getBoundingClientRect();
+    const margin = 8;
+    const fitsBelow = anchor.bottom + 4 + height <= window.innerHeight - margin;
+    const top = fitsBelow ? anchor.bottom + 4 : anchor.top - height - 4;
+    popover.style.top = `${Math.max(margin, top)}px`;
+    popover.style.left = `${Math.max(margin, Math.min(anchor.left, window.innerWidth - width - margin))}px`;
+  };
+
+  const close = () => {
+    document.removeEventListener('pointerdown', handleOutsidePointer, true);
+    document.removeEventListener('keydown', handleEscape, true);
+    document.removeEventListener('scroll', position, true);
+    window.removeEventListener('resize', position);
+    popover.remove();
+    button.setAttribute('aria-expanded', 'false');
+    closeOpenDateTimePicker = null;
+    // The edit card modal saves dates on blur, which picking here never causes.
+    if (changed) input.dispatchEvent(new Event('blur'));
+  };
+
+  const handleOutsidePointer = (event) => {
+    if (!popover.contains(event.target) && !button.contains(event.target)) close();
+  };
+
+  const handleEscape = (event) => {
+    if (event.key !== 'Escape') return;
+    // Close only the picker, not the modal under it.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    close();
+    button.focus();
+  };
+
+  popover.addEventListener('click', (event) => {
+    const target = event.target.closest('button');
+    if (!target) return;
+    const { hour, minute, action } = target.dataset;
+
+    if (hour) setPart({ hour });
+    else if (minute) setPart({ minute });
+    else if (action === 'now') setValue(toDatetimeLocalValue(new Date()));
+    else if (action === 'clear') setValue('');
+    else if (action === 'done') {
+      close();
+      button.focus();
+    }
+  });
+
+  dateInput.addEventListener('change', () => {
+    if (dateInput.value) setPart({ date: dateInput.value });
+  });
+
+  // Board shortcuts and modal keys shouldn't act on keys pressed in here.
+  popover.addEventListener('keydown', (event) => event.stopPropagation());
+
+  document.addEventListener('pointerdown', handleOutsidePointer, true);
+  document.addEventListener('keydown', handleEscape, true);
+  document.addEventListener('scroll', position, true);
+  window.addEventListener('resize', position);
+
+  closeOpenDateTimePicker = close;
+  button.setAttribute('aria-expanded', 'true');
+  refresh();
+  position();
 }
 
 class ChecklistManager {
@@ -5489,6 +5654,64 @@ class BoardManager {
    * @param {string} unit - The unit (minute, hour, day, week, month, year)
    * @returns {Date} A new Date object with the interval added
    */
+  // Preview the next runs for the values in a schedule form.
+  renderNextRuns(nextRunsList, runEveryInput, unitSelect, startDatetimeInput, endDatetimeInput) {
+    const runEvery = parseInt(runEveryInput.value);
+    const unit = unitSelect.value;
+    const startDatetime = startDatetimeInput.value;
+    const endDatetime = endDatetimeInput.value || null;
+
+    if (!runEvery || !unit || !startDatetime) {
+      nextRunsList.innerHTML = '<p class="next-runs-empty">Please fill in required fields</p>';
+      return;
+    }
+
+    try {
+      // Calculate next runs client-side
+      const startDateTime = new Date(startDatetime);
+      const endDateTime = endDatetime ? new Date(endDatetime) : null;
+      // The inputs have no seconds, and a start in the current minute still runs.
+      const now = new Date();
+      now.setSeconds(0, 0);
+
+      let runs = [];
+      let current = startDateTime;
+      let attempts = 0;
+      const maxAttempts = 100;
+
+      while (runs.length < 4 && attempts < maxAttempts) {
+        attempts++;
+
+        if (current >= now && (!endDateTime || current <= endDateTime)) {
+          runs.push(new Date(current));
+        }
+
+        // Add interval using utility function
+        current = this.addInterval(current, runEvery, unit);
+
+        if (endDateTime && current > endDateTime) break;
+      }
+
+      if (runs.length === 0) {
+        nextRunsList.innerHTML = '<p class="next-runs-empty">No upcoming runs (schedule may have ended)</p>';
+      } else {
+        nextRunsList.innerHTML = runs.map(run => {
+          const dateStr = run.toLocaleDateString('en-US', {
+            weekday: 'short',
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+          });
+          const timeStr = formatTimeSync(run);
+          return `<div class="next-run-item">📅 ${dateStr} at ${timeStr}</div>`;
+        }).join('');
+      }
+    } catch (err) {
+      console.error('Error calculating next runs:', err);
+      nextRunsList.innerHTML = '<p class="next-runs-error">Error calculating runs</p>';
+    }
+  }
+
   addInterval(date, amount, unit) {
     switch (unit) {
       case 'minute':
@@ -5545,6 +5768,7 @@ class BoardManager {
     const allowScheduleSubmit = hasSchedule ? canEditSchedule : canCreateSchedule;
     const scheduleFieldsDisabled = hasSchedule && !canEditSchedule;
     const scheduleDisabledAttr = scheduleFieldsDisabled ? 'disabled' : '';
+    const canCreateCardNow = hasSchedule && this.canCallPermissionEndpoint('POST', '/api/schedules/:id/run');
     
     // If card has a schedule, fetch the schedule details
     let scheduleData = null;
@@ -5675,6 +5899,7 @@ class BoardManager {
               <div class="next-runs-list" id="next-runs-list">
                 <p class="next-runs-loading">Calculating...</p>
               </div>
+              ${canCreateCardNow ? `<button type="button" class="btn btn-secondary btn-sm" id="create-card-now-btn" title="Create one card from the template straight away. Scheduled runs don't change.">Create card now</button>` : ''}
             </div>
           </form>
         </div>
@@ -5686,6 +5911,7 @@ class BoardManager {
 
     // Get modal elements
     const modal = document.getElementById('schedule-modal');
+    setupDateTimePickers(modal);
     const form = document.getElementById('schedule-form');
     const cancelBtn = document.getElementById('cancel-schedule-btn');
     const deleteBtn = document.getElementById('delete-schedule-btn');
@@ -5696,60 +5922,7 @@ class BoardManager {
     const nextRunsList = document.getElementById('next-runs-list');
 
     // Function to calculate and display next runs
-    const updateNextRuns = async () => {
-      const runEvery = parseInt(runEveryInput.value);
-      const unit = unitSelect.value;
-      const startDatetime = startDatetimeInput.value;
-      const endDatetime = endDatetimeInput.value || null;
-
-      if (!runEvery || !unit || !startDatetime) {
-        nextRunsList.innerHTML = '<p class="next-runs-empty">Please fill in required fields</p>';
-        return;
-      }
-
-      try {
-        // Calculate next runs client-side
-        const startDateTime = new Date(startDatetime);
-        const endDateTime = endDatetime ? new Date(endDatetime) : null;
-        const now = new Date();
-
-        let runs = [];
-        let current = startDateTime;
-        let attempts = 0;
-        const maxAttempts = 100;
-
-        while (runs.length < 4 && attempts < maxAttempts) {
-          attempts++;
-          
-          if (current >= now && (!endDateTime || current <= endDateTime)) {
-            runs.push(new Date(current));
-          }
-
-          // Add interval using utility function
-          current = this.addInterval(current, runEvery, unit);
-
-          if (endDateTime && current > endDateTime) break;
-        }
-
-        if (runs.length === 0) {
-          nextRunsList.innerHTML = '<p class="next-runs-empty">No upcoming runs (schedule may have ended)</p>';
-        } else {
-          nextRunsList.innerHTML = runs.map(run => {
-            const dateStr = run.toLocaleDateString('en-US', { 
-              weekday: 'short', 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            });
-            const timeStr = formatTimeSync(run);
-            return `<div class="next-run-item">📅 ${dateStr} at ${timeStr}</div>`;
-          }).join('');
-        }
-      } catch (err) {
-        console.error('Error calculating next runs:', err);
-        nextRunsList.innerHTML = '<p class="next-runs-error">Error calculating runs</p>';
-      }
-    };
+    const updateNextRuns = () => this.renderNextRuns(nextRunsList, runEveryInput, unitSelect, startDatetimeInput, endDatetimeInput);
 
     // Initial calculation
     updateNextRuns();
@@ -5844,20 +6017,59 @@ class BoardManager {
             await this.loadBoard();
           } else {
             deleteBtn.disabled = false;
-            deleteBtn.textContent = 'Delete Schedule';
+            deleteBtn.textContent = 'Delete';
             this.showErrorToast(`Failed to delete schedule: ${data.message}`);
           }
         } catch (err) {
           clearTimeout(timeoutId);
           console.error('Error deleting schedule:', err);
           deleteBtn.disabled = false;
-          deleteBtn.textContent = 'Delete Schedule';
+          deleteBtn.textContent = 'Delete';
           
           if (err.name === 'AbortError') {
             this.showErrorToast('Delete schedule timed out (5s). Please check your connection.');
           } else {
             this.showErrorToast('An error occurred while deleting the schedule');
           }
+        }
+      });
+    }
+
+    // Handle create card now
+    const createNowBtn = document.getElementById('create-card-now-btn');
+    if (createNowBtn) {
+      createNowBtn.addEventListener('click', async () => {
+        createNowBtn.disabled = true;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+        try {
+          const response = await fetch(`/api/schedules/${scheduleData.id}/run`, {
+            method: 'POST',
+            signal: controller.signal
+          });
+
+          clearTimeout(timeoutId);
+          const data = await this.parseResponse(response);
+
+          if (data.success) {
+            this.showSuccessToast('Card created');
+            await this.loadBoard();
+          } else {
+            this.showErrorToast(`Failed to create card: ${data.message}`);
+          }
+        } catch (err) {
+          clearTimeout(timeoutId);
+          console.error('Error creating card from schedule:', err);
+
+          if (err.name === 'AbortError') {
+            this.showErrorToast('Create card timed out (5s). Please check your connection.');
+          } else {
+            this.showErrorToast('An error occurred while creating the card');
+          }
+        } finally {
+          createNowBtn.disabled = false;
         }
       });
     }
@@ -5891,14 +6103,14 @@ class BoardManager {
               this.openEditCardModal(templateCardId, data.card);
             } else {
               editTemplateBtn.disabled = false;
-              editTemplateBtn.textContent = 'Edit Template';
+              editTemplateBtn.textContent = 'Template';
               this.showErrorToast(`Failed to load template card: ${data.message}`);
             }
           } catch (err) {
             clearTimeout(timeoutId);
             console.error('Error loading template card:', err);
             editTemplateBtn.disabled = false;
-            editTemplateBtn.textContent = 'Edit Template';
+            editTemplateBtn.textContent = 'Template';
             
             if (err.name === 'AbortError') {
               this.showErrorToast('Load template card timed out (5s). Please check your connection.');
@@ -5973,14 +6185,14 @@ class BoardManager {
           await this.loadBoard();
         } else {
           saveBtn.disabled = false;
-          saveBtn.textContent = hasSchedule ? 'Update Schedule' : 'Create Schedule';
+          saveBtn.textContent = hasSchedule ? 'Update' : 'Create';
           this.showErrorToast(`Failed to save schedule: ${data.message}`);
         }
       } catch (err) {
         clearTimeout(timeoutId);
         console.error('Error saving schedule:', err);
         saveBtn.disabled = false;
-        saveBtn.textContent = hasSchedule ? 'Update Schedule' : 'Create Schedule';
+        saveBtn.textContent = hasSchedule ? 'Update' : 'Create';
         
         if (err.name === 'AbortError') {
           this.showErrorToast('Save schedule timed out (5s). Please check your connection.');
@@ -6194,6 +6406,7 @@ class BoardManager {
 
     // Get modal elements
     const modal = document.getElementById('add-template-schedule-modal');
+    setupDateTimePickers(modal);
     const form = document.getElementById('add-template-schedule-form');
     const cancelBtn = document.getElementById('cancel-template-schedule-btn');
     const titleInput = document.getElementById('template-title');
@@ -6282,60 +6495,7 @@ class BoardManager {
     }
 
     // Function to calculate and display next runs
-    const updateNextRuns = async () => {
-      const runEvery = parseInt(runEveryInput.value);
-      const unit = unitSelect.value;
-      const startDatetime = startDatetimeInput.value;
-      const endDatetime = endDatetimeInput.value || null;
-
-      if (!runEvery || !unit || !startDatetime) {
-        nextRunsList.innerHTML = '<p class="next-runs-empty">Please fill in required fields</p>';
-        return;
-      }
-
-      try {
-        // Calculate next runs client-side
-        const startDateTime = new Date(startDatetime);
-        const endDateTime = endDatetime ? new Date(endDatetime) : null;
-        const now = new Date();
-
-        let runs = [];
-        let current = startDateTime;
-        let attempts = 0;
-        const maxAttempts = 100;
-
-        while (runs.length < 4 && attempts < maxAttempts) {
-          attempts++;
-          
-          if (current >= now && (!endDateTime || current <= endDateTime)) {
-            runs.push(new Date(current));
-          }
-
-          // Add interval using utility function
-          current = this.addInterval(current, runEvery, unit);
-
-          if (endDateTime && current > endDateTime) break;
-        }
-
-        if (runs.length === 0) {
-          nextRunsList.innerHTML = '<p class="next-runs-empty">No upcoming runs (schedule may have ended)</p>';
-        } else {
-          nextRunsList.innerHTML = runs.map(run => {
-            const dateStr = run.toLocaleDateString('en-US', { 
-              weekday: 'short', 
-              year: 'numeric', 
-              month: 'short', 
-              day: 'numeric' 
-            });
-            const timeStr = formatTimeSync(run);
-            return `<div class="next-run-item">📅 ${dateStr} at ${timeStr}</div>`;
-          }).join('');
-        }
-      } catch (err) {
-        console.error('Error calculating next runs:', err);
-        nextRunsList.innerHTML = '<p class="next-runs-error">Error calculating runs</p>';
-      }
-    };
+    const updateNextRuns = () => this.renderNextRuns(nextRunsList, runEveryInput, unitSelect, startDatetimeInput, endDatetimeInput);
 
     // Update next runs on input change
     runEveryInput.addEventListener('input', updateNextRuns);
@@ -7238,6 +7398,7 @@ class BoardManager {
     const durationHoursInput = document.getElementById('card-duration-hours');
     const dateInputs = [startDateInput, endDateInput, durationDaysInput, durationHoursInput];
 
+    setupDateTimePickers(modal);
     setupCardDateSync({
       startInput: startDateInput,
       endInput: endDateInput,
@@ -7867,6 +8028,7 @@ class BoardManager {
     const durationDaysInput = document.getElementById('edit-card-duration-days');
     const durationHoursInput = document.getElementById('edit-card-duration-hours');
 
+    setupDateTimePickers(modal);
     const dateSync = setupCardDateSync({
       startInput: startDateInput,
       endInput: endDateInput,
