@@ -360,7 +360,7 @@ class TestRestoreProgressAPI:
         assert response.status_code == 200
         assert response.json() == {'success': True, 'progress': None}
 
-    @pytest.mark.parametrize('progress_id', ['short', 'A' * 32, 'g' * 32, 'a' * 33])
+    @pytest.mark.parametrize('progress_id', ['short', 'A' * 32, 'g' * 32, 'a' * 33, 'a' * 32 + '%0a'])
     def test_invalid_id_rejected(self, api_client, progress_id):
         response = requests.get(f'{api_client}/api/database/restore/progress/{progress_id}')
 

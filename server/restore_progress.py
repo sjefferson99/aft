@@ -21,7 +21,7 @@ import redis
 logger = logging.getLogger(__name__)
 
 RESTORE_PROGRESS_HEADER = 'X-Restore-Progress-Id'
-PROGRESS_ID_PATTERN = re.compile(r'^[0-9a-f]{32}$')
+PROGRESS_ID_PATTERN = re.compile(r'[0-9a-f]{32}')
 PROGRESS_TTL_SECONDS = 3600
 KEY_PREFIX = 'restore_progress:'
 REDIS_TIMEOUT_SECONDS = 1
@@ -30,7 +30,7 @@ IMPORT_WRITE_INTERVAL_SECONDS = 0.5
 
 
 def is_valid_progress_id(progress_id):
-    return bool(progress_id and PROGRESS_ID_PATTERN.match(progress_id))
+    return bool(progress_id and PROGRESS_ID_PATTERN.fullmatch(progress_id))
 
 
 class ProgressStore:
@@ -103,7 +103,6 @@ class RestoreProgress:
         if table_number == self._table_number and now - self._last_write < IMPORT_WRITE_INTERVAL_SECONDS:
             return
         self._table_number = table_number
-        self._last_write = now
 
         message = 'Restoring data'
         if table:
@@ -113,3 +112,5 @@ class RestoreProgress:
             'bytes_done': bytes_done,
             'bytes_total': bytes_total,
         })
+        # After the write, so a slow store can't make every line wait for it.
+        self._last_write = time.monotonic()
