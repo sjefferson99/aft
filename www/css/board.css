@@ -1542,6 +1542,39 @@ body.compact-cards .card.collapsed .card-content-wrapper {
   max-width: 640px;
 }
 
+.card-dates {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 64px 64px;
+  gap: 10px;
+  margin: 15px 0;
+}
+
+.card-date-field label {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-bold);
+}
+
+.card-date-field input {
+  width: 100%;
+  height: 32px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  font-size: 13px;
+  box-sizing: border-box;
+  background-color: var(--card-bg-color);
+  color: var(--text-color);
+}
+
+.card-date-field input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
 .schedule-section {
   margin: 15px 0;
 }
@@ -2456,6 +2489,34 @@ button.readonly-disabled,
   }
 }
 
+@media (max-width: 640px) {
+  .card-dates {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px 10px;
+  }
+
+  .card-date-start-date,
+  .card-date-end-date {
+    grid-column: 1 / -1;
+  }
+
+  .card-date-field {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .card-date-field label {
+    margin-bottom: 0;
+  }
+
+  /* Below 16px, iOS zooms the page when an input gets focus */
+  .card-date-field input {
+    height: 36px;
+    font-size: 16px;
+  }
+}
+
 /* Planner view (year/month) */
 #planner-container {
   flex: 1;
@@ -2857,5 +2918,12 @@ body.touchscreen-mode .column-cards {
 
   body.mobile-card-actions .card .card-title {
     padding-right: calc(var(--mobile-card-action-count) * 28px);
+  }
+}
+
+@media (min-width: 901px) {
+  body.touchscreen-mode .card-date-field input {
+    height: 40px;
+    font-size: 15px;
   }
 }
