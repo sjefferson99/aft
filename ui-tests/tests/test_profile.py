@@ -1,4 +1,5 @@
 """UI tests for the Profile page."""
+import re
 import uuid
 
 import pytest
@@ -68,3 +69,39 @@ def test_rejected_profile_colour_shows_the_server_error(logged_in_page):
     swatch.click()
 
     expect(page.locator("#colour-status")).to_contain_text("must be a valid RGB hex string")
+
+
+@pytest.mark.ui
+def test_form_text_and_inputs_use_theme_colours(logged_in_page):
+    """Help text and inputs follow the theme, so they stay readable on dark themes (#611)."""
+    page = logged_in_page
+    page.goto("/profile.html")
+    page.wait_for_load_state("networkidle")
+
+    page.evaluate("""() => {
+      document.documentElement.style.setProperty('--text-color', 'rgb(1, 2, 3)');
+      document.documentElement.style.setProperty('--card-bg-color', 'rgb(4, 5, 6)');
+    }""")
+
+    expect(page.locator(".field-help").first).to_have_css("color", "rgb(1, 2, 3)")
+    display_name = page.locator("#display-name")
+    expect(display_name).to_have_css("color", "rgb(1, 2, 3)")
+    expect(display_name).to_have_css("background-color", "rgb(4, 5, 6)")
+
+
+@pytest.mark.ui
+def test_profile_stylesheet_only_uses_defined_theme_variables(logged_in_page):
+    """A variable with no fallback must be defined, or the colour silently falls back (#611)."""
+    page = logged_in_page
+    page.goto("/profile.html")
+    page.wait_for_load_state("networkidle")
+
+    stylesheet = page.request.get("/css/profile.css").text()
+    variables = set(re.findall(r"var\((--[\w-]+)\)", stylesheet))
+    assert variables
+
+    undefined = page.evaluate("""variables => {
+      const styles = getComputedStyle(document.documentElement);
+      return variables.filter(name => !styles.getPropertyValue(name).trim());
+    }""", sorted(variables))
+    assert undefined == []
