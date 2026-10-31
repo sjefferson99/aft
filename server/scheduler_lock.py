@@ -16,6 +16,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Gunicorn doesn't preload the app, so this is imported once per worker, before
+# the worker can acquire any lock.
+_PROCESS_STARTED_AT = datetime.now()
+
 
 def _current_container_id() -> str:
     """Return the container/host identifier used for lock ownership."""
@@ -35,6 +39,26 @@ def _is_pid_alive(pid: int) -> bool:
         return True
     except OSError:
         # Conservatively treat other OS errors as not alive.
+        return False
+
+
+def _is_own_lock_from_previous_process(lock_data: dict[str, Any]) -> bool:
+    """Check for a lock left by an earlier process that had this same PID.
+
+    A container restart keeps /tmp and its PIDs repeat, so a new worker can find
+    a lock naming its own PID. The owner looks alive, but it can't be this
+    process if the lock predates it.
+    """
+    if lock_data.get("pid") != os.getpid():
+        return False
+
+    acquired_text = lock_data.get("acquired_at")
+    if not isinstance(acquired_text, str):
+        return False
+
+    try:
+        return datetime.fromisoformat(acquired_text) < _PROCESS_STARTED_AT
+    except ValueError:
         return False
 
 
@@ -139,6 +163,9 @@ def is_scheduler_lock_stale(
 
         # Different container means stale in Docker restart scenarios.
         if lock_container != current_container:
+            return True
+
+        if _is_own_lock_from_previous_process(lock_data):
             return True
 
         pid_alive = _is_pid_alive(pid)

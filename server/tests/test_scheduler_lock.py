@@ -51,6 +51,9 @@ def test_stale_lock_with_dead_pid_is_reclaimed(tmp_path, monkeypatch):
 def test_active_owner_not_reclaimed_on_old_heartbeat(tmp_path, monkeypatch):
     """A live owner process should keep the lock even with old heartbeat."""
     monkeypatch.setenv("HOSTNAME", "test-container")
+    monkeypatch.setattr(
+        scheduler_lock, "_PROCESS_STARTED_AT", datetime.now() - timedelta(hours=3)
+    )
     lock_file = Path(tmp_path) / "scheduler.lock"
 
     lock_data = {
@@ -66,3 +69,26 @@ def test_active_owner_not_reclaimed_on_old_heartbeat(tmp_path, monkeypatch):
 
     assert acquired is False
     assert details["reason"] == "active_lock"
+
+
+def test_own_pid_lock_from_before_restart_is_reclaimed(tmp_path, monkeypatch):
+    """A lock naming this PID but predating this process should be reclaimed."""
+    monkeypatch.setenv("HOSTNAME", "test-container")
+    monkeypatch.setattr(scheduler_lock, "_PROCESS_STARTED_AT", datetime.now())
+    lock_file = Path(tmp_path) / "scheduler.lock"
+
+    lock_data = {
+        "pid": os.getpid(),
+        "container_id": "test-container",
+        "scheduler_type": "scheduler_init",
+        "acquired_at": (datetime.now() - timedelta(hours=18)).isoformat(),
+        "last_heartbeat": (datetime.now() - timedelta(hours=18)).isoformat(),
+    }
+    lock_file.write_text(json.dumps(lock_data), encoding="utf-8")
+
+    acquired, details = acquire_scheduler_lock(lock_file, "scheduler_init")
+
+    assert acquired is True
+    assert details["reason"] == "acquired"
+
+    release_scheduler_lock(lock_file)
