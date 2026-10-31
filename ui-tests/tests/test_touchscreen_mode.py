@@ -98,6 +98,35 @@ def test_board_targets_are_finger_sized(logged_in_page, touchscreen_mode, api_se
 
 
 @pytest.mark.ui
+def test_long_title_uses_the_full_card_width(logged_in_page, touchscreen_mode, api_session, ui_base_url, column):
+    title = "A fairly long card title that should use the full width of the card"
+    resp = api_session.post(f"{ui_base_url}/api/columns/{column['id']}/cards", json={"title": title})
+    assert resp.status_code == 201
+    page = logged_in_page
+    _open_board(page, column["board_id"])
+    page.locator(".card").first.wait_for(state="visible", timeout=8000)
+
+    assert page.locator(".card-title").first.evaluate("el => getComputedStyle(el).paddingRight") == "0px"
+
+
+@pytest.mark.ui
+def test_read_only_cards_reserve_no_action_space(logged_in_page, touchscreen_mode, api_session, ui_base_url, column):
+    resp = api_session.post(f"{ui_base_url}/api/columns/{column['id']}/cards", json={"title": "Read only"})
+    assert resp.status_code == 201
+    resp = api_session.patch(f"{ui_base_url}/api/boards/{column['board_id']}", json={"is_public": True})
+    assert resp.status_code == 200
+    page = logged_in_page
+    page.set_viewport_size({"width": 1600, "height": 900})
+    page.goto(f"/public-board.html?slug={resp.json()['board']['public_slug']}")
+    card = page.locator(".card").first
+    card.wait_for(state="visible", timeout=8000)
+    page.wait_for_function("() => document.body.classList.contains('touchscreen-mode')", timeout=8000)
+
+    assert page.locator(".card-action-buttons").first.is_hidden()
+    assert card.evaluate("el => getComputedStyle(el).paddingTop") != "56px"
+
+
+@pytest.mark.ui
 @pytest.mark.parametrize("dropdown", ["settings", "user"])
 def test_menus_open_by_tap_and_ignore_stuck_hover(logged_in_page, touchscreen_mode, board, dropdown):
     page = logged_in_page

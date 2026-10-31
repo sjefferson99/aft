@@ -2734,8 +2734,14 @@ body.touchscreen-mode .column-cards {
   }
 
   /* The action row sits over the card, so make room for the larger buttons. */
-  body.touchscreen-mode .card {
+  body.touchscreen-mode .card:has(.card-action-buttons:not(.readonly-hidden)) {
     padding-top: 56px;
+  }
+
+  /* The row is above the title here, so the title can use the full width. */
+  body.touchscreen-mode .card-title,
+  body.touchscreen-mode .card.card--done-toggle .card-title {
+    padding-right: 0;
   }
 
   body.touchscreen-mode .card.no-schedule::before {
