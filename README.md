@@ -149,3 +149,7 @@ The docs are Markdown in [www/docs](www/docs), and `www/docs.html` renders them 
 - [server/docs/AUTHENTICATION.md](server/docs/AUTHENTICATION.md)
 - [server/docs/PERMISSION_MODEL.md](server/docs/PERMISSION_MODEL.md)
 - [docs/PERMISSION_UI_SYSTEM.md](docs/PERMISSION_UI_SYSTEM.md)
+
+## Reporting issues
+
+Search the [issues list](https://github.com/sjefferson99/aft/issues) first, then open a new issue if yours isn't there. Please don't report security problems in public issues. See [SECURITY.md](SECURITY.md).

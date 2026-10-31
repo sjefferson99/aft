@@ -12,4 +12,12 @@ These docs ship with AFT, so the Docs page always matches the version you have i
 
 AFT is open source software, available on GitHub: <https://github.com/sjefferson99/aft>
 
-Contributions, bug reports and feature requests are welcome. Check the [issues list](https://github.com/sjefferson99/aft/issues) first in case yours has already been raised, and see the [releases page](https://github.com/sjefferson99/aft/releases) for what's new.
+Contributions, bug reports and feature requests are welcome. See the [releases page](https://github.com/sjefferson99/aft/releases) for what's new.
+
+## Report an Issue
+
+Open **Report an Issue** from the user menu in the header to go to the GitHub issues list. You'll need a GitHub account.
+
+Found a bug or have an idea? [Search the issues](https://github.com/sjefferson99/aft/issues) to see if it has already been raised, then open a new issue if it hasn't.
+
+Found a security problem? Please don't open a public issue. [Report it privately](https://github.com/sjefferson99/aft/security/advisories/new) instead.

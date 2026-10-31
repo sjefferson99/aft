@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a new feature or an improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please [search the existing issues](https://github.com/sjefferson99/aft/issues) first.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like?
+      description: Describe the problem you want solved or the improvement you have in mind.
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: Ideas for how it could work
+      description: Your thoughts on a possible approach, if you have any.
+  - type: textarea
+    id: done
+    attributes:
+      label: What would "done" look like?
+      description: How we'd know this is finished.
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Screenshots, examples or other context.
