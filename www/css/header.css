@@ -909,6 +909,15 @@ body.board-page:not(.public-board-page) .board-search-control {
   stroke: var(--text-muted);
 }
 
+body:not(.board-page) .compact-cards-toggle {
+  display: none;
+}
+
+.compact-cards-toggle[aria-pressed="true"] {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
 .views-dropdown-item span {
   flex: 1;
 }
