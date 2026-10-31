@@ -1,5 +1,6 @@
 """Tests for comment API endpoints."""
 import pytest
+import requests
 
 
 @pytest.mark.api
@@ -359,6 +360,116 @@ class TestCommentsAPISecurity:
         )
         assert response.status_code == 200
     
+    def _post_comment(self, api_client, authenticated_session, sample_card, text='Original comment'):
+        response = authenticated_session.post(
+            f'{api_client}/api/cards/{sample_card["id"]}/comments',
+            json={'comment': text}
+        )
+        assert response.status_code == 201
+        return response.json()['comment']
+
+    def test_update_comment(self, api_client, authenticated_session, sample_card):
+        """Editing changes the text but keeps the comment's place in history."""
+        first = self._post_comment(api_client, authenticated_session, sample_card)
+        self._post_comment(api_client, authenticated_session, sample_card, 'Later comment')
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/comments/{first["id"]}',
+            json={'comment': 'Edited comment\nwith two lines'}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert data['comment']['comment'] == 'Edited comment\nwith two lines'
+        assert data['comment']['order'] == first['order']
+        assert data['comment']['created_at'] == first['created_at']
+
+        card = authenticated_session.get(f'{api_client}/api/cards/{sample_card["id"]}').json()['card']
+        by_id = {comment['id']: comment for comment in card['comments']}
+        assert by_id[first['id']]['comment'] == 'Edited comment\nwith two lines'
+        assert len(by_id) == 2
+
+    def test_new_comment_is_not_marked_edited(self, api_client, authenticated_session, sample_card):
+        comment = self._post_comment(api_client, authenticated_session, sample_card)
+
+        assert comment['edited_at'] is None
+        card = authenticated_session.get(f'{api_client}/api/cards/{sample_card["id"]}').json()['card']
+        assert card['comments'][0]['edited_at'] is None
+
+    def test_update_comment_sets_edited_at(self, api_client, authenticated_session, sample_card):
+        comment = self._post_comment(api_client, authenticated_session, sample_card)
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/comments/{comment["id"]}',
+            json={'comment': 'Edited comment'}
+        )
+
+        edited_at = response.json()['comment']['edited_at']
+        assert edited_at is not None
+        card = authenticated_session.get(f'{api_client}/api/cards/{sample_card["id"]}').json()['card']
+        assert card['comments'][0]['edited_at'] == edited_at
+        listed = authenticated_session.get(f'{api_client}/api/cards/{sample_card["id"]}/comments').json()
+        assert listed['comments'][0]['edited_at'] == edited_at
+
+    def test_update_comment_with_same_text_is_not_an_edit(self, api_client, authenticated_session, sample_card):
+        comment = self._post_comment(api_client, authenticated_session, sample_card)
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/comments/{comment["id"]}',
+            json={'comment': 'Original comment'}
+        )
+
+        assert response.status_code == 200
+        assert response.json()['comment']['edited_at'] is None
+
+    def test_update_comment_not_found(self, api_client, authenticated_session):
+        response = authenticated_session.patch(
+            f'{api_client}/api/comments/999999',
+            json={'comment': 'Nothing to edit'}
+        )
+        assert response.status_code == 404
+        assert response.json()['success'] is False
+
+    @pytest.mark.parametrize('payload', [
+        {},
+        {'comment': ''},
+        {'comment': '   '},
+        {'comment': 123},
+        {'comment': None},
+        ['comment'],
+        'comment',
+    ])
+    def test_update_comment_invalid_body(self, api_client, authenticated_session, sample_card, payload):
+        """Invalid edits are refused and leave the comment as it was."""
+        comment = self._post_comment(api_client, authenticated_session, sample_card)
+
+        response = authenticated_session.patch(f'{api_client}/api/comments/{comment["id"]}', json=payload)
+
+        assert response.status_code == 400
+        card = authenticated_session.get(f'{api_client}/api/cards/{sample_card["id"]}').json()['card']
+        assert card['comments'][0]['comment'] == 'Original comment'
+
+    def test_update_comment_too_long(self, api_client, authenticated_session, sample_card):
+        comment = self._post_comment(api_client, authenticated_session, sample_card)
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/comments/{comment["id"]}',
+            json={'comment': 'x' * 50001}
+        )
+
+        assert response.status_code == 400
+
+    def test_update_comment_requires_login(self, api_client, authenticated_session, sample_card):
+        comment = self._post_comment(api_client, authenticated_session, sample_card)
+
+        response = requests.patch(
+            f'{api_client}/api/comments/{comment["id"]}',
+            json={'comment': 'Anonymous edit'}
+        )
+
+        assert response.status_code in (401, 403)
+
     def test_comment_whitespace_only_trimmed(self, api_client, authenticated_session, sample_card):
         """Test that comments with only whitespace are rejected."""
         whitespace_tests = [

@@ -156,7 +156,7 @@ def test_enter_posts_comment_and_shift_enter_adds_line(logged_in_page, api_sessi
     comment.press("Enter")
 
     page.locator(".comment-text", has_text="Second line").wait_for(timeout=5000)
-    assert comment.input_value() == ""
+    page.wait_for_function("() => document.querySelector('#new-comment-input').value === ''", timeout=5000)
     assert page.locator("#edit-card-modal").count() == 1
 
 
@@ -384,3 +384,188 @@ def test_read_only_card_without_checklist_closes_with_escape(logged_in_page, api
     page.keyboard.press("Escape")
     _closed(page)
     assert errors == []
+
+
+def _add_comment(api_session, ui_base_url, card, text):
+    response = api_session.post(f"{ui_base_url}/api/cards/{card['id']}/comments", json={"comment": text})
+    assert response.status_code == 201, response.text
+    return response.json()["comment"]
+
+
+def _comment_texts(api_session, ui_base_url, card):
+    return [comment["comment"] for comment in _get_card(api_session, ui_base_url, card)["comments"]]
+
+
+@pytest.mark.ui
+def test_double_click_edits_comment_and_enter_saves(logged_in_page, api_session, ui_base_url, column):
+    card = _create_card(api_session, ui_base_url, column)
+    _add_comment(api_session, ui_base_url, card, "Orignal typo")
+    page = logged_in_page
+    _open_card(page, column["board_id"], card)
+
+    page.locator(".comment-text").dblclick()
+    comment_input = page.locator(".comment-edit-input")
+    assert comment_input.input_value() == "Orignal typo"
+    comment_input.fill("Line one")
+    comment_input.press("Shift+Enter")
+    comment_input.type("Line two")
+    comment_input.press("Enter")
+
+    _wait_saved(page)
+    assert page.locator(".comment-text").inner_text() == "Line one\nLine two"
+    assert page.locator("#edit-card-modal").count() == 1
+    assert _comment_texts(api_session, ui_base_url, card) == ["Line one\nLine two"]
+
+
+@pytest.mark.ui
+def test_comment_edit_button_saves_on_blur(logged_in_page, api_session, ui_base_url, column):
+    card = _create_card(api_session, ui_base_url, column)
+    _add_comment(api_session, ui_base_url, card, "Before")
+    page = logged_in_page
+    _open_card(page, column["board_id"], card)
+
+    page.locator(".comment-edit-btn").click()
+    page.locator(".comment-edit-input").fill("After")
+    page.locator("#edit-card-title").click()
+
+    _wait_saved(page)
+    assert _comment_texts(api_session, ui_base_url, card) == ["After"]
+
+
+@pytest.mark.ui
+def test_escape_reverts_comment_edit_without_closing(logged_in_page, api_session, ui_base_url, column):
+    card = _create_card(api_session, ui_base_url, column)
+    _add_comment(api_session, ui_base_url, card, "Keep me")
+    page = logged_in_page
+    _open_card(page, column["board_id"], card)
+
+    page.locator(".comment-text").dblclick()
+    comment_input = page.locator(".comment-edit-input")
+    comment_input.fill("Abandoned edit")
+    comment_input.press("Escape")
+
+    assert page.locator(".comment-text").inner_text() == "Keep me"
+    assert page.locator("#edit-card-modal").count() == 1
+    assert _comment_texts(api_session, ui_base_url, card) == ["Keep me"]
+
+
+@pytest.mark.ui
+def test_empty_comment_edit_keeps_the_comment(logged_in_page, api_session, ui_base_url, column):
+    card = _create_card(api_session, ui_base_url, column)
+    _add_comment(api_session, ui_base_url, card, "Keep me")
+    page = logged_in_page
+    _open_card(page, column["board_id"], card)
+
+    page.locator(".comment-text").dblclick()
+    page.locator(".comment-edit-input").fill("   ")
+    page.locator("#edit-card-title").click()
+
+    assert page.locator(".comment-text").inner_text() == "Keep me"
+    assert _comment_texts(api_session, ui_base_url, card) == ["Keep me"]
+
+
+@pytest.mark.ui
+def test_closing_saves_comment_being_edited(logged_in_page, api_session, ui_base_url, column):
+    card = _create_card(api_session, ui_base_url, column)
+    _add_comment(api_session, ui_base_url, card, "Before")
+    page = logged_in_page
+    _open_card(page, column["board_id"], card)
+
+    page.locator(".comment-text").dblclick()
+    page.locator(".comment-edit-input").fill("Saved by close")
+    page.locator("#cancel-edit-card-btn").click()
+
+    _closed(page)
+    assert _comment_texts(api_session, ui_base_url, card) == ["Saved by close"]
+
+
+@pytest.mark.ui
+def test_posted_comment_keeps_lines_and_can_be_edited(logged_in_page, api_session, ui_base_url, column):
+    card = _create_card(api_session, ui_base_url, column)
+    page = logged_in_page
+    _open_card(page, column["board_id"], card)
+
+    comment = page.locator("#new-comment-input")
+    comment.fill("First line")
+    comment.press("Shift+Enter")
+    comment.type("Second line")
+    comment.press("Enter")
+
+    text = page.locator(".comment-text")
+    text.wait_for(timeout=5000)
+    assert text.inner_text() == "First line\nSecond line"
+
+    text.dblclick()
+    page.locator(".comment-edit-input").fill("Edited straight away")
+    page.locator(".comment-edit-input").press("Enter")
+    _wait_saved(page)
+    assert _comment_texts(api_session, ui_base_url, card) == ["Edited straight away"]
+
+
+@pytest.mark.ui
+def test_comment_edit_keeps_read_more_working(logged_in_page, api_session, ui_base_url, column):
+    card = _create_card(api_session, ui_base_url, column)
+    _add_comment(api_session, ui_base_url, card, "Short")
+    page = logged_in_page
+    _open_card(page, column["board_id"], card)
+
+    page.locator(".comment-edit-btn").click()
+    page.locator(".comment-edit-input").fill("Long " * 200)
+    page.locator("#edit-card-title").click()
+    _wait_saved(page)
+
+    read_more = page.locator(".comment-read-more")
+    read_more.click()
+    assert read_more.get_attribute("aria-expanded") == "true"
+
+
+@pytest.mark.ui
+def test_comment_cannot_be_edited_when_read_only(logged_in_page, api_session, ui_base_url, column):
+    card = _create_card(api_session, ui_base_url, column)
+    _add_comment(api_session, ui_base_url, card, "Read only")
+    page = logged_in_page
+    page.goto(f"/board.html?id={column['board_id']}")
+    page.wait_for_function("() => window.boardManager?.hasLoadedBoardData && window.header?.dbConnected", timeout=8000)
+    page.evaluate(
+        """async (id) => {
+            window.boardManager.canEdit = false;
+            const data = await window.boardManager.getCardData(id);
+            window.boardManager.openEditCardModal(id, data);
+        }""",
+        card["id"],
+    )
+
+    text = page.locator(".comment-text")
+    text.wait_for(timeout=5000)
+    assert page.locator(".comment-edit-btn").count() == 0
+    text.dblclick()
+    assert page.locator(".comment-edit-input").count() == 0
+
+
+@pytest.mark.ui
+def test_edited_comment_is_marked_and_stays_marked(logged_in_page, api_session, ui_base_url, column):
+    card = _create_card(api_session, ui_base_url, column)
+    _add_comment(api_session, ui_base_url, card, "Before")
+    page = logged_in_page
+    _open_card(page, column["board_id"], card)
+
+    assert page.locator(".comment-edited").count() == 0
+
+    # Reverting an edit isn't an edit
+    page.locator(".comment-text").dblclick()
+    page.locator(".comment-edit-input").press("Escape")
+    assert page.locator(".comment-edited").count() == 0
+
+    page.locator(".comment-text").dblclick()
+    page.locator(".comment-edit-input").fill("After")
+    page.locator(".comment-edit-input").press("Enter")
+    _wait_saved(page)
+
+    marker = page.locator(".comment-edited")
+    assert marker.inner_text() == "edited"
+    assert marker.get_attribute("data-tooltip").startswith("Edited ")
+
+    page.locator("#cancel-edit-card-btn").click()
+    _closed(page)
+    _open_card(page, column["board_id"], card)
+    assert page.locator(".comment-edited").count() == 1

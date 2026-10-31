@@ -1164,6 +1164,7 @@ def get_card_comments(card_id):
                         "comment": c.comment,
                         "order": c.order,
                         "created_at": serialize_datetime(c.created_at),
+                        "edited_at": serialize_datetime(c.edited_at),
                     }
                     for c in comments
                 ],
@@ -1273,6 +1274,7 @@ def create_comment(card_id):
             "comment": comment.comment,
             "order": comment.order,
             "created_at": serialize_datetime(comment.created_at),
+            "edited_at": serialize_datetime(comment.edited_at),
         }
 
         return create_success_response({"comment": result}, status_code=201)
@@ -1282,6 +1284,107 @@ def create_comment(card_id):
         import logging
         logging.getLogger(__name__).error(f"Error creating comment for card {card_id}: {str(e)}")
         return create_error_response("Failed to create comment", 500)
+    finally:
+        db.close()
+
+
+@schedule_bp.route("/api/comments/<int:comment_id>", methods=["PATCH"])
+@require_permission('card.update')
+def update_comment(comment_id):
+    """Update a comment's text.
+
+    The order and created_at fields don't change, so the comment keeps its
+    place in the conversation history.
+    edited_at is set only when the text changes.
+    ---
+    tags:
+      - Comments
+    parameters:
+      - name: comment_id
+        in: path
+        type: integer
+        required: true
+        description: The ID of the comment to update
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - comment
+          properties:
+            comment:
+              type: string
+              description: The new comment text
+    responses:
+      200:
+        description: Comment updated successfully
+      400:
+        description: Bad request - missing comment or validation error
+      404:
+        description: Comment not found
+      500:
+        description: Server error
+    """
+    db = SessionLocal()
+    try:
+        # Handle case where get_json() might raise an exception for empty body
+        try:
+            data = request.get_json()
+        except Exception:
+            data = None
+
+        if not isinstance(data, dict) or "comment" not in data:
+            return create_error_response("Comment text is required", 400)
+
+        comment = db.query(Comment).filter(Comment.id == comment_id).first()
+        if not comment:
+            return create_error_response("Comment not found", 404)
+
+        # Validate and sanitize comment
+        comment_text = data.get("comment")
+        if not isinstance(comment_text, str):
+            return create_error_response("Comment must be a string", 400)
+
+        comment_text = sanitize_string(comment_text)
+        if not comment_text:
+            return create_error_response("Comment cannot be empty", 400)
+
+        is_valid, error = validate_string_length(
+            comment_text, MAX_COMMENT_LENGTH, "Comment"
+        )
+        if not is_valid:
+            return create_error_response(error, 400)
+
+        if comment_text != comment.comment:
+            now = utc_now()
+            comment.comment = comment_text
+            comment.edited_at = now
+
+            # Update parent card's updated_at timestamp
+            card = db.query(Card).filter(Card.id == comment.card_id).first()
+            if card:
+                card.updated_at = now
+
+            db.commit()
+        db.refresh(comment)
+
+        result = {
+            "id": comment.id,
+            "card_id": comment.card_id,
+            "comment": comment.comment,
+            "order": comment.order,
+            "created_at": serialize_datetime(comment.created_at),
+            "edited_at": serialize_datetime(comment.edited_at),
+        }
+
+        return create_success_response({"comment": result})
+
+    except Exception as e:
+        db.rollback()
+        import logging
+        logging.getLogger(__name__).error(f"Error updating comment {comment_id}: {str(e)}")
+        return create_error_response("Failed to update comment", 500)
     finally:
         db.close()
 

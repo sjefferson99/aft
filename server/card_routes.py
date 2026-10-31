@@ -1141,7 +1141,8 @@ def get_card(card_id):
                     "card_id": comment.card_id,
                     "comment": comment.comment,
                     "order": comment.order,
-                    "created_at": serialize_datetime(comment.created_at)
+                    "created_at": serialize_datetime(comment.created_at),
+                    "edited_at": serialize_datetime(comment.edited_at)
                 }
                 for comment in card.comments
             ]
