@@ -53,7 +53,7 @@
 
 .field-help {
   font-size: 14px;
-  color: var(--text-normal);
+  color: var(--text-color);
   margin: 4px 0 8px 0;
   line-height: 1.4;
 }
@@ -65,15 +65,15 @@
   font-size: 15px;
   border: 1px solid var(--border-color);
   border-radius: 4px;
-  background: var(--input-background);
-  color: var(--text-normal);
+  background: var(--card-bg-color);
+  color: var(--text-color);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .form-input:focus {
   outline: none;
   border-color: var(--primary-color);
-  box-shadow: 0 0 0 3px var(--primary-color-alpha);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 45%, transparent);
 }
 
 .form-input::placeholder {
@@ -81,7 +81,7 @@
 }
 
 .form-input:disabled {
-  background: var(--disabled-background);
+  background: var(--background-light);
   cursor: not-allowed;
   opacity: 0.6;
 }
@@ -110,11 +110,11 @@
 
 .btn-primary {
   background: var(--primary-color);
-  color: var(--button-text);
+  color: white;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--primary-color-hover);
+  background: var(--primary-hover);
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
@@ -130,12 +130,13 @@
 }
 
 .btn-secondary {
-  background: var(--secondary-color);
-  color: var(--button-text);
+  background: var(--page-panel-background);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: var(--secondary-hover);
+  background: var(--background-light);
 }
 
 .btn-danger {
