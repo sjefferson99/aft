@@ -8,6 +8,11 @@ class UserManagement {
     this.activeUsersContainer = document.getElementById('active-users-list');
     this.activeUsersLoading = document.getElementById('active-users-loading');
     this.activeUsersEmpty = document.getElementById('active-users-empty');
+    this.usersPagination = document.getElementById('users-pagination');
+    this.usersPageSize = document.getElementById('users-page-size');
+    this.usersPageStatus = document.getElementById('users-page-status');
+    this.usersPrevBtn = document.getElementById('users-prev-btn');
+    this.usersNextBtn = document.getElementById('users-next-btn');
     
     this.searchInput = document.getElementById('user-search');
     this.statusMessage = document.getElementById('status-message');
@@ -42,11 +47,6 @@ class UserManagement {
     this.resetPasswordOkBtn = document.getElementById('reset-password-ok-btn');
     
     // Role assignment elements
-    this.roleUsersContainer = document.getElementById('role-users-list');
-    this.roleUsersLoading = document.getElementById('role-users-loading');
-    this.roleUsersEmpty = document.getElementById('role-users-empty');
-    this.roleUserSearchInput = document.getElementById('role-user-search');
-    
     this.addRoleModal = document.getElementById('add-role-modal');
     this.addRoleUserName = document.getElementById('add-role-user-name');
     this.roleSelect = document.getElementById('role-select');
@@ -57,13 +57,16 @@ class UserManagement {
     
     this.pendingCallback = null;
     this.allUsers = [];
+    this.filteredUsers = [];
+    this.usersPage = 1;
+    this.usersPerPage = 10;
     this.showActiveOnly = true;
     this.currentUserId = null;
-    this.roleUsers = [];
     this.roles = [];
     this.boards = [];
     this.canAssignAllRoles = false; // Whether user has role.manage permission
     this.canManageUsers = false;
+    this.canAssignRoles = false;
     this.canResetPasswords = false;
     this.canViewTestUserGuidance = false;
     this.canRemoveTestUser = false;
@@ -89,6 +92,7 @@ class UserManagement {
       && window.currentUser.roles.some(role => role && role.name === 'administrator');
 
     this.canManageUsers = hasUserManage;
+    this.canAssignRoles = hasUserRole;
     this.canResetPasswords = hasUserManage && hasAdministratorRole;
     this.canViewTestUserGuidance = hasUserManage || hasUserRole;
     this.canRemoveTestUser = hasUserManage;
@@ -102,17 +106,15 @@ class UserManagement {
     this.attachEventListeners();
     
     // Load data based on permissions
-    const loadPromises = [];
-    
+    const loadPromises = [this.loadActiveUsers()];
+
     if (hasUserManage) {
       loadPromises.push(this.loadPendingUsers());
-      loadPromises.push(this.loadActiveUsers());
     }
-    
+
     if (hasUserRole) {
       loadPromises.push(this.loadRoles());
       loadPromises.push(this.loadBoards());
-      loadPromises.push(this.loadRoleUsers());
     }
 
     if (this.canViewTestUserGuidance) {
@@ -137,45 +139,44 @@ class UserManagement {
     
     // Hide sections based on permissions
     if (!hasUserManage) {
-      // Hide pending and active user sections if user can't manage users
+      // Role assignment only lists active users, so there is nothing to toggle
       const pendingSection = document.getElementById('pending-users-section');
-      const activeSection = document.getElementById('active-users-section');
+      const activeOnlyFilter = this.showActiveOnlyToggle?.closest('.filter-toggle');
       if (pendingSection) pendingSection.style.display = 'none';
-      if (activeSection) activeSection.style.display = 'none';
+      if (activeOnlyFilter) activeOnlyFilter.style.display = 'none';
     } else {
       // Show Add User button if user can manage users
       if (this.addUserBtn) {
         this.addUserBtn.style.display = 'inline-flex';
       }
     }
-    
-    if (!hasUserRole) {
-      // Hide role assignment section if user can't assign roles
-      const roleSection = document.getElementById('role-management-section');
-      if (roleSection) roleSection.style.display = 'none';
-    }
   }
 
   attachEventListeners() {
     // Search functionality
     this.searchInput.addEventListener('input', () => {
+      this.usersPage = 1;
       this.filterUsers(this.searchInput.value);
     });
-
-    // Role user search functionality
-    if (this.roleUserSearchInput) {
-      this.roleUserSearchInput.addEventListener('input', () => {
-        this.filterRoleUsers(this.roleUserSearchInput.value);
-      });
-    }
 
     // Active only toggle
     if (this.showActiveOnlyToggle) {
       this.showActiveOnlyToggle.addEventListener('change', (e) => {
         this.showActiveOnly = e.target.checked;
+        this.usersPage = 1;
         this.filterUsers(this.searchInput.value);
       });
     }
+
+    // Paging
+    this.usersPageSize.addEventListener('change', () => {
+      this.usersPerPage = this.usersPageSize.value === 'all' ? Infinity : Number(this.usersPageSize.value);
+      this.usersPage = 1;
+      this.renderActiveUsers();
+    });
+
+    this.usersPrevBtn.addEventListener('click', () => this.changeUsersPage(-1));
+    this.usersNextBtn.addEventListener('click', () => this.changeUsersPage(1));
 
     // Modal close handlers
     this.confirmCancelBtn.addEventListener('click', () => {
@@ -314,40 +315,77 @@ class UserManagement {
     }
   }
 
-  async loadActiveUsers() {
-    try {
-      this.activeUsersLoading.style.display = 'block';
-      this.activeUsersEmpty.style.display = 'none';
-      this.activeUsersContainer.style.display = 'none';
+  async fetchApprovedUsers() {
+    const response = await fetch('/api/users?status=approved');
 
-      const response = await fetch('/api/users?status=approved');
-      
-      // Check for permission errors
+    if (response.status === 403) {
+      showAccessDenied('You need the "user.manage" permission to access active user data.');
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (data.success && data.users) {
+      return data.users;
+    }
+    throw new Error(data.message || 'Failed to load users');
+  }
+
+  async fetchRoleUsers() {
+    // Role editing is optional for a row, so a failure here still shows the list
+    try {
+      const response = await fetch('/api/roles/users');
+
       if (response.status === 403) {
-        showAccessDenied('You need the "user.manage" permission to access active user data.');
-        return;
+        console.warn('Permission denied loading role users');
+        return null;
       }
-      
+
       const data = await response.json();
 
       if (data.success && data.users) {
-        this.allUsers = data.users;
-        
-        if (this.allUsers.length === 0) {
-          this.activeUsersLoading.style.display = 'none';
-          this.activeUsersEmpty.style.display = 'block';
-        } else {
-          // Use filterUsers to respect the toggle state on initial load
-          this.filterUsers('');
-          this.activeUsersLoading.style.display = 'none';
-          this.activeUsersContainer.style.display = 'block';
-        }
-      } else {
-        throw new Error(data.message || 'Failed to load users');
+        return data.users;
       }
+      throw new Error(data.message || 'Failed to load users for role assignment');
+    } catch (error) {
+      console.error('Error loading role users:', error);
+      this.showStatus('Error loading users for role assignment: ' + error.message, 'error');
+      return null;
+    }
+  }
+
+  // Each endpoint needs a different permission. /api/users has the account
+  // details but only global roles, and /api/roles/users has every role but only
+  // active users. roleAssignments is null for rows whose roles can't be edited.
+  mergeUsers(approvedUsers, roleUsers) {
+    if (!this.canManageUsers) {
+      return (roleUsers || []).map(user => ({ ...user, roles: [], roleAssignments: user.roles }));
+    }
+
+    const roleUsersById = new Map((roleUsers || []).map(user => [user.id, user]));
+    return approvedUsers.map(user => ({
+      ...user,
+      roleAssignments: roleUsersById.get(user.id)?.roles || null
+    }));
+  }
+
+  async loadActiveUsers() {
+    try {
+      const [approvedUsers, roleUsers] = await Promise.all([
+        this.canManageUsers ? this.fetchApprovedUsers() : null,
+        this.canAssignRoles ? this.fetchRoleUsers() : null
+      ]);
+
+      if (this.canManageUsers && !approvedUsers) {
+        return;
+      }
+
+      this.allUsers = this.mergeUsers(approvedUsers, roleUsers);
+      this.filterUsers(this.searchInput.value);
     } catch (error) {
       console.error('Error loading users:', error);
       this.showStatus('Error loading users: ' + error.message, 'error');
+    } finally {
       this.activeUsersLoading.style.display = 'none';
     }
   }
@@ -412,22 +450,41 @@ class UserManagement {
     return card;
   }
 
-  renderActiveUsers(users) {
+  renderActiveUsers() {
+    const users = this.filteredUsers;
     this.activeUsersContainer.innerHTML = '';
 
     if (users.length === 0) {
       this.activeUsersContainer.style.display = 'none';
       this.activeUsersEmpty.style.display = 'block';
+      this.usersPagination.style.display = 'none';
       return;
     }
 
     this.activeUsersContainer.style.display = 'block';
     this.activeUsersEmpty.style.display = 'none';
 
-    users.forEach(user => {
+    // A reload can leave fewer users than the page being shown
+    const totalPages = Math.ceil(users.length / this.usersPerPage) || 1;
+    this.usersPage = Math.min(this.usersPage, totalPages);
+    const start = this.usersPerPage === Infinity ? 0 : (this.usersPage - 1) * this.usersPerPage;
+    const pageUsers = users.slice(start, start + this.usersPerPage);
+
+    pageUsers.forEach(user => {
       const userCard = this.createActiveUserCard(user);
       this.activeUsersContainer.appendChild(userCard);
     });
+
+    this.usersPagination.style.display = users.length > 10 ? 'flex' : 'none';
+    this.usersPageStatus.textContent = `${start + 1}–${start + pageUsers.length} of ${users.length}`;
+    this.usersPrevBtn.disabled = this.usersPage === 1;
+    this.usersNextBtn.disabled = this.usersPage === totalPages;
+  }
+
+  changeUsersPage(delta) {
+    this.usersPage += delta;
+    this.renderActiveUsers();
+    document.getElementById('active-users-section').scrollIntoView();
   }
 
   createActiveUserCard(user) {
@@ -438,19 +495,31 @@ class UserManagement {
     }
     card.dataset.userId = user.id;
 
+    const isCurrentUser = Boolean(window.currentUser && user.id === window.currentUser.id);
     const displayName = user.display_name || user.username || user.email;
     const createdDate = user.created_at ? new Date(user.created_at).toLocaleDateString() : 'Unknown';
     const lastLogin = user.last_login_at ? new Date(user.last_login_at).toLocaleDateString() : 'Never';
     const safeUserId = this.escapeHtml(String(user.id));
     const passkeyCount = Number.isInteger(user.passkey_count) ? user.passkey_count : 0;
-    
-    const roles = user.roles && user.roles.length > 0
-      ? user.roles.map(r => `<span class="role-badge">${this.escapeHtml(r.name)}</span>`).join('')
-      : '<span class="role-badge role-badge-none">No roles</span>';
 
     const statusBadge = user.is_active
       ? '<span class="status-badge status-active">Active</span>'
       : '<span class="status-badge status-inactive">Inactive</span>';
+
+    const accountActions = this.canManageUsers ? `
+        ${user.is_active
+          ? `<button class="btn btn-secondary btn-sm" data-action="deactivate" data-user-id="${safeUserId}" ${isCurrentUser ? 'disabled title="You cannot deactivate your own account"' : ''}>Deactivate</button>`
+          : `<button class="btn btn-primary btn-sm" data-action="activate" data-user-id="${safeUserId}">Activate</button>`
+        }
+        ${this.canResetPasswords && !isCurrentUser
+          ? `<button class="btn btn-secondary btn-sm" data-action="reset-password" data-user-id="${safeUserId}">Reset Password</button>`
+          : ''
+        }
+        ${passkeyCount > 0
+          ? `<button class="btn btn-secondary btn-sm" data-action="revoke-passkeys" data-user-id="${safeUserId}">Revoke Passkeys</button>`
+          : ''
+        }
+    ` : '';
 
     card.innerHTML = `
       <div class="user-info">
@@ -464,41 +533,29 @@ class UserManagement {
           <div class="user-name">
             ${this.escapeHtml(displayName)}
             ${statusBadge}
+            ${isCurrentUser ? '<span class="status-badge user-you-badge">You</span>' : ''}
           </div>
           <div class="user-email">${this.escapeHtml(user.email)}</div>
           ${user.username ? `<div class="user-meta">Username: ${this.escapeHtml(user.username)}</div>` : ''}
-          <div class="user-meta">Registered: ${createdDate} • Last login: ${lastLogin}</div>
+          ${this.canManageUsers ? `<div class="user-meta">Registered: ${createdDate} • Last login: ${lastLogin}</div>` : ''}
           ${passkeyCount > 0 ? `<div class="user-meta">Passkeys: ${passkeyCount}</div>` : ''}
-          <div class="user-roles">
-            ${roles}
-          </div>
+          <div class="user-roles"></div>
         </div>
       </div>
-      <div class="user-actions">
-        ${user.is_active
-          ? `<button class="btn btn-secondary btn-sm" data-action="deactivate" data-user-id="${safeUserId}" ${window.currentUser && user.id === window.currentUser.id ? 'disabled title="You cannot deactivate your own account"' : ''}>Deactivate</button>`
-          : `<button class="btn btn-primary btn-sm" data-action="activate" data-user-id="${safeUserId}">Activate</button>`
-        }
-        ${this.canResetPasswords && (!window.currentUser || user.id !== window.currentUser.id)
-          ? `<button class="btn btn-secondary btn-sm" data-action="reset-password" data-user-id="${safeUserId}">Reset Password</button>`
-          : ''
-        }
-        ${passkeyCount > 0
-          ? `<button class="btn btn-secondary btn-sm" data-action="revoke-passkeys" data-user-id="${safeUserId}">Revoke Passkeys</button>`
-          : ''
-        }
-      </div>
+      ${accountActions ? `<div class="user-actions">${accountActions}</div>` : ''}
     `;
 
+    this.renderUserRoles(card.querySelector('.user-roles'), user, isCurrentUser);
+
     // Attach event listeners to buttons
-    if (user.is_active) {
-      const deactivateBtn = card.querySelector('[data-action="deactivate"]');
-      // Only add event listener if it's not the current user's own account
-      if (!window.currentUser || user.id !== window.currentUser.id) {
-        deactivateBtn.addEventListener('click', () => this.handleDeactivate(user));
-      }
-    } else {
-      const activateBtn = card.querySelector('[data-action="activate"]');
+    const deactivateBtn = card.querySelector('[data-action="deactivate"]');
+    // Only add event listener if it's not the current user's own account
+    if (deactivateBtn && !isCurrentUser) {
+      deactivateBtn.addEventListener('click', () => this.handleDeactivate(user));
+    }
+
+    const activateBtn = card.querySelector('[data-action="activate"]');
+    if (activateBtn) {
       activateBtn.addEventListener('click', () => this.handleActivate(user));
     }
 
@@ -513,6 +570,96 @@ class UserManagement {
     }
 
     return card;
+  }
+
+  // Built from DOM nodes because role and board names end up in attributes,
+  // and escapeHtml doesn't escape quotes.
+  renderUserRoles(container, user, isCurrentUser) {
+    const displayName = user.display_name || user.username || user.email;
+
+    if (!user.roleAssignments) {
+      user.roles.forEach(role => {
+        const badge = document.createElement('span');
+        badge.className = 'role-badge';
+        badge.textContent = role.name;
+        container.appendChild(badge);
+      });
+      if (user.roles.length === 0) {
+        container.appendChild(this.createNoRolesBadge());
+      }
+      return;
+    }
+
+    user.roleAssignments.forEach(role => {
+      container.appendChild(this.createRoleChip(user, role, displayName, isCurrentUser));
+    });
+    if (user.roleAssignments.length === 0) {
+      container.appendChild(this.createNoRolesBadge());
+    }
+
+    if (isCurrentUser) {
+      const note = document.createElement('span');
+      note.className = 'user-role-note';
+      note.textContent = 'Cannot modify own roles';
+      container.appendChild(note);
+      return;
+    }
+
+    const addRoleBtn = document.createElement('button');
+    addRoleBtn.type = 'button';
+    addRoleBtn.className = 'user-role-add';
+    addRoleBtn.dataset.action = 'add-role';
+    addRoleBtn.textContent = '+ Add Role';
+    addRoleBtn.setAttribute('aria-label', `Add role to ${displayName}`);
+    addRoleBtn.addEventListener('click', () => this.openAddRoleModal(user.id, displayName));
+    container.appendChild(addRoleBtn);
+  }
+
+  createNoRolesBadge() {
+    const badge = document.createElement('span');
+    badge.className = 'role-badge role-badge-none';
+    badge.textContent = 'No roles';
+    return badge;
+  }
+
+  createRoleChip(user, role, displayName, isCurrentUser) {
+    const scope = role.board_name || 'Global';
+    const description = `${role.role_name} (${scope})`;
+
+    const chip = document.createElement('span');
+    chip.className = 'user-role-chip';
+    chip.title = description;
+
+    const name = document.createElement('span');
+    name.className = 'user-role-chip-name';
+    name.textContent = role.role_name;
+    chip.appendChild(name);
+
+    const scopeLabel = document.createElement('span');
+    scopeLabel.className = 'user-role-chip-scope';
+    scopeLabel.textContent = scope;
+    chip.appendChild(scopeLabel);
+
+    if (!isCurrentUser) {
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'user-role-chip-remove';
+      removeBtn.textContent = '×';
+      removeBtn.title = 'Remove role';
+      removeBtn.setAttribute('aria-label', `Remove ${description} from ${displayName}`);
+      removeBtn.addEventListener('click', () => {
+        const roleScope = role.board_name ? ` on board "${role.board_name}"` : ' (global)';
+        this.confirmRemoveRole(
+          user.id,
+          role.role_id,
+          role.board_id || null,
+          `${displayName}: ${role.role_name}${roleScope}`
+        );
+      });
+      chip.appendChild(removeBtn);
+    }
+
+    return chip;
   }
 
   filterUsers(searchTerm) {
@@ -536,7 +683,8 @@ class UserManagement {
       });
     }
 
-    this.renderActiveUsers(filtered);
+    this.filteredUsers = filtered;
+    this.renderActiveUsers();
   }
 
   async handleApprove(user) {
@@ -879,14 +1027,7 @@ class UserManagement {
         return;
       }
 
-      const refreshPromises = [this.loadTestUserGuidance()];
-      if (this.canManageUsers) {
-        refreshPromises.push(this.loadActiveUsers());
-      }
-      if (typeof hasPermission === 'function' && hasPermission('user.role')) {
-        refreshPromises.push(this.loadRoleUsers());
-      }
-      await Promise.all(refreshPromises);
+      await Promise.all([this.loadTestUserGuidance(), this.loadActiveUsers()]);
 
       setTimeout(() => {
         statusDiv.style.display = 'none';
@@ -1322,153 +1463,6 @@ class UserManagement {
     container.innerHTML = html;
   }
 
-  async loadRoleUsers() {
-    if (!this.roleUsersContainer) {
-      return; // Elements don't exist, skip loading
-    }
-
-    try {
-      this.roleUsersLoading.style.display = 'block';
-      this.roleUsersEmpty.style.display = 'none';
-      this.roleUsersContainer.style.display = 'none';
-
-      const response = await fetch('/api/roles/users');
-      
-      if (response.status === 403) {
-        console.warn('Permission denied loading role users');
-        this.roleUsersLoading.style.display = 'none';
-        return;
-      }
-      
-      const data = await response.json();
-
-      if (data.success && data.users) {
-        this.roleUsers = data.users;
-        
-        if (this.roleUsers.length === 0) {
-          this.roleUsersLoading.style.display = 'none';
-          this.roleUsersEmpty.style.display = 'block';
-        } else {
-          this.renderRoleUsers(this.roleUsers);
-          this.roleUsersLoading.style.display = 'none';
-          this.roleUsersContainer.style.display = 'block';
-        }
-      } else {
-        throw new Error(data.message || 'Failed to load users for role assignment');
-      }
-    } catch (error) {
-      console.error('Error loading role users:', error);
-      this.showStatus('Error loading users for role assignment: ' + error.message, 'error');
-      this.roleUsersLoading.style.display = 'none';
-    }
-  }
-
-  renderRoleUsers(users) {
-    this.roleUsersContainer.innerHTML = '';
-
-    users.forEach(user => {
-      const userCard = this.createRoleUserCard(user);
-      this.roleUsersContainer.appendChild(userCard);
-    });
-  }
-
-  createRoleUserCard(user) {
-    const card = document.createElement('div');
-    card.className = 'user-card';
-    card.dataset.userId = user.id;
-
-    // Check if this is the current user
-    const isCurrentUser = window.currentUser && user.id === window.currentUser.id;
-    const safeUserId = this.escapeHtml(String(user.id));
-
-    const rolesHtml = user.roles.length > 0
-      ? user.roles.map(role => {
-          const safeRoleId = this.escapeHtml(String(role.role_id));
-          const safeBoardId = role.board_id ? this.escapeHtml(String(role.board_id)) : '';
-          return `
-          <div class="user-role-item">
-            <div class="role-info">
-              <span class="role-name-badge">${this.escapeHtml(role.role_name)}</span>
-              <span class="role-scope">${role.board_name ? `(Board: ${this.escapeHtml(role.board_name)})` : '(Global)'}</span>
-            </div>
-            ${!isCurrentUser ? `<button class="remove-role-btn" data-user-id="${safeUserId}" data-role-id="${safeRoleId}" data-board-id="${safeBoardId}">
-              Remove
-            </button>` : ''}
-          </div>
-        `;
-        }).join('')
-      : '<div class="no-roles-message">No roles assigned</div>';
-
-    card.innerHTML = `
-      <div class="user-header">
-        <div class="user-info">
-          <div class="user-name">${this.escapeHtml(user.username)}${isCurrentUser ? ' <span class="badge" style="background-color: var(--primary-color); color: white; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; margin-left: 8px;">You</span>' : ''}</div>
-          <div class="user-email">${this.escapeHtml(user.email)}</div>
-        </div>
-        <div class="user-actions">
-          ${!isCurrentUser ? `<button class="btn-icon" title="Add Role" data-action="add-role" data-user-id="${safeUserId}" data-username="${this.escapeHtml(user.username)}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          </button>` : `<span class="text-muted" style="font-size: 0.875rem; font-style: italic;">Cannot modify own roles</span>`}
-        </div>
-      </div>
-      <div class="user-roles">
-        ${rolesHtml}
-      </div>
-    `;
-
-    // Attach event listeners
-    const addRoleBtn = card.querySelector('[data-action="add-role"]');
-    if (addRoleBtn) {
-      addRoleBtn.addEventListener('click', (e) => {
-        const userId = parseInt(e.currentTarget.dataset.userId);
-        const username = e.currentTarget.dataset.username;
-        this.openAddRoleModal(userId, username);
-      });
-    }
-
-    const removeRoleBtns = card.querySelectorAll('.remove-role-btn');
-    removeRoleBtns.forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const userId = parseInt(e.currentTarget.dataset.userId);
-        const roleId = parseInt(e.currentTarget.dataset.roleId);
-        const boardId = e.currentTarget.dataset.boardId ? parseInt(e.currentTarget.dataset.boardId) : null;
-        const user = this.roleUsers.find(u => u.id === userId);
-        const role = user?.roles.find(r => r.role_id === roleId && (r.board_id || null) === boardId);
-        
-        if (user && role) {
-          const scope = role.board_name ? ` on board "${role.board_name}"` : ' (global)';
-          this.confirmRemoveRole(userId, roleId, boardId, `${user.username}: ${role.role_name}${scope}`);
-        }
-      });
-    });
-
-    return card;
-  }
-
-  filterRoleUsers(searchTerm) {
-    const term = searchTerm.toLowerCase().trim();
-    
-    if (!term) {
-      this.renderRoleUsers(this.roleUsers);
-      return;
-    }
-
-    const filtered = this.roleUsers.filter(user => 
-      user.username.toLowerCase().includes(term) ||
-      user.email.toLowerCase().includes(term)
-    );
-
-    if (filtered.length === 0) {
-      this.roleUsersContainer.innerHTML = '<div class="empty-message">No users match your search.</div>';
-      this.roleUsersContainer.style.display = 'block';
-    } else {
-      this.renderRoleUsers(filtered);
-    }
-  }
-
   openAddRoleModal(userId, username) {
     this.currentUserId = userId;
     this.addRoleUserName.textContent = `Assign role to: ${username}`;
@@ -1583,7 +1577,7 @@ class UserManagement {
       if (data.success) {
         this.showStatus(data.message || 'Role assigned successfully', 'success');
         this.closeAddRoleModal();
-        await this.loadRoleUsers();
+        await this.loadActiveUsers();
       } else {
         throw new Error(data.message || 'Failed to assign role');
       }
@@ -1650,7 +1644,7 @@ class UserManagement {
 
       if (data.success) {
         this.showStatus(data.message || 'Role removed successfully', 'success');
-        await this.loadRoleUsers();
+        await this.loadActiveUsers();
       } else {
         throw new Error(data.message || 'Failed to remove role');
       }

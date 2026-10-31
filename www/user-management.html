@@ -62,23 +62,18 @@
             <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
             <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
           </svg>
-          Approved Users
-          <button class="btn btn-primary btn-sm" id="add-user-btn" style="margin-left: auto; display: none;">
-            <svg style="width: 16px; height: 16px; margin-right: 6px; display: inline;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Add User
-          </button>
+          Users
         </h3>
-        
+        <p class="setting-help">Manage accounts and assign roles. Roles can be global or board-specific.</p>
+        <p class="setting-help" id="role-restriction-note" style="display: none; font-style: italic; color: var(--text-secondary);">Note: You can only assign or remove roles that you have been granted.</p>
+
         <div class="filter-bar">
           <div class="search-box">
             <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"></circle>
               <path d="m21 21-4.35-4.35"></path>
             </svg>
-            <input type="text" id="user-search" placeholder="Search by name or email..." class="search-input">
+            <input type="text" id="user-search" placeholder="Search by name or email..." class="search-input" aria-label="Search users by name or email">
           </div>
           <div class="filter-toggle">
             <label class="toggle-label">
@@ -87,6 +82,13 @@
               <span class="toggle-text">Active only</span>
             </label>
           </div>
+          <button class="btn btn-primary btn-sm filter-bar-action" id="add-user-btn" style="display: none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"></line>
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+            </svg>
+            Add User
+          </button>
         </div>
         
         <div id="active-users-loading" class="loading-message">
@@ -95,49 +97,28 @@
         </div>
         
         <div id="active-users-empty" class="empty-message" style="display: none;">
-          No active users found.
+          No users found.
         </div>
-        
-        <div id="active-users-list" class="users-list" style="display: none;">
-          <!-- Active users will be populated here -->
-        </div>
-      </div>
 
-      <!-- Manage User Roles Section -->
-      <div class="settings-section" id="role-management-section">
-        <h3>
-          <svg class="section-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="8.5" cy="7" r="4"></circle>
-            <path d="M20 8v6"></path>
-            <path d="M23 11h-6"></path>
-          </svg>
-          Manage User Roles
-        </h3>
-        <p class="setting-help">Assign or remove roles from active users. Roles can be global or board-specific.</p>
-        <p class="setting-help" id="role-restriction-note" style="display: none; font-style: italic; color: var(--text-secondary);">Note: You can only assign or remove roles that you have been granted.</p>
-        
-        <div class="filter-bar">
-          <div class="search-box">
-            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <path d="m21 21-4.35-4.35"></path>
-            </svg>
-            <input type="text" id="role-user-search" placeholder="Search by name or email..." class="search-input">
-          </div>
-        </div>
-        
-        <div id="role-users-loading" class="loading-message">
-          <span class="spinner"></span>
-          Loading users...
-        </div>
-        
-        <div id="role-users-empty" class="empty-message" style="display: none;">
-          No active users found.
-        </div>
-        
-        <div id="role-users-list" class="users-list" style="display: none;">
+        <div id="active-users-list" class="users-list" style="display: none;">
           <!-- Users will be populated here -->
+        </div>
+
+        <div id="users-pagination" class="users-pagination" style="display: none;">
+          <label class="users-page-size">
+            Rows per page
+            <select id="users-page-size" class="setting-select">
+              <option value="10" selected>10</option>
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="all">All</option>
+            </select>
+          </label>
+          <div class="users-page-nav">
+            <span id="users-page-status" aria-live="polite"></span>
+            <button class="btn btn-secondary btn-sm" id="users-prev-btn">Previous</button>
+            <button class="btn btn-secondary btn-sm" id="users-next-btn">Next</button>
+          </div>
         </div>
       </div>
 
