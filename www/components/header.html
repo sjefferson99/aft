@@ -83,14 +83,12 @@
           </div>
         </div>
       </div>
-      <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu-drawer">
-        <span></span>
-        <span></span>
-        <span></span>
-        <span class="mobile-menu-toggle-dot" id="mobile-menu-toggle-dot" style="display: none;" aria-label="Unread notifications"></span>
-      </button>
       <div class="views-dropdown" id="views-dropdown" style="display: none;">
         <button class="views-dropdown-btn" id="views-dropdown-btn" title="Switch View" aria-label="Switch View">
+          <svg class="views-dropdown-mobile-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="5" rx="1.5"></rect>
+            <rect x="3" y="11" width="18" height="9" rx="1.5"></rect>
+          </svg>
           <span class="views-dropdown-label" id="views-dropdown-label">Task View</span>
           <svg class="views-dropdown-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="6 9 12 15 18 9"></polyline>
@@ -130,6 +128,12 @@
           </button>
         </div>
       </div>
+      <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu-drawer">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span class="mobile-menu-toggle-dot" id="mobile-menu-toggle-dot" style="display: none;" aria-label="Unread notifications"></span>
+      </button>
       <div class="notifications-dropdown">
         <a href="javascript:void(0)" class="icon-link" id="notifications-icon-link" title="Notifications" aria-label="Notifications" role="button">
           <svg class="icon-btn icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

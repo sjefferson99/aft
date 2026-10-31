@@ -847,6 +847,10 @@ body.board-page:not(.public-board-page) .board-search-control {
   color: var(--header-text-color);
 }
 
+.views-dropdown-mobile-icon {
+  display: none;
+}
+
 .views-dropdown-icon {
   stroke: white;
   transition: transform 0.2s;
@@ -1156,6 +1160,7 @@ body.board-page:not(.public-board-page) .board-search-control {
   .header-left {
     flex: 1 1 auto;
     min-width: 0;
+    gap: 8px;
   }
 
   .header-logo-link {
@@ -1165,7 +1170,7 @@ body.board-page:not(.public-board-page) .board-search-control {
 
   .header-left h2,
   .header-nav,
-  .views-dropdown,
+  body.boards-page .views-dropdown,
   .notifications-dropdown,
   .settings-dropdown,
   .user-dropdown,
@@ -1210,18 +1215,22 @@ body.board-page:not(.public-board-page) .board-search-control {
   .header-right {
     margin-left: 0;
     gap: 8px;
-    flex: 1 1 auto;
-    min-width: 0;
+    flex: 0 0 auto;
     justify-content: flex-end;
+  }
+
+  /* Open search shares the row with the title. */
+  body.board-page:not(.public-board-page) .header-right:has(.board-search-control:not(.is-collapsed)) {
+    flex: 1 0 auto;
   }
 
   body.board-page:not(.public-board-page) .board-search-control {
     display: flex;
     align-items: center;
-    flex: 1 1 auto;
-    width: auto;
+    flex: 1 1 120px;
+    width: 120px;
     max-width: none;
-    min-width: 0;
+    min-width: 120px;
   }
 
   .board-search-input {
@@ -1263,7 +1272,28 @@ body.board-page:not(.public-board-page) .board-search-control {
 
   .public-board-badge-mobile-btn {
     display: inline-flex;
-    margin-right: 2px;
+  }
+
+  body.board-page:not(.public-board-page) .views-dropdown {
+    flex: 0 0 34px;
+  }
+
+  body.board-page:not(.public-board-page) .views-dropdown-btn {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+  }
+
+  body.board-page:not(.public-board-page) .views-dropdown-label,
+  body.board-page:not(.public-board-page) .views-dropdown-icon {
+    display: none;
+  }
+
+  body.board-page:not(.public-board-page) .views-dropdown-mobile-icon {
+    display: block;
   }
 
   .mobile-menu-toggle {
@@ -1598,6 +1628,13 @@ body.board-page:not(.public-board-page) .board-search-control {
 
   body.mobile-menu-open {
     overflow: hidden;
+  }
+}
+
+/* Search needs the room on phones while it's open. */
+@media (max-width: 480px) {
+  body.board-page:not(.public-board-page) .header-right:has(.board-search-control:not(.is-collapsed)) .views-dropdown {
+    display: none !important;
   }
 }
 

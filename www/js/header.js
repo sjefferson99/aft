@@ -791,8 +791,8 @@ class Header {
   }
 
   ensureMobilePublicBoardBadge(showBadge, publicUrl) {
-    const headerRight = document.querySelector('.header-right');
-    if (!headerRight) {
+    const headerLeft = document.querySelector('.header-left');
+    if (!headerLeft) {
       return;
     }
 
@@ -803,12 +803,7 @@ class Header {
       badgeButton.type = 'button';
       badgeButton.className = 'public-board-badge-btn public-board-badge-mobile-btn';
       this.setPublicBadgeContent(badgeButton);
-      const mobileToggle = document.getElementById('mobile-menu-toggle');
-      if (mobileToggle && mobileToggle.parentElement === headerRight) {
-        headerRight.insertBefore(badgeButton, mobileToggle);
-      } else {
-        headerRight.appendChild(badgeButton);
-      }
+      headerLeft.appendChild(badgeButton);
     }
 
     this.applyPublicLinkBadgeState(badgeButton, showBadge, publicUrl);
@@ -925,11 +920,12 @@ class Header {
     this.syncMobileViewVisibility(show);
   }
 
-  // Keep mobile view section visibility aligned with desktop view control state
+  // Boards switch views from the header, so only the boards list needs this section
   syncMobileViewVisibility(show) {
     const mobileViewsSection = document.getElementById('mobile-views-section');
     if (mobileViewsSection) {
-      mobileViewsSection.style.display = show ? '' : 'none';
+      const onBoard = document.body.classList.contains('board-page');
+      mobileViewsSection.style.display = show && !onBoard ? '' : 'none';
     }
   }
 
