@@ -16,6 +16,7 @@
   <script src="/js/pwa.js"></script>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/header.css">
+  <link rel="stylesheet" href="/css/settings.css">
   <link rel="stylesheet" href="/css/profile.css">
 </head>
 <body>
@@ -24,8 +25,13 @@
   <main class="canvas">
     <h1 class="page-title">Profile</h1>
     <div class="profile-container">
+      <nav class="profile-nav" aria-label="Profile sections">
+        <a href="#account">Account</a>
+        <a href="#security">Security</a>
+        <a href="#preferences">Preferences</a>
+      </nav>
       
-      <div class="profile-section">
+      <div class="profile-section" id="account">
         <h3>Personal Information</h3>
         <form id="profile-form">
           <div class="form-group">
@@ -76,7 +82,7 @@
         </div>
       </div>
 
-      <div class="profile-section">
+      <div class="profile-section" id="security">
         <h3>Change Password</h3>
         <form id="password-form">
           <div class="form-group">
@@ -118,6 +124,139 @@
         <div class="form-actions">
           <button type="button" class="btn btn-primary" id="add-passkey-btn">Add a passkey</button>
           <div id="passkey-status" class="status-message" role="status" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="profile-section" id="preferences" aria-labelledby="preferences-heading">
+        <h3 id="preferences-heading">Preferences</h3>
+        <div class="setting-item">
+          <label for="default-board">Default Board</label>
+          <p class="setting-help">Board to open on application startup. "None" will land on the boards page.</p>
+          <select id="default-board" class="setting-select">
+            <option value="">Loading...</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label>Time Format</label>
+          <p class="setting-help">Display times in 12-hour (AM/PM) or 24-hour format.</p>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="time-format" value="12">
+              <span>12-hour (2:30 PM)</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="time-format" value="24" checked>
+              <span>24-hour (14:30)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label for="timezone-select">Timezone</label>
+          <p class="setting-help">Choose the timezone used to render UTC timestamps across the app.</p>
+          <select id="timezone-select" class="setting-select">
+            <option value="UTC">UTC</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label for="theme-select">Theme</label>
+          <p class="setting-help">Choose a colour theme.</p>
+          <div class="theme-selector-with-edit">
+            <select id="theme-select" class="setting-select">
+              <!-- Options populated from API -->
+            </select>
+            <button class="btn btn-secondary" id="edit-theme-btn" title="Edit theme in Theme Builder">Edit Theme</button>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-label-with-icon">
+            <label for="working-style">Working Style</label>
+            <a href="/docs.html#working-style" class="setting-help-icon" title="Learn more about Working Style" aria-label="Learn more about Working Style">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M12 16v-4"></path>
+                <path d="M12 8h.01"></path>
+              </svg>
+            </a>
+          </div>
+          <p class="setting-help">Default working style for new boards. Kanban uses columns for workflow stages, while Agile enables board-level done tracking and views. To change the style of an existing board, use that board's menu.</p>
+          <select id="working-style" class="setting-select">
+            <option value="">Loading...</option>
+          </select>
+        </div>
+
+        <div class="setting-item">
+          <label for="touchscreen-mode">Touchscreen Mode</label>
+          <p class="setting-help" id="touchscreen-mode-help">For large touchscreens and kiosks. Scroll boards with a finger, press and hold a card to drag it, and use larger buttons. Menus open with a tap.</p>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="checkbox" id="touchscreen-mode" aria-describedby="touchscreen-mode-help">
+              <span>Use touchscreen mode</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="setting-item">
+          <label id="card-actions-label">Card Actions</label>
+          <p class="setting-help" id="card-actions-help">Choose up to 3 buttons to show on board cards. Every action stays available when you open a card.</p>
+          <div class="card-actions-choices" role="group" aria-labelledby="card-actions-label" aria-describedby="card-actions-help">
+            <fieldset class="card-actions-screen">
+              <legend>Desktop</legend>
+              <label class="radio-label">
+                <input type="checkbox" data-card-action-screen="desktop" data-card-action="done">
+                <span>Done (Agile boards)</span>
+              </label>
+              <label class="radio-label">
+                <input type="checkbox" data-card-action-screen="desktop" data-card-action="archive">
+                <span>Archive</span>
+              </label>
+              <label class="radio-label">
+                <input type="checkbox" data-card-action-screen="desktop" data-card-action="move">
+                <span>Move</span>
+              </label>
+              <label class="radio-label">
+                <input type="checkbox" data-card-action-screen="desktop" data-card-action="delete">
+                <span>Delete</span>
+              </label>
+            </fieldset>
+            <fieldset class="card-actions-screen">
+              <legend>Mobile</legend>
+              <label class="radio-label">
+                <input type="checkbox" data-card-action-screen="mobile" data-card-action="done">
+                <span>Done (Agile boards)</span>
+              </label>
+              <label class="radio-label">
+                <input type="checkbox" data-card-action-screen="mobile" data-card-action="archive">
+                <span>Archive</span>
+              </label>
+              <label class="radio-label">
+                <input type="checkbox" data-card-action-screen="mobile" data-card-action="move">
+                <span>Move</span>
+              </label>
+              <label class="radio-label">
+                <input type="checkbox" data-card-action-screen="mobile" data-card-action="delete">
+                <span>Delete</span>
+              </label>
+            </fieldset>
+          </div>
+        </div>
+
+        <div class="setting-item" id="pwa-install-section" hidden>
+          <label for="pwa-install-btn">Install App</label>
+          <p class="setting-help" id="pwa-install-help">Install AFT as an app on this device for a full-screen, home-screen experience.</p>
+          <button class="btn btn-secondary" id="pwa-install-btn" type="button" aria-describedby="pwa-install-help">Install App</button>
+        </div>
+
+        <div class="setting-item" id="pwa-ios-instructions-section" hidden>
+          <label>Install App</label>
+          <p class="setting-help">On iPhone/iPad: tap the Share icon in Safari, then "Add to Home Screen".</p>
+        </div>
+
+        <div class="settings-actions preferences-status">
+          <div id="settings-status" class="settings-status" role="status" aria-live="polite"></div>
         </div>
       </section>
     </div>
@@ -180,5 +319,7 @@
   <script src="/js/header.js"></script>
   <script src="/js/passkeys.js"></script>
   <script src="/js/profile.js"></script>
+  <script src="/js/preferences.js"></script>
+  <script src="/js/pwa-install.js"></script>
 </body>
 </html>
