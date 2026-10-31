@@ -2128,7 +2128,7 @@ class BoardManager {
       return true;
     }
 
-    const actionBtn = target.closest('.card-delete-btn, .card-archive-btn, .card-unarchive-btn, .card-done-btn, .card-move-btn');
+    const actionBtn = target.closest('.card-delete-btn, .card-archive-btn, .card-unarchive-btn, .card-done-btn, .card-move-btn, .card-top-btn');
     if (!actionBtn) {
       return false;
     }
@@ -2148,6 +2148,8 @@ class BoardManager {
       this.updateCardDoneStatus(cardId, !currentDone, cardElement);
     } else if (actionBtn.classList.contains('card-move-btn')) {
       this.openMoveCardModal(cardId);
+    } else if (actionBtn.classList.contains('card-top-btn')) {
+      this.moveCardToTop(cardId);
     }
     return true;
   }
@@ -2287,6 +2289,7 @@ class BoardManager {
       '.card-unarchive-btn',
       '.card-done-btn',
       '.card-move-btn',
+      '.card-top-btn',
       '.card-expand-btn',
       '.card-checklist-checkbox',
       '.card-action-buttons',
@@ -4166,6 +4169,15 @@ class BoardManager {
         this.archiveCard(parseInt(card.getAttribute('data-card-id')), card);
       }
     }
+
+    // 't' key - send the card under the mouse to the top of its column
+    if ((e.key === 't' || e.key === 'T') && !e.repeat) {
+      const card = this.container.querySelector('.card:not([data-archived="true"]):hover');
+      if (card) {
+        e.preventDefault();
+        this.moveCardToTop(parseInt(card.getAttribute('data-card-id')));
+      }
+    }
   }
 
   cleanup() {
@@ -4685,6 +4697,7 @@ class BoardManager {
                 </button>` : ''}`
           }
           ${!card.archived && permissions.canMoveCard ? '<button class="card-move-btn" data-card-id="' + card.id + '" title="Move card" draggable="false">↔</button>' : ''}
+          ${!card.archived && permissions.canMoveCard ? '<button class="card-top-btn" data-card-id="' + card.id + '" title="Move to top" aria-label="Move to top" draggable="false">⤒</button>' : ''}
           ${permissions.canDeleteCard ? '<button class="card-delete-btn" data-card-id="' + card.id + '" title="Delete card" draggable="false">×</button>' : ''}
         </div>
         <div class="card-content-wrapper" id="card-content-${card.id}">
@@ -4842,7 +4855,7 @@ class BoardManager {
 
     // Remove card move buttons if user cannot call card update endpoint.
     if (!canMoveCard) {
-      document.querySelectorAll('.card-move-btn').forEach(btn => btn.remove());
+      document.querySelectorAll('.card-move-btn, .card-top-btn').forEach(btn => btn.remove());
     }
     
     console.log('Permission-based rendering complete');
@@ -7613,6 +7626,7 @@ class BoardManager {
     // it. Both are always available - placing with no duration entered
     // falls back to a 1 hour task.
     const hasInitialAnchorDate = !!cardData.start_date || !!cardData.end_date;
+    const cardAtTop = this.isCardAtTop(cardId);
     const plannerBtnTitle = hasInitialAnchorDate ? 'View in Planner' : 'Place in Planner';
     
     // Create modal HTML
@@ -7636,6 +7650,7 @@ class BoardManager {
                 }
                 ${!isReadOnly && canManageAssignees ? `<button type="button" class="btn btn-secondary" id="assign-assignees-btn" data-card-id="${cardData.id}" title="Assignees" aria-label="Assignees">${actionBtnContent('👤', 'Assign')}</button>` : ''}
                 ${!isReadOnly && canMoveCard && !cardData.archived ? `<button type="button" class="btn btn-secondary" id="move-card-detail-btn" data-card-id="${cardData.id}" title="Move" aria-label="Move">${actionBtnContent('↗', 'Move')}</button>` : ''}
+                ${!isReadOnly && canMoveCard && !cardData.archived ? `<button type="button" class="btn btn-secondary" id="move-to-top-detail-btn" title="${cardAtTop ? 'Already at the top' : 'Move to top'}" aria-label="Move to top" ${cardAtTop ? 'disabled' : ''}>${actionBtnContent('⤒', 'Top')}</button>` : ''}
                 ${!isReadOnly ? `<button type="button" class="btn btn-secondary" id="view-planner-btn" data-card-id="${cardData.id}" title="${plannerBtnTitle}" aria-label="${plannerBtnTitle}">${actionBtnContent('📅', 'Planner')}</button>` : ''}
                 ${!isReadOnly && canDeleteCard ? `<button type="button" class="btn btn-danger" id="delete-card-detail-btn" data-card-id="${cardData.id}" title="Delete" aria-label="Delete">${actionBtnContent('🗑', 'Delete')}</button>` : ''}
               </div>
@@ -7984,6 +7999,14 @@ class BoardManager {
     if (assignAssigneesBtn) {
       assignAssigneesBtn.addEventListener('click', async () => {
         await this.openAssigneeModal(cardId);
+      });
+    }
+
+    const moveToTopBtn = document.getElementById('move-to-top-detail-btn');
+    if (moveToTopBtn) {
+      moveToTopBtn.addEventListener('click', async () => {
+        await leaveModal();
+        await this.moveCardToTop(cardId);
       });
     }
 
@@ -9885,6 +9908,25 @@ class BoardManager {
     }
 
     return Math.max(...targetCards) + 1;
+  }
+
+  findCardColumn(cardId) {
+    return this.columns.find(c => (c.cards || []).some(card => card.id === cardId));
+  }
+
+  // Only order 0 is certain: a filter or view can hide cards above the others.
+  isCardAtTop(cardId) {
+    const card = this.findCardColumn(cardId)?.cards.find(c => c.id === cardId);
+    return !!card && Number(card.order) === 0;
+  }
+
+  // The server finds the top, so that it's the top of the whole column and not
+  // only of the cards this view has loaded.
+  async moveCardToTop(cardId) {
+    const column = this.findCardColumn(cardId);
+    if (!column || this.isCardAtTop(cardId)) return;
+
+    await this.updateCardPosition(cardId, column.id, 0, this.getCardOriginalPosition(cardId), 'top');
   }
 
   getCardOriginalPosition(cardId) {

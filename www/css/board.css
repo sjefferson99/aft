@@ -1012,6 +1012,7 @@
 
 .card-delete-btn,
 .card-move-btn,
+.card-top-btn,
 .card-archive-btn,
 .card-unarchive-btn {
   background: none;
@@ -1040,7 +1041,8 @@
   font-size: 20px;
 }
 
-.card-move-btn {
+.card-move-btn,
+.card-top-btn {
   display: none;
   color: var(--secondary-color);
   font-size: 18px;
@@ -1057,7 +1059,8 @@
   opacity: 0.8;
 }
 
-.card-move-btn:hover {
+.card-move-btn:hover,
+.card-top-btn:hover {
   transform: scale(1.2);
   color: var(--text-bold);
 }
@@ -2295,6 +2298,7 @@ button.readonly-disabled,
 
   .card-delete-btn,
   .card-move-btn,
+  .card-top-btn,
   .card-archive-btn,
   .card-unarchive-btn {
     width: 24px;
@@ -2309,6 +2313,10 @@ button.readonly-disabled,
 
   .card-move-btn {
     display: flex;
+    font-size: 17px;
+  }
+
+  .card-top-btn {
     font-size: 17px;
   }
 
@@ -2860,6 +2868,7 @@ body.touchscreen-mode .column-cards {
 
   body.touchscreen-mode .card-delete-btn,
   body.touchscreen-mode .card-move-btn,
+  body.touchscreen-mode .card-top-btn,
   body.touchscreen-mode .card-done-btn,
   body.touchscreen-mode .card-archive-btn,
   body.touchscreen-mode .card-unarchive-btn {
@@ -2894,7 +2903,8 @@ body.touchscreen-mode .column-cards {
     display: none;
   }
 
-  body.desktop-card-action-move .card-move-btn {
+  body.desktop-card-action-move .card-move-btn,
+  body.desktop-card-action-top .card-top-btn {
     display: flex;
   }
 
@@ -2912,7 +2922,8 @@ body.touchscreen-mode .column-cards {
   }
 
   body.mobile-card-action-archive .card-archive-btn,
-  body.mobile-card-action-delete .card-delete-btn {
+  body.mobile-card-action-delete .card-delete-btn,
+  body.mobile-card-action-top .card-top-btn {
     display: flex;
   }
 
