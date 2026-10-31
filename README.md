@@ -125,6 +125,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 ### 🌐 Public Board Sharing (Read-Only)
 - **Public Visibility Toggle** - Board owners/editors can switch a board between private and public from the board settings menu.
 - **Stable Share Link** - Making a board private and public again keeps the same public slug unless you explicitly rotate it.
+- **Copy Public Link** - Signed-in users see a small "P" badge in the header on public boards. Click it, or use "Copy Public Link" in board settings, to copy the link.
 - **Rotate Public Link** - Use "Rotate Public Link" in board settings to immediately invalidate the old URL and issue a new one.
 - **Dedicated Public Page** - Public links open at `/public-board.html?slug=<slug>` for anonymous viewing.
 - **Instance Theme Alignment** - Public board viewers use the configured instance default theme, not a fixed hardcoded theme.
