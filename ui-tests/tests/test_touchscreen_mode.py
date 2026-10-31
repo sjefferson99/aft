@@ -21,9 +21,9 @@ def _open_board(page, board_id, width=1600):
 @pytest.mark.ui
 def test_setting_turns_mode_on_and_off(logged_in_page, api_session, ui_base_url):
     page = logged_in_page
-    page.goto("/settings.html")
+    page.goto("/profile.html")
     checkbox = page.locator("#touchscreen-mode")
-    page.wait_for_load_state("networkidle")  # Settings binds its listeners after loading
+    page.wait_for_load_state("networkidle")  # Preferences binds its listeners after loading
     assert not checkbox.is_checked()
 
     try:
@@ -55,7 +55,7 @@ def test_mode_is_off_by_default(logged_in_page, board):
 def test_stale_cached_mode_is_corrected(logged_in_page, board):
     """A kiosk tab keeps session storage when the signed-in user changes."""
     page = logged_in_page
-    page.goto("/settings.html")
+    page.goto("/profile.html")
     page.evaluate("sessionStorage.setItem('touchscreenMode', '1')")
     page.goto(f"/board.html?id={board['id']}")
 

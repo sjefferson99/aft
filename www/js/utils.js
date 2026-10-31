@@ -1038,3 +1038,38 @@ function showAccessDenied(message = 'You do not have permission to access this p
   });
 }
 
+/**
+ * Fill a select with themes, grouped as user, global and system themes.
+ * @param {HTMLSelectElement|null} selectElement - The select to fill
+ * @param {Array<Object>} themes - Themes from the API
+ */
+function populateThemeOptions(selectElement, themes) {
+  if (!selectElement) {
+    return;
+  }
+
+  const byName = (a, b) => a.name.localeCompare(b.name);
+  const groups = [
+    ['User Themes', themes.filter(t => !t.system_theme && !t.global_theme)],
+    ['Global Themes', themes.filter(t => !t.system_theme && t.global_theme)],
+    ['System Themes', themes.filter(t => t.system_theme)]
+  ];
+
+  selectElement.innerHTML = '';
+
+  groups.forEach(([label, groupThemes]) => {
+    if (groupThemes.length === 0) {
+      return;
+    }
+
+    const group = document.createElement('optgroup');
+    group.label = label;
+    groupThemes.sort(byName).forEach(theme => {
+      const option = document.createElement('option');
+      option.value = theme.id;
+      option.textContent = theme.name;
+      group.appendChild(option);
+    });
+    selectElement.appendChild(group);
+  });
+}

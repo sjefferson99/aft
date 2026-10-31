@@ -102,7 +102,7 @@ def test_title_keeps_clear_of_three_actions(logged_in_page, api_session, ui_base
 def test_settings_page_saves_and_limits_choices(logged_in_page, api_session, ui_base_url, set_card_actions):
     page = logged_in_page
     set_card_actions(["done", "archive"], ["done", "move"])
-    page.goto("/settings.html")
+    page.goto("/profile.html")
 
     desktop = '[data-card-action-screen="desktop"]'
     page.locator(f'{desktop}[data-card-action="archive"]:checked').wait_for(state="attached", timeout=8000)
@@ -118,7 +118,7 @@ def test_settings_page_saves_and_limits_choices(logged_in_page, api_session, ui_
 @pytest.mark.ui
 def test_settings_page_shows_defaults_without_a_choice(logged_in_page):
     page = logged_in_page
-    page.goto("/settings.html")
+    page.goto("/profile.html")
     page.locator('[data-card-action-screen="mobile"][data-card-action="move"]:checked').wait_for(state="attached", timeout=8000)
     assert page.locator('[data-card-action-screen="desktop"]:checked').count() == 3
     assert page.locator('[data-card-action-screen="mobile"]:checked').count() == 2

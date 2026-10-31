@@ -16,7 +16,36 @@
   margin-right: auto;
 }
 
+.profile-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.profile-nav a {
+  padding: 6px 14px;
+  background: var(--page-panel-background);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  color: var(--text-color);
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.profile-nav a:hover,
+.profile-nav a:focus-visible {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.preferences-status {
+  position: sticky;
+  bottom: 12px;
+}
+
 .profile-section {
+  scroll-margin-top: 90px;
   background: var(--page-panel-background);
   border-radius: 8px;
   padding: 24px;
