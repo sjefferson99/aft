@@ -206,6 +206,114 @@ function appendLinkifiedText(container, text) {
 }
 
 // Shared checklist management helper
+// Datetime-local controls expect local wall time strings (no timezone suffix).
+function toDatetimeLocalValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const pad = (num) => String(num).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// Touch keyboards have no Shift+Enter, so Enter stays a new line there.
+function enterKeyAddsNewLine() {
+  return window.matchMedia('(pointer: coarse)').matches
+    || document.body.classList.contains('touchscreen-mode');
+}
+
+function actionBtnContent(icon, label) {
+  return `<span class="btn-icon" aria-hidden="true">${icon}</span><span class="btn-label">${label}</span>`;
+}
+
+// Keep start date, end date, and duration in sync. Whichever field was
+// just edited recalculates the missing one of the other two; if both
+// others already hold a genuine value, start date acts as the anchor
+// (start changed -> recalc end, duration changed -> recalc end,
+// end changed -> recalc duration). Clearing a field never cascades.
+//
+// Each field tracks an "isReal" flag (true only when the user directly
+// edited that field, false when we last derived it programmatically).
+// This matters because duration is split across two physical inputs
+// (days, hours): without the flag, editing days could derive a start
+// date as a side effect, and the very next edit to hours would then
+// misread that derived start as a genuine anchor instead of continuing
+// to derive it from end + duration.
+function setupCardDateSync({ startInput, endInput, daysInput, hoursInput }, onChange = () => {}) {
+  const hasDurationValue = () => daysInput.value !== '' || hoursInput.value !== '';
+  const getDurationValues = () => ({
+    days: parseInt(daysInput.value, 10) || 0,
+    hours: parseInt(hoursInput.value, 10) || 0
+  });
+
+  let startIsReal;
+  let endIsReal;
+  let durationIsReal;
+  const resetTracking = () => {
+    startIsReal = !!startInput.value;
+    endIsReal = !!endInput.value;
+    durationIsReal = hasDurationValue();
+  };
+  resetTracking();
+
+  const setDerivedStart = (value) => {
+    startInput.value = value;
+    startIsReal = false;
+  };
+  const setDerivedEnd = (value) => {
+    endInput.value = value;
+    endIsReal = false;
+  };
+  const setDerivedDuration = (duration) => {
+    daysInput.value = duration ? duration.days : '';
+    hoursInput.value = duration ? duration.hours : '';
+    durationIsReal = !!duration;
+  };
+
+  startInput.addEventListener('input', () => {
+    if (!startInput.value) { startIsReal = false; onChange(); return; }
+    startIsReal = true;
+
+    if (durationIsReal) {
+      const { days, hours } = getDurationValues();
+      setDerivedEnd(addDurationToLocalValue(startInput.value, days, hours));
+    } else if (endIsReal) {
+      setDerivedDuration(diffToDuration(startInput.value, endInput.value));
+    }
+    onChange();
+  });
+
+  const recalcFromDuration = () => {
+    if (!hasDurationValue()) { durationIsReal = false; onChange(); return; }
+    durationIsReal = true;
+
+    const { days, hours } = getDurationValues();
+    if (startIsReal) {
+      setDerivedEnd(addDurationToLocalValue(startInput.value, days, hours));
+    } else if (endIsReal) {
+      setDerivedStart(addDurationToLocalValue(endInput.value, -days, -hours));
+    }
+    onChange();
+  };
+  daysInput.addEventListener('input', recalcFromDuration);
+  hoursInput.addEventListener('input', recalcFromDuration);
+
+  endInput.addEventListener('input', () => {
+    if (!endInput.value) { endIsReal = false; onChange(); return; }
+    endIsReal = true;
+
+    if (startIsReal) {
+      setDerivedDuration(diffToDuration(startInput.value, endInput.value));
+    } else if (durationIsReal) {
+      const { days, hours } = getDurationValues();
+      setDerivedStart(addDurationToLocalValue(endInput.value, -days, -hours));
+    }
+    onChange();
+  });
+
+  return { hasDurationValue, getDurationValues, resetTracking };
+}
+
 class ChecklistManager {
   constructor(container, pendingItems, options = {}) {
     this.container = container;
@@ -6992,13 +7100,32 @@ class BoardManager {
     // Track checklist items to be created
     let pendingChecklistItems = [];
     let checklistVisible = false;
-    let hasUnsavedChanges = false;
+    let assignees = { primaryId: null, secondaryIds: [] };
+
+    const canManageAssignees = this.canCallPermissionEndpoint('PUT', '/api/cards/:id/assignees');
+    const canCreateSchedule = this.canCallPermissionEndpoint('POST', '/api/schedules');
+    const enterAddsNewLine = enterKeyAddsNewLine();
+
+    const initialStartDate = toDatetimeLocalValue(defaultStartDate);
+    const initialEndDate = toDatetimeLocalValue(defaultEndDate);
+    const initialDuration = diffToDuration(initialStartDate, initialEndDate);
     
     // Create modal HTML
     const modalHtml = `
       <div class="modal" id="add-card-modal">
         <div class="modal-content card-modal-content">
-          <h2>${scheduled ? 'Add New Template Card' : 'Add New Card'}</h2>
+          <div class="modal-header">
+            <div class="modal-header-actions">
+              <div class="modal-action-group">
+                ${canManageAssignees ? `<button type="button" class="btn btn-secondary" id="assign-new-card-btn" title="Assignees" aria-label="Assignees">${actionBtnContent('👤', 'Assign')}</button>` : ''}
+              </div>
+              <div class="modal-action-group modal-action-group-end">
+                <button type="button" class="btn btn-secondary" id="cancel-card-btn">Cancel</button>
+                <button type="submit" form="add-card-form" class="btn btn-primary">Create</button>
+              </div>
+            </div>
+            <h2>${scheduled ? 'Add New Template Card' : 'Add New Card'}</h2>
+          </div>
           <form id="add-card-form">
             <div class="form-group">
               <label for="card-title">Title:</label>
@@ -7008,7 +7135,37 @@ class BoardManager {
               <label for="card-description">Description:</label>
               <textarea id="card-description" name="card-description" rows="4"></textarea>
             </div>
-            
+            <div class="form-group">
+              <label for="card-start-date">Start Date:</label>
+              <input type="datetime-local" id="card-start-date" name="card-start-date" value="${initialStartDate}">
+            </div>
+            <div class="form-group">
+              <label for="card-end-date">End Date:</label>
+              <input type="datetime-local" id="card-end-date" name="card-end-date" value="${initialEndDate}">
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="card-duration-days">Duration (days):</label>
+                <input type="number" id="card-duration-days" name="card-duration-days" min="0" value="${initialDuration ? initialDuration.days : ''}">
+              </div>
+              <div class="form-group">
+                <label for="card-duration-hours">Duration (hours):</label>
+                <input type="number" id="card-duration-hours" name="card-duration-hours" min="0" max="23" value="${initialDuration ? initialDuration.hours : ''}">
+              </div>
+            </div>
+
+            ${canCreateSchedule ? `
+            <div class="schedule-section">
+              <button type="button" class="btn btn-secondary btn-sm" id="new-card-schedule-btn" title="Create the card, then open its schedule">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+                Create Schedule
+              </button>
+            </div>
+            ` : ''}
+
             <div class="checklist-section">
               <div id="checklist-header-container">
                 <button type="button" class="btn btn-secondary btn-sm" id="add-checklist-item-initial-btn">+ Add Checklist</button>
@@ -7023,11 +7180,19 @@ class BoardManager {
                 <button type="button" class="btn btn-secondary btn-sm" id="add-checklist-item-bottom-btn">+ Add Item</button>
               </div>
             </div>
-            
-            <div class="modal-actions">
-              <button type="button" class="btn btn-secondary" id="cancel-card-btn">Cancel</button>
-              <button type="submit" class="btn btn-primary">Create Card</button>
+
+            ${canManageAssignees ? `
+            <div class="card-metadata" id="new-card-assignee-metadata" style="display:none;">
+              <div class="card-metadata-item">
+                <span class="card-metadata-label">Assigned To:</span>
+                <span class="card-metadata-value card-owner-value" id="new-card-primary-assignee"></span>
+              </div>
+              <div class="card-metadata-item" id="new-card-secondary-row">
+                <span class="card-metadata-label">Secondary Assignees:</span>
+                <span class="card-metadata-value card-owner-value" id="new-card-secondary-assignees"></span>
+              </div>
             </div>
+            ` : ''}
           </form>
         </div>
       </div>
@@ -7049,23 +7214,63 @@ class BoardManager {
     // Focus on input
     titleInput.focus();
     
-    // Track changes in title and description
-    titleInput.addEventListener('input', () => {
-      hasUnsavedChanges = titleInput.value.trim() !== '';
-    });
-    
     const descriptionInput = document.getElementById('card-description');
-    descriptionInput.addEventListener('input', () => {
-      hasUnsavedChanges = titleInput.value.trim() !== '' || descriptionInput.value.trim() !== '';
+    const startDateInput = document.getElementById('card-start-date');
+    const endDateInput = document.getElementById('card-end-date');
+    const durationDaysInput = document.getElementById('card-duration-days');
+    const durationHoursInput = document.getElementById('card-duration-hours');
+    const dateInputs = [startDateInput, endDateInput, durationDaysInput, durationHoursInput];
+
+    setupCardDateSync({
+      startInput: startDateInput,
+      endInput: endDateInput,
+      daysInput: durationDaysInput,
+      hoursInput: durationHoursInput
     });
+
+    const hasContent = () => titleInput.value.trim() !== ''
+      || descriptionInput.value.trim() !== ''
+      || startDateInput.value !== initialStartDate
+      || endDateInput.value !== initialEndDate
+      || assignees.primaryId !== null
+      || assignees.secondaryIds.length > 0
+      || pendingChecklistItems.some(item => item.name && item.name.trim());
+
+    const showAssigneeSummary = () => {
+      const metadata = document.getElementById('new-card-assignee-metadata');
+      const hasAssignees = assignees.primaryId !== null || assignees.secondaryIds.length > 0;
+      metadata.style.display = hasAssignees ? '' : 'none';
+
+      const userName = (userId) => {
+        const user = (this.assigneeFilterUsers || []).find((candidate) => candidate.id === userId);
+        return user ? this.sanitizeAssigneeUser(user).displayName : '';
+      };
+      document.getElementById('new-card-primary-assignee').textContent = assignees.primaryId !== null ? userName(assignees.primaryId) : '—';
+      document.getElementById('new-card-secondary-assignees').textContent = assignees.secondaryIds.map(userName).join(', ');
+      document.getElementById('new-card-secondary-row').style.display = assignees.secondaryIds.length > 0 ? '' : 'none';
+    };
+
+    const assignBtn = document.getElementById('assign-new-card-btn');
+    if (assignBtn) {
+      assignBtn.addEventListener('click', () => {
+        this.openAssigneeModal(null, {
+          ...assignees,
+          onSave: (primaryId, secondaryIds) => {
+            assignees = { primaryId, secondaryIds };
+            showAssigneeSummary();
+          }
+        });
+      });
+    }
     
     // Helper to update checklist summary
     const updateChecklistSummary = () => {
       const summaryElement = document.getElementById('checklist-summary');
       if (summaryElement) {
-        const total = pendingChecklistItems.length;
-        const checked = pendingChecklistItems.filter(i => i.checked).length;
-        const percentage = calculateChecklistPercentage(pendingChecklistItems);
+        const namedItems = pendingChecklistItems.filter(i => i.name);
+        const total = namedItems.length;
+        const checked = namedItems.filter(i => i.checked).length;
+        const percentage = calculateChecklistPercentage(namedItems);
         summaryElement.textContent = `${checked}/${total} (${percentage}%)`;
       }
     };
@@ -7077,8 +7282,7 @@ class BoardManager {
     const checklistManager = new ChecklistManager(checklistContainer, pendingChecklistItems, {
       updateSummary: updateChecklistSummary,
       deleteButtonClass: 'checklist-delete-btn-new',
-      onItemAdded: () => { hasUnsavedChanges = true; },
-      onItemChanged: () => { hasUnsavedChanges = true; }
+      keepEmptyOnBlur: true
     });
     
     // Show checklist UI with header and top/bottom buttons
@@ -7126,10 +7330,7 @@ class BoardManager {
       cancelBtn.disabled = true;
       
       try {
-        // Check if there's any content or checklist items
-        const hasContent = hasUnsavedChanges || pendingChecklistItems.some(item => item.name && item.name.trim());
-        
-        if (hasContent) {
+        if (hasContent()) {
           if (await showConfirm('You have unsaved changes. Are you sure you want to cancel?', 'Confirm Cancellation')) {
             modal.remove();
           } else {
@@ -7150,16 +7351,45 @@ class BoardManager {
     
     cancelBtn.addEventListener('click', handleCancel);
 
+    // Enter creates the card from any field. Shift+Enter adds a line in the
+    // description, and checklist inputs handle their own keys.
+    form.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      const isFormField = e.target === descriptionInput || dateInputs.includes(e.target);
+      if (!isFormField) return;
+      if (e.target === descriptionInput && (e.shiftKey || enterAddsNewLine)) return;
+      e.preventDefault();
+      form.requestSubmit();
+    });
+
     // Handle form submit
+    let isCreating = false;
+    let scheduleAfterCreate = false;
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (isCreating) return;
+
+      const openSchedule = scheduleAfterCreate;
+      scheduleAfterCreate = false;
       
       const title = titleInput.value.trim();
-      const description = document.getElementById('card-description').value.trim();
-      const submitBtn = form.querySelector('button[type="submit"]');
+      const description = descriptionInput.value.trim();
+      const submitBtn = modal.querySelector('button[type="submit"]');
+      const startValue = startDateInput.value;
+      const endValue = endDateInput.value;
+
+      if (startDateInput.validity.badInput || endDateInput.validity.badInput) {
+        this.showErrorToast('Please enter a complete date');
+        return;
+      }
+      if (startValue && endValue && new Date(endValue) < new Date(startValue)) {
+        this.showErrorToast('End date cannot be before start date');
+        return;
+      }
       
       if (title) {
         // Disable button and show loading state
+        isCreating = true;
         const originalText = submitBtn.textContent;
         submitBtn.disabled = true;
         submitBtn.textContent = 'Creating...';
@@ -7167,12 +7397,23 @@ class BoardManager {
         
         // Filter out empty checklist items
         const validChecklistItems = pendingChecklistItems.filter(item => item.name && item.name.trim());
-        const success = await this.createCard(columnId, title, description, order, validChecklistItems, scheduled, defaultStartDate, defaultEndDate);
+        const startDate = startValue ? new Date(startValue).toISOString() : null;
+        const endDate = endValue ? new Date(endValue).toISOString() : null;
+        const card = await this.createCard(columnId, title, description, order, validChecklistItems, scheduled, startDate, endDate, assignees);
         
-        if (success) {
+        if (card) {
           modal.remove();
+          if (openSchedule) {
+            try {
+              await this.openScheduleModal(card.id, card, false);
+            } catch (err) {
+              console.error('Error opening schedule modal:', err);
+              this.showErrorToast('Failed to open schedule editor');
+            }
+          }
         } else {
           // Re-enable button on failure - keep modal open
+          isCreating = false;
           submitBtn.disabled = false;
           submitBtn.textContent = originalText;
           submitBtn.style.opacity = '';
@@ -7180,12 +7421,31 @@ class BoardManager {
       }
     });
 
+    const scheduleBtn = document.getElementById('new-card-schedule-btn');
+    if (scheduleBtn) {
+      scheduleBtn.addEventListener('click', () => {
+        scheduleAfterCreate = true;
+        form.requestSubmit();
+        scheduleAfterCreate = false;
+      });
+    }
+
+    const handleEscape = () => {
+      // The assignee picker sits on top and goes first
+      const assigneeModal = document.getElementById('assignee-modal');
+      if (assigneeModal) {
+        assigneeModal.remove();
+        return undefined;
+      }
+      return handleCancel();
+    };
+
     // Close modal on background click with warning (ignore text selection drags)
     setupModalBackgroundClose(modal, handleCancel);
-    setupModalEscapeClose(modal, handleCancel);
+    setupModalEscapeClose(modal, handleEscape);
   }
 
-  async createCard(columnId, title, description, order = null, checklistItems = [], scheduled = false, startDate = null, endDate = null) {
+  async createCard(columnId, title, description, order = null, checklistItems = [], scheduled = false, startDate = null, endDate = null, assignees = null) {
     // Set 5 second timeout for the request
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
@@ -7236,6 +7496,12 @@ class BoardManager {
           }
         }
         
+        // The card exists either way, so a failure here is only reported
+        if (assignees && (assignees.primaryId !== null || assignees.secondaryIds.length > 0)) {
+          await this.saveCardAssignees(cardId, assignees.primaryId, assignees.secondaryIds)
+            .catch((err) => this.showErrorToast(`Card created, but assignees weren't saved: ${err.message}`));
+        }
+
         // Reload board once at the end to show the new card
         await this.loadBoard();
         this.refreshPlannerIfVisible();
@@ -7257,7 +7523,7 @@ class BoardManager {
           }
         }
         
-        return true;
+        return data.card;
       } else {
         console.error('Failed to create card:', data.message);
         this.showErrorToast('Failed to create card');
@@ -7305,19 +7571,7 @@ class BoardManager {
     let savedTitle = cardData.title;
     let savedDescription = cardData.description || '';
 
-    // Touch keyboards have no Shift+Enter, so Enter stays a new line there.
-    const enterAddsNewLine = window.matchMedia('(pointer: coarse)').matches
-      || document.body.classList.contains('touchscreen-mode');
-
-    // Datetime-local controls expect local wall time strings (no timezone suffix).
-    const toDatetimeLocalValue = (value) => {
-      if (!value) return '';
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return '';
-
-      const pad = (num) => String(num).padStart(2, '0');
-      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-    };
+    const enterAddsNewLine = enterKeyAddsNewLine();
 
     const defaultStartDate = toDatetimeLocalValue(cardData.start_date);
     const defaultEndDate = toDatetimeLocalValue(cardData.end_date);
@@ -7356,7 +7610,6 @@ class BoardManager {
     // falls back to a 1 hour task.
     const hasInitialAnchorDate = !!cardData.start_date || !!cardData.end_date;
     const plannerBtnTitle = hasInitialAnchorDate ? 'View in Planner' : 'Place in Planner';
-    const actionBtnContent = (icon, label) => `<span class="btn-icon" aria-hidden="true">${icon}</span><span class="btn-label">${label}</span>`;
     
     // Create modal HTML
     const modalHtml = `
@@ -7602,33 +7855,18 @@ class BoardManager {
       descriptionInput.addEventListener('blur', saveText);
     }
 
-    // Keep start date, end date, and duration in sync. Whichever field was
-    // just edited recalculates the missing one of the other two; if both
-    // others already hold a genuine value, start date acts as the anchor
-    // (start changed -> recalc end, duration changed -> recalc end,
-    // end changed -> recalc duration). Clearing a field never cascades.
-    //
-    // Each field tracks an "isReal" flag (true only when the user directly
-    // edited that field, false when we last derived it programmatically).
-    // This matters because duration is split across two physical inputs
-    // (days, hours): without the flag, editing days could derive a start
-    // date as a side effect, and the very next edit to hours would then
-    // misread that derived start as a genuine anchor instead of continuing
-    // to derive it from end + duration.
     const startDateInput = document.getElementById('edit-card-start-date');
     const endDateInput = document.getElementById('edit-card-end-date');
     const durationDaysInput = document.getElementById('edit-card-duration-days');
     const durationHoursInput = document.getElementById('edit-card-duration-hours');
 
-    let startIsReal = !!defaultStartDate;
-    let endIsReal = !!defaultEndDate;
-    let durationIsReal = !!initialDuration;
-
-    const hasDurationValue = () => durationDaysInput.value !== '' || durationHoursInput.value !== '';
-    const getDurationValues = () => ({
-      days: parseInt(durationDaysInput.value, 10) || 0,
-      hours: parseInt(durationHoursInput.value, 10) || 0
-    });
+    const dateSync = setupCardDateSync({
+      startInput: startDateInput,
+      endInput: endDateInput,
+      daysInput: durationDaysInput,
+      hoursInput: durationHoursInput
+    }, () => refreshViewPlannerButtonState());
+    const { hasDurationValue, getDurationValues } = dateSync;
 
     // Duration usable by the planner is either a real start+end pair, or a
     // duration typed in on its own (with no anchor date yet) - the planner
@@ -7703,61 +7941,6 @@ class BoardManager {
         return success;
       });
     };
-    const setDerivedStart = (value) => {
-      startDateInput.value = value;
-      startIsReal = false;
-    };
-    const setDerivedEnd = (value) => {
-      endDateInput.value = value;
-      endIsReal = false;
-    };
-    const setDerivedDuration = (duration) => {
-      durationDaysInput.value = duration ? duration.days : '';
-      durationHoursInput.value = duration ? duration.hours : '';
-      durationIsReal = !!duration;
-    };
-
-    startDateInput.addEventListener('input', () => {
-      if (!startDateInput.value) { startIsReal = false; refreshViewPlannerButtonState(); return; }
-      startIsReal = true;
-
-      if (durationIsReal) {
-        const { days, hours } = getDurationValues();
-        setDerivedEnd(addDurationToLocalValue(startDateInput.value, days, hours));
-      } else if (endIsReal) {
-        setDerivedDuration(diffToDuration(startDateInput.value, endDateInput.value));
-      }
-      refreshViewPlannerButtonState();
-    });
-
-    const recalcFromDuration = () => {
-      if (!hasDurationValue()) { durationIsReal = false; refreshViewPlannerButtonState(); return; }
-      durationIsReal = true;
-
-      const { days, hours } = getDurationValues();
-      if (startIsReal) {
-        setDerivedEnd(addDurationToLocalValue(startDateInput.value, days, hours));
-      } else if (endIsReal) {
-        setDerivedStart(addDurationToLocalValue(endDateInput.value, -days, -hours));
-      }
-      refreshViewPlannerButtonState();
-    };
-    durationDaysInput.addEventListener('input', recalcFromDuration);
-    durationHoursInput.addEventListener('input', recalcFromDuration);
-
-    endDateInput.addEventListener('input', () => {
-      if (!endDateInput.value) { endIsReal = false; refreshViewPlannerButtonState(); return; }
-      endIsReal = true;
-
-      if (startIsReal) {
-        setDerivedDuration(diffToDuration(startDateInput.value, endDateInput.value));
-      } else if (durationIsReal) {
-        const { days, hours } = getDurationValues();
-        setDerivedStart(addDurationToLocalValue(endDateInput.value, -days, -hours));
-      }
-      refreshViewPlannerButtonState();
-    });
-
     const dateInputs = [startDateInput, endDateInput, durationDaysInput, durationHoursInput];
     if (!isReadOnly) {
       dateInputs.forEach((input) => input.addEventListener('blur', saveDates));
@@ -8039,9 +8222,7 @@ class BoardManager {
         startDateInput.value = savedStart;
         endDateInput.value = savedEnd;
         [durationDaysInput.value, durationHoursInput.value] = savedDuration.split('|');
-        startIsReal = !!savedStart;
-        endIsReal = !!savedEnd;
-        durationIsReal = hasDurationValue();
+        dateSync.resetTracking();
         refreshViewPlannerButtonState();
         return true;
       }
@@ -9247,20 +9428,31 @@ class BoardManager {
   * Open a modal for assigning primary and secondary assignees of a card.
    * @param {number} cardId
    */
-  async openAssigneeModal(cardId) {
+  // A draft picks assignees for a card that doesn't exist yet: it holds
+  // primaryId and secondaryIds, and onSave receives the choice.
+  async openAssigneeModal(cardId, draft = null) {
     // Remove any existing assignee modal
     const existing = document.getElementById('assignee-modal');
     if (existing) existing.remove();
 
     // Load current assignees and available users
     let ownersData;
-    try {
-      const resp = await fetch(`/api/cards/${cardId}/assignees`);
-      if (!resp.ok) throw new Error('Failed to load assignees');
-      ownersData = await resp.json();
-    } catch (e) {
-      this.showErrorToast('Failed to load assignee data. Please try again.');
-      return;
+    if (draft) {
+      const boardUsers = this.assigneeFilterUsers || [];
+      ownersData = {
+        primary_assignee: boardUsers.find((user) => user.id === draft.primaryId) || null,
+        secondary_assignees: boardUsers.filter((user) => draft.secondaryIds.includes(user.id)),
+        available_users: boardUsers
+      };
+    } else {
+      try {
+        const resp = await fetch(`/api/cards/${cardId}/assignees`);
+        if (!resp.ok) throw new Error('Failed to load assignees');
+        ownersData = await resp.json();
+      } catch (e) {
+        this.showErrorToast('Failed to load assignee data. Please try again.');
+        return;
+      }
     }
 
     const { primary_assignee, secondary_assignees, available_users } = ownersData;
@@ -9422,19 +9614,17 @@ class BoardManager {
         .map(button => parseInt(button.dataset.userId, 10))
         .filter(id => !Number.isNaN(id));
 
+      if (draft) {
+        draft.onSave(primaryOwnerId, secondaryAssigneeIds);
+        modal.remove();
+        return;
+      }
+
       saveBtn.disabled = true;
       saveBtn.textContent = 'Saving…';
 
       try {
-        const resp = await fetch(`/api/cards/${cardId}/assignees`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ assigned_to_id: primaryOwnerId, secondary_assignee_ids: secondaryAssigneeIds }),
-        });
-        const result = await resp.json();
-        if (!resp.ok || !result.success) {
-          throw new Error(result.message || 'Failed to save assignees');
-        }
+        await this.saveCardAssignees(cardId, primaryOwnerId, secondaryAssigneeIds);
         modal.remove();
         // Refresh owner display in the edit card modal
         this.loadCardAssigneeDisplay(cardId);
@@ -9444,6 +9634,18 @@ class BoardManager {
         saveBtn.textContent = 'Save';
       }
     });
+  }
+
+  async saveCardAssignees(cardId, assignedToId, secondaryAssigneeIds) {
+    const resp = await fetch(`/api/cards/${cardId}/assignees`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assigned_to_id: assignedToId, secondary_assignee_ids: secondaryAssigneeIds }),
+    });
+    const result = await resp.json();
+    if (!resp.ok || !result.success) {
+      throw new Error(result.message || 'Failed to save assignees');
+    }
   }
 
   generateCommentHtml(comment, isReadOnly = false) {

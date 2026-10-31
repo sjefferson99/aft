@@ -153,7 +153,7 @@ def test_add_card_to_column(logged_in_page, column):
 
     page.locator(f'.column-add-card-btn[data-column-id="{column["id"]}"]').click()
     page.fill("#card-title", "Write the docs")
-    page.click("#add-card-form button[type='submit']")
+    page.click("#add-card-modal button[type='submit']")
 
     card_in_column = page.locator(
         f'.column-cards[data-column-id="{column["id"]}"] .card-title',

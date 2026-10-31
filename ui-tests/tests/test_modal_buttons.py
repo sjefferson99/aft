@@ -58,5 +58,5 @@ def test_add_card_buttons_stay_in_one_row_on_mobile(logged_in_page, column):
     page.evaluate("id => window.boardManager.openAddCardModal(id)", column["id"])
 
     cancel = page.locator("#cancel-card-btn").bounding_box()
-    create = page.locator("#add-card-modal .modal-actions .btn-primary").bounding_box()
+    create = page.locator("#add-card-modal .modal-header-actions .btn-primary").bounding_box()
     assert cancel["y"] == create["y"]
