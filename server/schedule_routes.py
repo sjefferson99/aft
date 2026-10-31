@@ -511,6 +511,44 @@ def get_schedule(schedule_id):
         db.close()
 
 
+@schedule_bp.route("/api/schedules/<int:schedule_id>/run", methods=["POST"])
+@require_permission('schedule.create')
+def run_schedule_now(schedule_id):
+    """Create one card from a schedule straight away.
+    ---
+    tags:
+      - Scheduled Cards
+    parameters:
+      - name: schedule_id
+        in: path
+        type: integer
+        required: true
+    responses:
+      201:
+        description: Card created successfully
+      404:
+        description: Schedule not found
+      500:
+        description: Server error
+    """
+    try:
+        from card_scheduler import get_scheduler as get_card_scheduler
+
+        card_id = get_card_scheduler().create_card_now(schedule_id)
+        if card_id is None:
+            return jsonify({"success": False, "message": "Schedule not found"}), 404
+
+        return jsonify({
+            "success": True,
+            "message": "Card created successfully",
+            "card_id": card_id,
+        }), 201
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Error creating card from schedule {schedule_id}: {str(e)}")
+        return jsonify({"success": False, "message": "Failed to create card"}), 500
+
+
 @schedule_bp.route("/api/schedules/<int:schedule_id>", methods=["PUT"])
 @require_permission('schedule.edit')
 def update_schedule(schedule_id):
