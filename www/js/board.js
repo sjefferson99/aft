@@ -3933,8 +3933,8 @@ class BoardManager {
   }
 
   handleKeydown(e) {
-    // Don't trigger shortcuts if user is typing in an input/textarea
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    // Don't trigger shortcuts if user is typing in or choosing from a form field
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) {
       return;
     }
 
@@ -3982,6 +3982,17 @@ class BoardManager {
       && this.canCallPermissionEndpoint('POST', '/api/boards/:id/columns')) {
       e.preventDefault();
       this.openAddColumnModal(this.getColumnInsertOrderNearMouse());
+    }
+
+    // 'a' key - archive the card under the mouse. Key repeat is ignored so that
+    // holding the key can't archive each card that moves up under the mouse.
+    if ((e.key === 'a' || e.key === 'A') && !e.repeat && this.currentView !== 'scheduled'
+      && this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/archive')) {
+      const card = this.container.querySelector('.card:not([data-archived="true"]):hover');
+      if (card) {
+        e.preventDefault();
+        this.archiveCard(parseInt(card.getAttribute('data-card-id')), card);
+      }
     }
   }
 
@@ -4481,23 +4492,22 @@ class BoardManager {
         ${permissions.canShowCardActions ? `<div class="card-action-buttons" draggable="false">`  : '<div class="card-action-buttons readonly-hidden" draggable="false">'}
           ${this.currentView === 'scheduled' ? '' : 
             card.archived ? 
-              `${permissions.canUnarchiveCard ? `<button class="card-unarchive-btn" data-card-id="${card.id}" title="Unarchive card" draggable="false">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-                  <line x1="3" y1="10" x2="21" y2="10"></line>
-                  <path d="M12 14v-2"></path>
-                  <path d="M9 14l3 2 3-2"></path>
+              `${permissions.canUnarchiveCard ? `<button class="card-unarchive-btn" data-card-id="${card.id}" title="Unarchive card" aria-label="Unarchive card" draggable="false">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                  <rect x="1" y="3" width="22" height="5"></rect>
+                  <path d="M12 18v-6"></path>
+                  <path d="M9 15l3-3 3 3"></path>
                 </svg>
               </button>` : ''}` :
               `${this.workingStyle === 'agile' && permissions.canToggleDone ? `<button class="card-done-btn" data-card-id="${card.id}" title="${card.done ? 'Mark as not done' : 'Mark as done'}" draggable="false">
                   ${card.done ? '○' : '✓'}
                 </button>` : ''}
-                ${permissions.canArchiveCard ? `<button class="card-archive-btn" data-card-id="${card.id}" title="Archive card" draggable="false">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="4" width="18" height="16" rx="2"></rect>
-                    <line x1="3" y1="10" x2="21" y2="10"></line>
-                    <path d="M12 14v2"></path>
-                    <path d="M9 16l3-2 3 2"></path>
+                ${permissions.canArchiveCard ? `<button class="card-archive-btn" data-card-id="${card.id}" title="Archive card" aria-label="Archive card" draggable="false">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="21 8 21 21 3 21 3 8"></polyline>
+                    <rect x="1" y="3" width="22" height="5"></rect>
+                    <line x1="10" y1="12" x2="14" y2="12"></line>
                   </svg>
                 </button>` : ''}`
           }
