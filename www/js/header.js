@@ -406,7 +406,8 @@ class Header {
     // Initialize board archive toggle in settings menu
     this.initializeBoardArchiveToggleMenu();
 
-    // Initialize public-link rotation action in settings menu
+    // Initialize public-link actions in settings menu
+    this.initializeCopyPublicLinkMenu();
     this.initializeRotatePublicLinkMenu();
 
     // Initialize embed code copy action in settings menu
@@ -780,8 +781,7 @@ class Header {
       badgeButton.id = 'public-board-badge-btn';
       badgeButton.type = 'button';
       badgeButton.className = 'public-board-badge-btn';
-      badgeButton.setAttribute('aria-label', 'Copy public board link');
-      badgeButton.textContent = 'Public: Copy Share Link';
+      this.setPublicBadgeContent(badgeButton);
       navBoardName.appendChild(badgeButton);
     }
 
@@ -800,8 +800,7 @@ class Header {
       badgeButton.id = 'public-board-badge-mobile-btn';
       badgeButton.type = 'button';
       badgeButton.className = 'public-board-badge-btn public-board-badge-mobile-btn';
-      badgeButton.setAttribute('aria-label', 'Copy public board link');
-      badgeButton.textContent = 'Copy Link';
+      this.setPublicBadgeContent(badgeButton);
       const mobileToggle = document.getElementById('mobile-menu-toggle');
       if (mobileToggle && mobileToggle.parentElement === headerRight) {
         headerRight.insertBefore(badgeButton, mobileToggle);
@@ -811,6 +810,12 @@ class Header {
     }
 
     this.applyPublicLinkBadgeState(badgeButton, showBadge, publicUrl);
+  }
+
+  setPublicBadgeContent(badgeButton) {
+    badgeButton.textContent = 'P';
+    badgeButton.title = 'Public board: click to copy link';
+    badgeButton.setAttribute('aria-label', 'Public board: copy link');
   }
 
   applyPublicLinkBadgeState(badgeButton, showBadge, publicUrl) {
@@ -826,14 +831,40 @@ class Header {
 
     // Clear inline style so responsive CSS controls visibility (desktop vs mobile).
     badgeButton.style.display = '';
-    badgeButton.onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(publicUrl);
-        this.showHeaderToast('Public board link copied to clipboard');
-      } catch (error) {
-        this.showHeaderToast('Unable to copy link automatically', true);
+    badgeButton.onclick = () => this.copyPublicBoardLink(publicUrl);
+  }
+
+  async copyPublicBoardLink(publicUrl) {
+    try {
+      await this.writeToClipboard(publicUrl);
+      this.showHeaderToast('Public board link copied to clipboard');
+    } catch (error) {
+      this.showHeaderToast('Unable to copy link automatically', true);
+    }
+  }
+
+  async writeToClipboard(text) {
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement('textarea');
+    try {
+      textarea.value = text;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      const copied = document.execCommand('copy');
+      if (!copied) {
+        throw new Error('document.execCommand(\'copy\') returned false');
       }
-    };
+    } finally {
+      textarea.remove();
+    }
   }
 
   ensurePublicBoardLoginCta(showLoginCta) {
@@ -1614,6 +1645,43 @@ class Header {
     this.updateRotatePublicLinkMenuVisibility();
   }
 
+  initializeCopyPublicLinkMenu() {
+    const menuItems = [
+      document.getElementById('copy-public-link-menu-item'),
+      document.getElementById('mobile-copy-public-link-menu-item')
+    ].filter(Boolean);
+
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    if (!this.currentBoardId || this.isPublicBoardPage) {
+      menuItems.forEach((menuItem) => {
+        menuItem.style.display = 'none';
+      });
+      return;
+    }
+
+    if (!this.boardOwnerDataListenerBound) {
+      window.addEventListener('boardOwnerDataLoaded', this.boardOwnerDataLoadedHandler);
+      this.boardOwnerDataListenerBound = true;
+    }
+
+    menuItems.forEach((menuItem) => {
+      if (!menuItem.dataset.boundCopyPublicLinkHandler) {
+        menuItem.addEventListener('click', async (e) => {
+          e.preventDefault();
+          await this.copyPublicBoardLink(this.getPublicBoardShareUrl(this.boardPublicSlug));
+          closeAllMenusExcept(null);
+          updateMenuHoverState();
+        });
+        menuItem.dataset.boundCopyPublicLinkHandler = 'true';
+      }
+    });
+
+    this.updateCopyPublicLinkMenuVisibility();
+  }
+
   initializeCopyEmbedCodeMenu() {
     const menuItems = [
       document.getElementById('copy-embed-code-menu-item'),
@@ -1663,6 +1731,7 @@ class Header {
       : null;
 
     this.updateBoardVisibilityMenuState();
+    this.updateCopyPublicLinkMenuVisibility();
     this.updateRotatePublicLinkMenuVisibility();
     this.updateCopyEmbedCodeMenuVisibility();
 
@@ -1699,6 +1768,23 @@ class Header {
     menuItems.forEach((menuItem) => {
       menuItem.style.display = visible ? '' : 'none';
       menuItem.textContent = label;
+    });
+  }
+
+  updateCopyPublicLinkMenuVisibility() {
+    const menuItems = [
+      document.getElementById('copy-public-link-menu-item'),
+      document.getElementById('mobile-copy-public-link-menu-item')
+    ].filter(Boolean);
+
+    // Unlike rotate and embed, viewers can use this: it only shares the existing link.
+    const visible = !!this.currentBoardId
+      && !this.isPublicBoardPage
+      && this.boardIsPublic
+      && !!this.boardPublicSlug;
+
+    menuItems.forEach((menuItem) => {
+      menuItem.style.display = visible ? '' : 'none';
     });
   }
 
@@ -1756,26 +1842,7 @@ class Header {
     }
 
     try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-        await navigator.clipboard.writeText(embedCode);
-      } else {
-        const textarea = document.createElement('textarea');
-        try {
-          textarea.value = embedCode;
-          textarea.setAttribute('readonly', '');
-          textarea.style.position = 'fixed';
-          textarea.style.opacity = '0';
-          document.body.appendChild(textarea);
-          textarea.select();
-
-          const copied = document.execCommand('copy');
-          if (!copied) {
-            throw new Error('document.execCommand(\'copy\') returned false');
-          }
-        } finally {
-          textarea.remove();
-        }
-      }
+      await this.writeToClipboard(embedCode);
 
       this.showHeaderToast('Embed code copied. If embedding fails, add the host origin to EMBED_ALLOWED_ORIGINS and restart nginx.');
     } catch (error) {
@@ -1830,6 +1897,7 @@ class Header {
       }
 
       this.updateBoardVisibilityMenuState();
+      this.updateCopyPublicLinkMenuVisibility();
       this.updateRotatePublicLinkMenuVisibility();
       this.updateCopyEmbedCodeMenuVisibility();
       this.setPublicBoardContext({
@@ -2055,6 +2123,7 @@ class Header {
       }
 
       this.updateBoardVisibilityMenuState();
+      this.updateCopyPublicLinkMenuVisibility();
       this.updateRotatePublicLinkMenuVisibility();
       this.updateCopyEmbedCodeMenuVisibility();
       this.setPublicBoardContext({

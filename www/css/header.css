@@ -765,15 +765,18 @@ body.board-page:not(.public-board-page) .board-search-control {
 .public-board-badge-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
   border: 1px solid rgba(255, 255, 255, 0.36);
-  border-radius: 999px;
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.16);
   color: var(--header-text-color);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  padding: 6px 12px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
   cursor: pointer;
   transition: background-color 0.2s ease, transform 0.2s ease;
 }
@@ -1211,11 +1214,6 @@ body.board-page:not(.public-board-page) .board-search-control {
     justify-content: flex-start;
   }
 
-  .header-public-board .public-board-badge-btn {
-    font-size: 10px;
-    padding: 5px 8px;
-  }
-
   .header-public-board .public-board-login-link {
     font-size: 12px;
     padding: 8px 12px;
@@ -1223,13 +1221,7 @@ body.board-page:not(.public-board-page) .board-search-control {
 
   .public-board-badge-mobile-btn {
     display: inline-flex;
-    font-size: 10px;
-    padding: 6px 10px;
     margin-right: 2px;
-    max-width: min(42vw, 180px);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .mobile-menu-toggle {
