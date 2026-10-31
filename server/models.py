@@ -262,6 +262,7 @@ class Comment(Base):
     comment = Column(Text, nullable=False)  # Large text field for comments
     order = Column(Integer, nullable=False, index=True)  # Immutable order to preserve history
     created_at = Column(DateTime, nullable=False, server_default=func.now())
+    edited_at = Column(DateTime, nullable=True)  # Null until the text is edited
     
     # Relationship to card
     card = relationship("Card", back_populates="comments")
