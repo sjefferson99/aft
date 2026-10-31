@@ -973,7 +973,7 @@ class Header {
         return;
       }
 
-      if (target.matches('a.mobile-menu-link, button.mobile-menu-link, a.mobile-notification-link')) {
+      if (target.matches('a.mobile-menu-link, button.mobile-menu-link, a.mobile-notification-link, .board-menu-toggle button')) {
         closeMenu();
       }
     });
@@ -1483,13 +1483,16 @@ class Header {
     menuItems.forEach((menuItem) => {
       menuItem.style.display = '';
     });
-    this.updateBoardStyleMenuLabel();
+    this.updateBoardStyleMenuState();
 
     menuItems.forEach((menuItem) => {
       if (!menuItem.dataset.boundStyleToggleHandler) {
         menuItem.addEventListener('click', async (e) => {
-          e.preventDefault();
-          await this.toggleBoardStyle();
+          const option = e.target.closest('button[data-value]');
+          if (!option) {
+            return;
+          }
+          await this.setBoardStyle(option.dataset.value);
           closeAllMenusExcept(null);
           updateMenuHoverState();
         });
@@ -1558,8 +1561,11 @@ class Header {
     menuItems.forEach((menuItem) => {
       if (!menuItem.dataset.boundVisibilityToggleHandler) {
         menuItem.addEventListener('click', async (e) => {
-          e.preventDefault();
-          await this.toggleBoardVisibility();
+          const option = e.target.closest('button[data-value]');
+          if (!option) {
+            return;
+          }
+          await this.setBoardVisibility(option.dataset.value === 'public');
           closeAllMenusExcept(null);
           updateMenuHoverState();
         });
@@ -1766,11 +1772,17 @@ class Header {
     }
 
     const visible = !!this.currentBoardId && !this.isPublicBoardPage && this.boardVisibilityEditable;
-    const label = this.boardIsPublic ? 'Access: Public' : 'Access: Private';
+    const value = this.boardIsPublic ? 'public' : 'private';
 
     menuItems.forEach((menuItem) => {
       menuItem.style.display = visible ? '' : 'none';
-      menuItem.textContent = label;
+      this.setBoardMenuToggleValue(menuItem, value);
+    });
+  }
+
+  setBoardMenuToggleValue(menuItem, value) {
+    menuItem.querySelectorAll('button[data-value]').forEach((option) => {
+      option.setAttribute('aria-pressed', String(option.dataset.value === value));
     });
   }
 
@@ -1854,12 +1866,11 @@ class Header {
     }
   }
 
-  async toggleBoardVisibility() {
-    if (!this.currentBoardId || !this.boardVisibilityEditable || this.isPublicBoardPage) {
+  async setBoardVisibility(nextPublicState) {
+    if (!this.currentBoardId || !this.boardVisibilityEditable || this.isPublicBoardPage
+      || nextPublicState === this.boardIsPublic) {
       return;
     }
-
-    const nextPublicState = !this.boardIsPublic;
 
     if (nextPublicState) {
       const confirmed = await this.confirmMakeBoardPublic();
@@ -1911,7 +1922,7 @@ class Header {
       });
       this.showHeaderToast(this.boardIsPublic ? 'Board is now public' : 'Board is now private');
     } catch (error) {
-      console.error('Error toggling board visibility:', error);
+      console.error('Error changing board visibility:', error);
       this.showBoardPageToast(error.message || 'Failed to update board visibility.');
     }
   }
@@ -2520,7 +2531,7 @@ class Header {
     });
   }
 
-  updateBoardStyleMenuLabel() {
+  updateBoardStyleMenuState() {
     const menuItems = [
       document.getElementById('toggle-board-style-menu-item'),
       document.getElementById('mobile-toggle-board-style-menu-item')
@@ -2530,18 +2541,16 @@ class Header {
       return;
     }
 
-    const label = this.workingStyle === 'agile' ? 'Agile' : 'Kanban';
+    const value = this.workingStyle === 'agile' ? 'agile' : 'kanban';
     menuItems.forEach((menuItem) => {
-      menuItem.textContent = `Style: ${label}`;
+      this.setBoardMenuToggleValue(menuItem, value);
     });
   }
 
-  async toggleBoardStyle() {
-    if (!this.currentBoardId || !this.boardStyleEditable) {
+  async setBoardStyle(nextStyle) {
+    if (!this.currentBoardId || !this.boardStyleEditable || nextStyle === this.workingStyle) {
       return;
     }
-
-    const nextStyle = this.workingStyle === 'agile' ? 'kanban' : 'agile';
 
     try {
       const response = await fetch(`/api/boards/${this.currentBoardId}/settings/working-style`, {
@@ -2558,14 +2567,15 @@ class Header {
       }
 
       this.workingStyle = nextStyle;
-      this.updateBoardStyleMenuLabel();
+      this.updateBoardStyleMenuState();
       this.updateViewsDropdown();
 
       window.dispatchEvent(new CustomEvent('boardWorkingStyleChanged', {
         detail: { workingStyle: this.workingStyle }
       }));
     } catch (error) {
-      console.error('Error toggling board style:', error);
+      console.error('Error changing board style:', error);
+      this.showBoardPageToast('Failed to change the board style.');
     }
   }
 

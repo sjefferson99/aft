@@ -289,6 +289,61 @@
   background-color: var(--header-menu-hover);
 }
 
+/* Board menu: rows with a choice show every option and mark the current one */
+.settings-dropdown-item.board-menu-toggle,
+.mobile-menu-link.board-menu-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.settings-dropdown-item.board-menu-toggle:hover {
+  background-color: transparent;
+}
+
+.board-menu-segments {
+  display: inline-flex;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.board-menu-segments button {
+  padding: 4px 10px;
+  background: transparent;
+  border: none;
+  color: var(--header-menu-text-color);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.board-menu-segments button:hover {
+  background-color: var(--header-menu-hover);
+}
+
+.board-menu-segments button:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
+
+.board-menu-segments button[aria-pressed="true"] {
+  background-color: var(--primary-color);
+  color: var(--header-text-color);
+  font-weight: 600;
+  cursor: default;
+}
+
+.settings-dropdown-item.board-menu-sub {
+  padding-left: 32px;
+}
+
+.mobile-menu-link.board-menu-sub {
+  padding-left: 22px;
+}
+
 /* User Dropdown */
 .user-dropdown {
   position: relative;
@@ -1708,6 +1763,16 @@ body:not(.board-page) .compact-cards-toggle {
   body.touchscreen-mode .user-dropdown-item,
   body.touchscreen-mode .views-dropdown-item {
     padding: 16px 20px;
+    font-size: 16px;
+  }
+
+  body.touchscreen-mode .settings-dropdown-item.board-menu-sub {
+    padding-left: 32px;
+  }
+
+  body.touchscreen-mode .board-menu-segments button {
+    min-height: 44px;
+    padding: 0 14px;
     font-size: 16px;
   }
 
