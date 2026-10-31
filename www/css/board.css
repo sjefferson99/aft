@@ -1426,7 +1426,7 @@
 
 .modal-header-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-shrink: 0;
   width: 100%;
   justify-content: flex-end;
@@ -1434,12 +1434,27 @@
   flex-wrap: wrap;
 }
 
+.modal-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modal-action-group:first-child:not(.modal-action-group-end) {
+  margin-right: auto;
+}
+
+.modal-action-group .btn:has(.btn-icon) {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
 .modal-header-actions .btn {
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 44px;
+  gap: 4px;
   opacity: 1 !important;
   visibility: visible !important;
 }
@@ -1506,9 +1521,6 @@
 
 .schedule-section {
   margin: 15px 0;
-  padding: 15px;
-  background-color: var(--background-light);
-  border-radius: 8px;
 }
 
 .schedule-section .btn {
@@ -2286,39 +2298,19 @@ button.readonly-disabled,
   }
 
   .modal-header h2 {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
     font-size: 20px;
   }
 
-  .modal-header h2 .card-ref-number {
-    margin-left: 0;
+  .modal-action-group .btn:has(.btn-icon) {
+    min-width: 36px;
   }
 
-  .modal-header-actions {
-    justify-content: stretch;
-    flex-wrap: wrap;
-    gap: 8px;
+  .modal-action-group .btn-label {
+    display: none;
   }
 
-  .modal-header-actions .btn {
-    flex: 1 1 120px;
-    min-height: 38px;
-  }
-
-  .archive-after-input-row,
-  .modal-actions {
+  .archive-after-input-row {
     flex-direction: column;
-  }
-
-  .modal-actions .btn,
-  .schedule-section .btn,
-  .checklist-section > .btn,
-  #add-checklist-item-top-btn,
-  #add-checklist-item-bottom-btn,
-  #add-checklist-item-initial-btn {
-    width: 100%;
   }
 
   .form-row {
@@ -2327,7 +2319,6 @@ button.readonly-disabled,
     margin-bottom: 16px;
   }
 
-  .schedule-section,
   .checklist-section,
   .next-runs-section {
     padding: 16px;
@@ -2408,11 +2399,6 @@ button.readonly-disabled,
     max-height: calc(100dvh - 14px);
     padding: 14px 12px;
     border-radius: 16px;
-  }
-
-  .modal-header-actions .btn {
-    flex: 1 1 calc(50% - 4px);
-    width: auto;
   }
 
   .form-group input,

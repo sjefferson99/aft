@@ -74,7 +74,7 @@ def test_move_button_in_edit_modal_on_desktop(logged_in_page, board_with_two_col
 
     move_btn = edit_modal.locator("#move-card-detail-btn")
     assert move_btn.is_visible(), "Move button should be visible in edit card modal on desktop"
-    assert move_btn.text_content().strip() == "Move", "Move button label should be 'Move'"
+    assert move_btn.locator(".btn-label").inner_text() == "Move", "Move button label should be 'Move'"
 
 
 @pytest.mark.ui

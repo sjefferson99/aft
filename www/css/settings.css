@@ -774,10 +774,6 @@
   gap: 10px;
 }
 
-.modal-actions .btn {
-  min-width: 100px;
-}
-
 .modal-footer {
   margin: 20px -30px -25px;
   padding: 20px 30px;
@@ -785,10 +781,6 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-}
-
-.modal-footer .btn {
-  min-width: 100px;
 }
 
 .modal-footer .btn-primary {
