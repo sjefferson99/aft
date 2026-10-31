@@ -44,7 +44,7 @@ def test_place_in_planner_always_enabled_and_places_card(logged_in_page, api_ses
 
     planner_btn = page.locator('#view-planner-btn')
     planner_btn.wait_for(state='visible', timeout=5000)
-    assert 'Place in Planner' in planner_btn.inner_text()
+    assert planner_btn.get_attribute('title') == 'Place in Planner'
     assert planner_btn.get_attribute('disabled') is None
 
     planner_btn.click()
@@ -76,7 +76,7 @@ def test_view_in_planner_jumps_to_month_of_start_date(logged_in_page, api_sessio
 
     planner_btn = page.locator('#view-planner-btn')
     planner_btn.wait_for(state='visible', timeout=5000)
-    assert 'View in Planner' in planner_btn.inner_text()
+    assert planner_btn.get_attribute('title') == 'View in Planner'
 
     planner_btn.click()
 
@@ -112,7 +112,7 @@ def test_typing_start_date_then_view_in_planner_saves_and_jumps_to_month(logged_
     page.locator('#edit-card-title').click()  # blur the date field to trigger autosave
 
     planner_btn = page.locator('#view-planner-btn')
-    assert 'View in Planner' in planner_btn.inner_text()
+    assert planner_btn.get_attribute('title') == 'View in Planner'
     planner_btn.click()
 
     month_label = page.locator('.planner-month-label')

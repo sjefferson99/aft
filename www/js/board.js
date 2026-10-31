@@ -5388,10 +5388,10 @@ class BoardManager {
         <div class="modal-content schedule-modal-content">
           <div class="modal-header">
             <div class="modal-header-actions">
-              ${hasSchedule && canEditSchedule ? `<button type="button" class="btn btn-secondary" id="edit-template-btn" data-card-id="${scheduleData?.card_id || ''}">Edit Template</button>` : ''}
-              ${hasSchedule && canDeleteSchedule ? `<button type="button" class="btn btn-danger" id="delete-schedule-btn">Delete Schedule</button>` : ''}
+              ${hasSchedule && canEditSchedule ? `<button type="button" class="btn btn-secondary" id="edit-template-btn" data-card-id="${scheduleData?.card_id || ''}" title="Edit Template">Template</button>` : ''}
+              ${hasSchedule && canDeleteSchedule ? `<button type="button" class="btn btn-danger" id="delete-schedule-btn" title="Delete Schedule">Delete</button>` : ''}
               <button type="button" class="btn btn-secondary" id="cancel-schedule-btn">Cancel</button>
-              ${allowScheduleSubmit ? `<button type="submit" form="schedule-form" class="btn btn-primary">${hasSchedule ? 'Update Schedule' : 'Create Schedule'}</button>` : ''}
+              ${allowScheduleSubmit ? `<button type="submit" form="schedule-form" class="btn btn-primary">${hasSchedule ? 'Update' : 'Create'}</button>` : ''}
             </div>
             <h2>${hasSchedule ? 'Edit Schedule' : 'Create Schedule'}</h2>
           </div>
@@ -5880,7 +5880,7 @@ class BoardManager {
           <div class="modal-header">
             <div class="modal-header-actions">
               <button type="button" class="btn btn-secondary" id="cancel-template-schedule-btn">Cancel</button>
-              <button type="submit" form="add-template-schedule-form" class="btn btn-primary">Create Template & Schedule</button>
+              <button type="submit" form="add-template-schedule-form" class="btn btn-primary">Create</button>
             </div>
             <h2>Add New Template with Schedule</h2>
           </div>
@@ -5896,7 +5896,7 @@ class BoardManager {
             
             <div class="checklist-section">
               <div id="checklist-header-container">
-                <button type="button" class="btn btn-secondary" id="add-checklist-item-initial-btn">+ Add Checklist</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="add-checklist-item-initial-btn">+ Add Checklist</button>
               </div>
               <div id="checklist-content-container" style="display: none;">
                 <div class="checklist-header">
@@ -6929,7 +6929,7 @@ class BoardManager {
             
             <div class="checklist-section">
               <div id="checklist-header-container">
-                <button type="button" class="btn btn-secondary" id="add-checklist-item-initial-btn">+ Add Checklist</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="add-checklist-item-initial-btn">+ Add Checklist</button>
               </div>
               <div id="checklist-content-container" style="display: none;">
                 <div class="checklist-header">
@@ -7269,7 +7269,8 @@ class BoardManager {
     // it. Both are always available - placing with no duration entered
     // falls back to a 1 hour task.
     const hasInitialAnchorDate = !!cardData.start_date || !!cardData.end_date;
-    const plannerBtnLabel = hasInitialAnchorDate ? '📅 View in Planner' : '📅 Place in Planner';
+    const plannerBtnTitle = hasInitialAnchorDate ? 'View in Planner' : 'Place in Planner';
+    const actionBtnContent = (icon, label) => `<span class="btn-icon" aria-hidden="true">${icon}</span><span class="btn-label">${label}</span>`;
     
     // Track changes
     let hasUnsavedChanges = false;
@@ -7282,27 +7283,27 @@ class BoardManager {
           <div class="modal-header">
             ${isReadOnly ? '<div class="board-readonly-indicator" style="position: static; margin-bottom: 10px;">Read Only</div>' : ''}
             <div class="modal-header-actions">
-              ${isTemplate && canOpenScheduleEditor ?
-                `<button type="button" class="btn btn-secondary" id="edit-schedule-from-template-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <polyline points="12 6 12 12 16 14"></polyline>
-                  </svg>
-                  Edit Schedule
-                </button>` : !isReadOnly ?
-                cardData.archived ? 
-                  `${canUnarchiveCard ? `<button type="button" class="btn btn-secondary" id="unarchive-card-detail-btn" data-card-id="${cardData.id}">📂 Unarchive</button>` : ''}` :
-                  `${this.workingStyle === 'agile' && canToggleDone ? `<button type="button" class="btn btn-secondary" id="done-card-detail-btn" data-card-id="${cardData.id}" title="${cardData.done ? 'Mark as not done' : 'Mark as done'}">
-                      ${cardData.done ? '○ Mark Not Done' : '✓ Mark Done'}
-                    </button>` : ''}
-                  ${canArchiveCard ? '<button type="button" class="btn btn-secondary" id="archive-card-detail-btn" data-card-id="' + cardData.id + '">🗄️ Archive</button>' : ''}` : ''
-              }
-              ${!isReadOnly && canManageAssignees ? `<button type="button" class="btn btn-secondary" id="assign-assignees-btn" data-card-id="${cardData.id}">👤 Assignees</button>` : ''}
-              ${!isReadOnly && canMoveCard && !cardData.archived ? `<button type="button" class="btn btn-secondary" id="move-card-detail-btn" data-card-id="${cardData.id}">Move</button>` : ''}
-              ${!isReadOnly ? `<button type="button" class="btn btn-secondary" id="view-planner-btn" data-card-id="${cardData.id}">${plannerBtnLabel}</button>` : ''}
-              ${!isReadOnly && canDeleteCard ? `<button type="button" class="btn btn-danger" id="delete-card-detail-btn" data-card-id="${cardData.id}">Delete</button>` : ''}
-              <button type="button" class="btn btn-secondary" id="cancel-edit-card-btn">${isReadOnly ? 'Close' : 'Cancel'}</button>
-              ${!isReadOnly ? '<button type="submit" form="edit-card-form" class="btn btn-primary">Save</button>' : ''}
+              <div class="modal-action-group">
+                ${isTemplate && canOpenScheduleEditor ?
+                  `<button type="button" class="btn btn-secondary" id="edit-schedule-from-template-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}" title="Edit Schedule" aria-label="Edit Schedule">
+                    ${actionBtnContent('🕒', 'Schedule')}
+                  </button>` : !isReadOnly ?
+                  cardData.archived ?
+                    `${canUnarchiveCard ? `<button type="button" class="btn btn-secondary" id="unarchive-card-detail-btn" data-card-id="${cardData.id}" title="Unarchive" aria-label="Unarchive">${actionBtnContent('📂', 'Unarchive')}</button>` : ''}` :
+                    `${this.workingStyle === 'agile' && canToggleDone ? `<button type="button" class="btn btn-secondary" id="done-card-detail-btn" data-card-id="${cardData.id}" title="${cardData.done ? 'Mark as not done' : 'Mark as done'}" aria-label="${cardData.done ? 'Mark as not done' : 'Mark as done'}">
+                        ${cardData.done ? actionBtnContent('○', 'Not Done') : actionBtnContent('✓', 'Done')}
+                      </button>` : ''}
+                    ${canArchiveCard ? `<button type="button" class="btn btn-secondary" id="archive-card-detail-btn" data-card-id="${cardData.id}" title="Archive" aria-label="Archive">${actionBtnContent('🗄️', 'Archive')}</button>` : ''}` : ''
+                }
+                ${!isReadOnly && canManageAssignees ? `<button type="button" class="btn btn-secondary" id="assign-assignees-btn" data-card-id="${cardData.id}" title="Assignees" aria-label="Assignees">${actionBtnContent('👤', 'Assign')}</button>` : ''}
+                ${!isReadOnly && canMoveCard && !cardData.archived ? `<button type="button" class="btn btn-secondary" id="move-card-detail-btn" data-card-id="${cardData.id}" title="Move" aria-label="Move">${actionBtnContent('↗', 'Move')}</button>` : ''}
+                ${!isReadOnly ? `<button type="button" class="btn btn-secondary" id="view-planner-btn" data-card-id="${cardData.id}" title="${plannerBtnTitle}" aria-label="${plannerBtnTitle}">${actionBtnContent('📅', 'Planner')}</button>` : ''}
+                ${!isReadOnly && canDeleteCard ? `<button type="button" class="btn btn-danger" id="delete-card-detail-btn" data-card-id="${cardData.id}" title="Delete" aria-label="Delete">${actionBtnContent('🗑', 'Delete')}</button>` : ''}
+              </div>
+              <div class="modal-action-group modal-action-group-end">
+                <button type="button" class="btn btn-secondary" id="cancel-edit-card-btn">${isReadOnly ? 'Close' : 'Cancel'}</button>
+                ${!isReadOnly ? '<button type="submit" form="edit-card-form" class="btn btn-primary">Save</button>' : ''}
+              </div>
             </div>
             <h2>
               ${modalTitle}
@@ -7339,7 +7340,7 @@ class BoardManager {
             
             ${!isTemplate && canOpenScheduleEditor ? `
             <div class="schedule-section">
-              <button type="button" class="btn btn-secondary" id="schedule-card-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}">
+              <button type="button" class="btn btn-secondary btn-sm" id="schedule-card-btn" data-card-id="${cardData.id}" data-has-schedule="${cardData.schedule ? 'true' : 'false'}">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;">
                   <circle cx="12" cy="12" r="10"></circle>
                   <polyline points="12 6 12 12 16 14"></polyline>
@@ -7372,7 +7373,7 @@ class BoardManager {
                 ${!isReadOnly ? '<button type="button" class="btn btn-secondary btn-sm" id="add-checklist-item-bottom-btn">+ Add Item</button>' : ''}
               ` : isReadOnly ? '' : `
                 <div id="checklist-header-container">
-                  <button type="button" class="btn btn-secondary" id="add-checklist-item-initial-btn">+ Add Checklist</button>
+                  <button type="button" class="btn btn-secondary btn-sm" id="add-checklist-item-initial-btn">+ Add Checklist</button>
                 </div>
                 <div id="checklist-content-container" style="display: none;">
                   <div class="checklist-header">
@@ -7520,7 +7521,9 @@ class BoardManager {
 
     const refreshViewPlannerButtonState = () => {
       if (!viewPlannerBtn) return;
-      viewPlannerBtn.textContent = hasAnchorDate() ? '📅 View in Planner' : '📅 Place in Planner';
+      const title = hasAnchorDate() ? 'View in Planner' : 'Place in Planner';
+      viewPlannerBtn.title = title;
+      viewPlannerBtn.setAttribute('aria-label', title);
     };
 
     // Auto-save start/end date once at least one resolves to a real value
