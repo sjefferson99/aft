@@ -1,0 +1,39 @@
+name: Bug report
+description: Something in AFT isn't working as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please [search the existing issues](https://github.com/sjefferson99/aft/issues) first. For security problems, use the private report link on the previous page instead.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected to happen.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a board
+        2. Click...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AFT version
+      description: Shown on the System Info page, if you can open it.
+  - type: input
+    id: device
+    attributes:
+      label: Browser and device
+      placeholder: Firefox on Windows, installed app on Android...
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Screenshots, error messages or logs. Remove passwords and other private details first.

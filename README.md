@@ -647,6 +647,12 @@ See [ui-tests/docs/UI_TESTING.md](ui-tests/docs/UI_TESTING.md) for details.
 For measuring board performance at scale (seeding a large board and comparing
 server/client cost before and after a change), see [perf-tests/README.md](perf-tests/README.md).
 
+## Reporting Issues
+
+Use **Report an Issue** in the user menu, or go to the [Issues page](https://github.com/sjefferson99/aft/issues). Search for an existing issue first, then open a new one from the bug report or feature request form.
+
+Please don't report security problems in public issues. See [SECURITY.md](SECURITY.md).
+
 ## Contributing and Agent Context
 
 If you are contributing code (human or AI-assisted), start with [CONTRIBUTING.md](CONTRIBUTING.md).
