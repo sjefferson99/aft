@@ -166,6 +166,22 @@
   box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
+.card-actions-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.card-actions-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+}
+
 .radio-group {
   display: flex;
   flex-direction: column;

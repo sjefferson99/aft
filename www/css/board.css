@@ -2823,3 +2823,39 @@ body.touchscreen-mode .column-cards {
     font-size: 16px;
   }
 }
+
+/* Chosen card actions (#395). Unarchive isn't a choice: it's the point of the Archived View. */
+@media (min-width: 901px) {
+  body.desktop-card-actions:not(.desktop-card-action-done) .card-done-btn,
+  body.desktop-card-actions:not(.desktop-card-action-archive) .card-archive-btn,
+  body.desktop-card-actions:not(.desktop-card-action-move) .card-move-btn,
+  body.desktop-card-actions:not(.desktop-card-action-delete) .card-delete-btn {
+    display: none;
+  }
+
+  body.desktop-card-action-move .card-move-btn {
+    display: flex;
+  }
+
+  body:not(.touchscreen-mode).desktop-card-actions .card .card-title {
+    padding-right: max(0px, calc(var(--desktop-card-action-count) * 36px - 8px));
+  }
+}
+
+@media (max-width: 900px) {
+  body.mobile-card-actions:not(.mobile-card-action-done) .card-done-btn,
+  body.mobile-card-actions:not(.mobile-card-action-archive) .card-archive-btn,
+  body.mobile-card-actions:not(.mobile-card-action-move) .card-move-btn,
+  body.mobile-card-actions:not(.mobile-card-action-delete) .card-delete-btn {
+    display: none;
+  }
+
+  body.mobile-card-action-archive .card-archive-btn,
+  body.mobile-card-action-delete .card-delete-btn {
+    display: flex;
+  }
+
+  body.mobile-card-actions .card .card-title {
+    padding-right: calc(var(--mobile-card-action-count) * 28px);
+  }
+}
