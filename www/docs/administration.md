@@ -58,6 +58,7 @@ The **Backup & Restore** tab runs manual backups and restores, and sets up autom
 - Keep between 1 and 100 of the most recent backups
 - The page shows backup health, and flags and notifies admins about overdue backups
 - Restores show a spinner with the current step, and while data is loading, the table being restored and how much of the backup has been sent to the database
+- **Restore During Setup** - To move an existing instance, upload a backup on the first-time setup page instead of creating an account, then sign in with an account from the backup. This only works until setup is complete. If the restore fails, the instance returns to first-time setup.
 
 ### Backup Storage
 
