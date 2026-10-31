@@ -32,7 +32,7 @@ def test_edit_card_buttons_leave_room_on_mobile(logged_in_page, column, card):
     assert not move_btn.locator(".btn-label").is_visible()
     assert move_btn.locator(".btn-icon").is_visible()
 
-    assert page.locator("#cancel-edit-card-btn").inner_text() == "Cancel"
+    assert page.locator("#cancel-edit-card-btn").inner_text() == "Close"
     modal = page.locator("#edit-card-modal .modal-content")
     assert modal.evaluate("el => el.scrollWidth <= el.clientWidth")
 

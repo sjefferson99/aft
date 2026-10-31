@@ -157,7 +157,7 @@ In Agile mode, cards use Done/Not Done status, and you can also archive a card t
 ### 🎴 Card Management
 - **Create Cards** - Add task cards with titles and descriptions
 - **Move Cards** - Drag cards between columns to track progress
-- **Update Cards** - Edit card details, titles, and descriptions
+- **Update Cards** - Edit card details, titles, and descriptions. Changes save as you leave each field, with a small "Saved" indicator. Enter saves and closes the card, Shift+Enter adds a new line, and Escape reverts the field you're editing, then closes. On touchscreens Enter adds a new line in descriptions and comments
 - **Assign Responsibility** - Set a primary assignee and optional secondary assignees per card from users with board access
 - **Assignee Avatars** - Cards show the primary assignee initials in a bottom-left avatar circle using the assignee's profile colour
 - **Board Assignee Filters** - Open/toggle the compact assignee filter bar from the header search field's filter icon to show cards for selected assignees, include unassigned cards, and optionally match secondary assignees. When filters are active, a visual indicator appears next to the board name. Clear all filters quickly via the settings menu "Clear filters" option.
