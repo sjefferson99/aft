@@ -2,6 +2,11 @@
 // This must run IMMEDIATELY in the HEAD to prevent style flash
 
 (function() {
+  // Instance Settings shows the admin pages in frames, which drop their own header
+  if (window.self !== window.top && new URLSearchParams(window.location.search).has('embedded')) {
+    document.documentElement.classList.add('embedded-page');
+  }
+
   const THEME_COLOR_STORAGE_KEY = 'aftThemeColor';
 
   // Installed/standalone PWAs (notably Android Chrome) paint the OS status

@@ -133,7 +133,7 @@ def test_mobile_drawer_shows_the_same_choices(logged_in_page, api_session, board
         f"() => document.querySelector('{MOBILE_VISIBILITY}')?.style.display === ''", timeout=8000
     )
     page.locator("#mobile-menu-toggle").click()
-    page.locator("#mobile-menu-drawer summary", has_text="Settings").click()
+    page.locator("#mobile-board-actions summary").click()
     page.locator(MOBILE_STYLE).wait_for(state="visible", timeout=5000)
 
     assert pressed(page, MOBILE_VISIBILITY) == ["Private"]

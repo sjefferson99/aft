@@ -33,6 +33,50 @@
   margin-bottom: 20px;
 }
 
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.settings-tab {
+  margin-bottom: -2px;
+  padding: 10px 16px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-color);
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.settings-tab:hover {
+  color: var(--primary-color);
+}
+
+.settings-tab:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
+
+.settings-tab[aria-selected="true"] {
+  border-bottom-color: var(--primary-color);
+  color: var(--text-bold);
+  font-weight: 600;
+}
+
+.settings-tab-frame {
+  display: block;
+  width: 100%;
+  height: calc(100dvh - 240px);
+  min-height: 480px;
+  border: 0;
+}
+
+.settings-tab-frame[hidden] {
+  display: none;
+}
+
 .settings-page-note {
   margin-bottom: 16px;
 }

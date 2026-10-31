@@ -282,7 +282,7 @@
   gap: 10px;
 }
 
-.active-user-card {
+.user-card.active-user-card {
   display: flex;
   align-items: flex-start;
   gap: 16px;
@@ -685,7 +685,7 @@
     justify-content: flex-start;
   }
 
-  .active-user-card {
+  .user-card.active-user-card {
     align-items: stretch;
   }
 

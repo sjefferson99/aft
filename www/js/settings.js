@@ -21,6 +21,10 @@ class Settings {
     this.appNameResetBtn = document.getElementById('app-name-reset-btn');
     this.appNameStatus = document.getElementById('app-name-status');
     this.canManageBranding = false;
+    this.tabs = Array.from(document.querySelectorAll('.settings-tab'));
+    this.instancePanel = document.getElementById('settings-panel-instance');
+    this.framesPanel = document.getElementById('settings-panel-frames');
+    this.tabFrames = new Map();
   }
 
   async init() {
@@ -33,14 +37,20 @@ class Settings {
     this.initializeGlobalSettingsVisibility();
 
     // Personal preferences live on the profile page, so old links land there
-    if (!this.canManageBranding) {
+    const hasAccess = typeof hasPermission === 'function'
+      && window.INSTANCE_SETTINGS_PERMISSIONS.some(permission => hasPermission(permission));
+    if (!hasAccess) {
       window.location.replace('/profile.html#preferences');
       return;
     }
 
-    await this.loadInstanceDefaultTheme();
-    await this.loadBrandingSettings();
-    await this.loadAppName();
+    this.initializeTabs();
+
+    if (this.canManageBranding) {
+      await this.loadInstanceDefaultTheme();
+      await this.loadBrandingSettings();
+      await this.loadAppName();
+    }
     this.attachEventListeners();
   }
 
@@ -52,6 +62,87 @@ class Settings {
     }
 
     this.globalSettingsPanel.hidden = !this.canManageBranding;
+  }
+
+  getVisibleTabs() {
+    return this.tabs.filter(tab => tab.style.display !== 'none');
+  }
+
+  // header.js has already hidden the tabs this user's permissions don't allow.
+  initializeTabs() {
+    if (!this.canManageBranding) {
+      document.getElementById('settings-tab-instance').style.display = 'none';
+    }
+
+    this.getVisibleTabs().forEach((tab) => {
+      tab.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.selectTab(tab);
+      });
+
+      tab.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') {
+          return;
+        }
+
+        e.preventDefault();
+        const visibleTabs = this.getVisibleTabs();
+        const step = e.key === 'ArrowRight' ? 1 : -1;
+        const next = visibleTabs[(visibleTabs.indexOf(tab) + step + visibleTabs.length) % visibleTabs.length];
+        this.selectTab(next);
+        next.focus();
+      });
+    });
+
+    const requested = this.getTabForHash();
+    this.selectTab(requested || this.getVisibleTabs()[0]);
+
+    window.addEventListener('hashchange', () => {
+      const tab = this.getTabForHash();
+      if (tab) {
+        this.selectTab(tab);
+      }
+    });
+  }
+
+  getTabForHash() {
+    return this.getVisibleTabs().find(tab => `#${tab.dataset.tab}` === window.location.hash);
+  }
+
+  selectTab(selectedTab) {
+    this.tabs.forEach((tab) => {
+      const selected = tab === selectedTab;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    });
+
+    const isInstanceTab = selectedTab.dataset.tab === 'instance';
+    this.instancePanel.hidden = !isInstanceTab;
+    this.framesPanel.hidden = isInstanceTab;
+
+    this.tabFrames.forEach((frame) => {
+      frame.hidden = true;
+    });
+    if (!isInstanceTab) {
+      this.framesPanel.setAttribute('aria-labelledby', selectedTab.id);
+      this.showTabFrame(selectedTab);
+    }
+
+    history.replaceState(null, '', `#${selectedTab.dataset.tab}`);
+  }
+
+  // Frames are kept after the first visit so unsaved work survives changing tabs.
+  showTabFrame(tab) {
+    let frame = this.tabFrames.get(tab);
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.className = 'settings-tab-frame';
+      frame.title = tab.textContent;
+      frame.src = `${tab.getAttribute('href')}?embedded=1`;
+      this.tabFrames.set(tab, frame);
+      this.framesPanel.appendChild(frame);
+    }
+    frame.hidden = false;
   }
 
   async fetchWithTimeout(url, options = {}, timeoutMs = 5000) {
