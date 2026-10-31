@@ -467,9 +467,8 @@
 .notifications-popup {
   display: none;
   position: absolute;
-  top: 100%;
+  top: 100%; /* Flush with the bell: a gap would end the hover. */
   left: 0;
-  margin-top: 5px;
   background-color: var(--page-panel-background);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);

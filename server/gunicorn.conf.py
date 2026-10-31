@@ -1,4 +1,4 @@
-"""Gunicorn configuration. See README "Server workers and threads"."""
+"""Gunicorn configuration. See "Server workers and threads" in www/docs/administration.md."""
 
 import sys
 
