@@ -252,3 +252,14 @@ body {
   gap: 10px;
   justify-content: flex-end;
 }
+
+/* Modal buttons are small on every page so they leave room for the content. */
+.modal-actions .btn,
+.modal-footer .btn,
+.modal-header-actions .btn {
+  min-width: 0;
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 14px;
+  line-height: 1.2;
+}
