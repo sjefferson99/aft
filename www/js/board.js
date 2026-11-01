@@ -2205,6 +2205,13 @@ class BoardManager {
       return;
     }
 
+    // Touch has no hover, so the title tooltip can't show a clamped name there.
+    const columnName = target.closest('.column-header h4');
+    if (columnName) {
+      columnName.classList.toggle('column-name-expanded');
+      return;
+    }
+
     if (this.handleColumnControlClick(e, target) || this.handleCardControlClick(e, target)) {
       return;
     }
@@ -4666,7 +4673,8 @@ class BoardManager {
             <div class="column" data-column-id="${column.id}" data-board-id="${this.escapeHtml(String(this.boardId))}" data-order="${column.order}">
               <div class="column-header">
                 <div class="column-title-group">
-                  <h4>${this.escapeHtml(column.name)} <span class="card-count">(${this.getColumnCardCount(column)})</span></h4>
+                  <h4 title="${escapeHtml(column.name)}">${this.escapeHtml(column.name)}</h4>
+                  <span class="card-count">(${this.getColumnCardCount(column)})</span>
                 </div>
                 <div class="column-actions">
                   ${!this.showArchived && canCreateCardsInCurrentView ? `<button class="column-add-card-btn" data-column-id="${column.id}" title="Add card">+</button>` : ''}

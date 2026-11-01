@@ -63,6 +63,8 @@ To embed a public board in another website, see [Public Board iframe Embedding](
 
 ![A board with columns and cards](../images/docs/board.png)
 
+Long column names show on two lines. To see the full name, hover over it, or click or tap it to expand it.
+
 ### Adding Columns
 
 If you can edit a board, there are three ways to add a column:
