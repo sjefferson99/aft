@@ -302,23 +302,29 @@ def get_user_scoped_query(db, model, user_id):
     # (admins shouldn't see other users' personal notifications)
     if model.__name__ == 'Notification':
         return query.filter(model.user_id == user_id)
-    
+
+    # Settings are personal, even for admins: callers read one row per key, so
+    # another user's row would be returned as this user's. User rows sort before
+    # global rows (user_id IS NULL) so .first() prefers the user's own value.
+    if model.__name__ == 'Setting':
+        return query.filter(
+            (model.user_id == user_id) | (model.user_id.is_(None))
+        ).order_by(model.user_id.is_(None))
+
     if has_permission(get_user_permissions(user_id), 'system.admin'):
         return query
-    
+
     # Models with direct user_id column
     if hasattr(model, 'user_id'):
-        # For settings/themes, include user items plus globally visible items.
+        # For themes, include user items plus globally visible items.
         # Theme global visibility includes system themes (user_id IS NULL)
         # and user-owned themes marked global_theme=True.
-        if model.__name__ in ['Setting', 'Theme']:
-            if model.__name__ == 'Theme':
-                return query.filter(
-                    (model.user_id == user_id)
-                    | (model.user_id.is_(None))
-                    | (model.global_theme.is_(True))
-                )
-            return query.filter((model.user_id == user_id) | (model.user_id.is_(None)))
+        if model.__name__ == 'Theme':
+            return query.filter(
+                (model.user_id == user_id)
+                | (model.user_id.is_(None))
+                | (model.global_theme.is_(True))
+            )
         # For notifications, only show user's own (already handled above)
         return query.filter(model.user_id == user_id)
     

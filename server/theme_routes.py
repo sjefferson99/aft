@@ -1052,7 +1052,7 @@ def update_current_theme():
         if not theme:
             return create_error_response("Theme not found", 404)
 
-        setting = get_user_scoped_query(session, Setting, user_id).filter(Setting.key == 'selected_theme').first()
+        setting = session.query(Setting).filter(Setting.key == 'selected_theme', Setting.user_id == user_id).first()
         if setting:
             setting.value = str(theme_id)
         else:

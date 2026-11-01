@@ -994,9 +994,8 @@ def set_working_style():
             )
         
         # Update or create user's working_style setting
-        from utils import get_user_scoped_query
-        setting = get_user_scoped_query(session, Setting, user_id).filter(Setting.key == 'working_style').first()
-        
+        setting = session.query(Setting).filter(Setting.key == 'working_style', Setting.user_id == user_id).first()
+
         if setting:
             setting.value = json.dumps(working_style)
         else:
