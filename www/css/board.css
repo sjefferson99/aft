@@ -346,29 +346,42 @@
   margin-bottom: 15px;
   padding-bottom: 10px;
   border-bottom: 2px solid var(--border-color);
+  gap: 8px;
 }
 
 .column-title-group {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  min-width: 0;
 }
 
 .column-header h4 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--text-bold);
 }
 
+.column-header h4.column-name-expanded {
+  display: block;
+}
+
 .card-count {
+  flex: none;
   font-size: 14px;
   font-weight: normal;
   color: var(--text-muted);
-  margin-left: 4px;
 }
 
 .column-actions {
+  flex: none;
   display: flex;
   gap: 8px;
   align-items: center;
@@ -1352,6 +1365,13 @@ body.compact-cards .card.collapsed .card-content-wrapper {
   color: var(--text-color);
   margin: 0 0 20px;
   line-height: 1.5;
+}
+
+/* These name a column, which can be one long unbroken word. */
+.modal-description,
+#move-all-cards-modal-desc,
+#move-card-modal-desc {
+  overflow-wrap: anywhere;
 }
 
 .archive-after-input-row {
@@ -2348,20 +2368,13 @@ button.readonly-disabled,
 
   .column-title-group {
     grid-area: title;
-    min-width: 0;
-    flex: 1;
-    flex-wrap: wrap;
   }
 
   .column-header h4 {
     font-size: 13px;
-    overflow-wrap: anywhere;
   }
 
-  .column-header h4 .card-count {
-    display: inline;
-    margin-left: 4px;
-    margin-top: 0;
+  .card-count {
     font-size: 12px;
   }
 
