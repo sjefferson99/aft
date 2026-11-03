@@ -1,8 +1,11 @@
 version: 2
 updates:
-  # Monitor Python dependencies
+  # Python dependencies. /server and /ui-tests share pins (pytest, requests),
+  # so they are watched together and one grouped PR bumps both files.
   - package-ecosystem: "pip"
-    directory: "/server"
+    directories:
+      - "/server"
+      - "/ui-tests"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -23,7 +26,7 @@ updates:
           - "minor"
           - "patch"
 
-  # Monitor Docker base images
+  # Docker base images (server/Dockerfile and server/Dockerfile.nginx)
   - package-ecosystem: "docker"
     directory: "/server"
     schedule:
@@ -34,3 +37,32 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+
+  # Images pinned in compose.yml and compose.example.yml (MySQL). Floating
+  # tags such as redis:7-alpine are left alone. A MySQL bump upgrades the
+  # data directory, so treat it as an upgrade-note PR.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+
+  # Actions used in .github/workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
