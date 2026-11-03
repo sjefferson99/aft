@@ -47,6 +47,20 @@ jobs:
       packages: write   # required to push to GHCR
 
     steps:
+      # The semver image tags below only match vX.Y.Z release tags. A release
+      # published with another tag (such as GitHub's "untagged-..." draft
+      # placeholder) would otherwise pass while pushing no version images.
+      - name: Check release tag
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tag '$RELEASE_TAG' is not in the form vX.Y.Z. Edit the release to use a vX.Y.Z tag, then run this workflow on that tag."
+            exit 1
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@v7
 

@@ -139,6 +139,7 @@ Non-obvious behaviour that is easy to break:
   `gh api repos/sjefferson99/aft/releases/generate-notes -f tag_name=<new tag> -f previous_tag_name=<last tag> -q .body`
   Then rewrite each line in plain language, in the style of earlier releases. Expand `breaking-change` and `upgrade-note` entries from the "Release notes" section of each PR. A PR that is both a feature and an upgrade risk is grouped only under Upgrade notes, so also mention it in the feature section where relevant. Before drafting, check that every merged PR since the last tag has a category label:
   `gh pr list --state merged --search "merged:><last release date>" --json number,title,labels`
+- Releases must be tagged `vX.Y.Z`. A draft with no tag set publishes as `untagged-...`, and the GHCR build then fails its tag check. To fix one, run `gh release edit <bad tag> --tag vX.Y.Z --target <commit>`. Editing doesn't start a build, so then run `gh workflow run build-and-push.yml --ref vX.Y.Z` and delete the stray tag.
 
 ## Dependabot PR processing
 
