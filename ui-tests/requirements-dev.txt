@@ -7,6 +7,6 @@
 # (http://localhost via nginx), so production dependencies are NOT needed here.
 
 pytest==9.2.0
-pytest-playwright==0.8.0
-playwright==1.60.0
+pytest-playwright==0.10.0
+playwright==1.64.1
 requests==2.34.2

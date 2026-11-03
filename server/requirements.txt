@@ -3,7 +3,7 @@ flask-cors==6.0.5
 flask-socketio==5.7.0
 flask-session==0.8.0
 sqlalchemy==2.1.6
-python-socketio==5.17.0
+python-socketio==5.17.1
 redis==8.1.0
 webauthn==3.0.1
 alembic==1.20.1
