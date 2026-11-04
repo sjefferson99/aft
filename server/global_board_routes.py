@@ -12,6 +12,10 @@ Two checks apply to every request: the global board must pass
 can_access_global_board, and each card must be on a board the user can access
 (get_user_scoped_query). Changing a card needs card.update on its own board, as
 the done route does.
+
+Changes broadcast a contentless global_board_changed to the global_board_<id>
+room, and clients refetch through the scoped API, so no card content reaches
+people who can't see the card's board.
 """
 import logging
 from datetime import timedelta
@@ -25,6 +29,7 @@ from board_routes import (
     _parse_assignee_ids_query_param,
     _user_summary,
 )
+from card_serialization import build_card_broadcast_data, get_column_card_counts
 from database import SessionLocal
 from datetime_helpers import serialize_datetime, utc_now
 from global_board_utils import (
@@ -41,10 +46,16 @@ from global_board_utils import (
     get_card_promotion,
     get_eligible_global_boards,
 )
-from models import Board, BoardColumn, Card, GlobalBoardCard
+from models import Board, BoardColumn, BoardSetting, Card, GlobalBoardCard
 from permissions import has_permission
+from settings_schema import (
+    WORKING_STYLE_AGILE,
+    normalize_working_style,
+    parse_json_setting_value,
+)
 from utils import (
     create_error_response,
+    get_request_socket_id,
     get_user_permissions,
     get_user_scoped_query,
     require_authentication,
@@ -60,11 +71,80 @@ global_board_bp = Blueprint("global_board", __name__)
 
 GLOBAL_BOARD_NOT_FOUND = "Global board not found"
 CARD_NOT_FOUND = "Card not found"
+GLOBAL_BOARD_CHANGED_EVENT = "global_board_changed"
+
+# Injected at startup via configure_global_board_routes()
+_broadcast_event = None
+_broadcast_global_board_event = None
+
+
+def configure_global_board_routes(broadcast_event_fn, broadcast_global_board_event_fn):
+    """Inject the board and global board broadcast callables."""
+    global _broadcast_event, _broadcast_global_board_event
+    _broadcast_event = broadcast_event_fn
+    _broadcast_global_board_event = broadcast_global_board_event_fn
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _notify_global_board_changed(global_board_id):
+    """Tell everyone viewing a global board to refetch it. Carries only the id."""
+    if _broadcast_global_board_event is None:
+        return
+    _broadcast_global_board_event(
+        GLOBAL_BOARD_CHANGED_EVENT,
+        {"global_board_id": global_board_id},
+        global_board_id,
+        get_request_socket_id(),
+    )
+
+
+def _notify_card_done_changed(db, card, board_id):
+    """Send the done route's board event after a global move changes done."""
+    if _broadcast_event is None or not board_id:
+        return
+    _broadcast_event('card_done_status_changed', {
+        'board_id': board_id,
+        'card_id': card.id,
+        'column_id': card.column_id,
+        'done': bool(card.done),
+        'card_data': build_card_broadcast_data(db, card),
+        'column_counts': get_column_card_counts(db, [card.column_id], board_id),
+    }, board_id, get_request_socket_id())
+
+
+def _user_has_agile_board(db, user_id):
+    """Return whether the user can see an active agile board."""
+    board_ids = [
+        board_id
+        for (board_id,) in get_user_scoped_query(db, Board, user_id)
+        .filter(Board.archived.is_(False))
+        .with_entities(Board.id)
+        .all()
+    ]
+    if not board_ids:
+        return False
+    settings = db.query(BoardSetting.value).filter(
+        BoardSetting.board_id.in_(board_ids),
+        BoardSetting.key == 'working_style',
+    ).all()
+    return any(
+        normalize_working_style(parse_json_setting_value(raw_value)) == WORKING_STYLE_AGILE
+        for (raw_value,) in settings
+    )
+
+
+def _user_has_promoted_card(db, user_id, global_board_ids):
+    """Return whether the user can see a card promoted to one of these boards."""
+    if not global_board_ids:
+        return False
+    return db.query(GlobalBoardCard.id).filter(
+        GlobalBoardCard.global_board_id.in_(global_board_ids),
+        GlobalBoardCard.card_id.in_(_scoped_card_ids(db, user_id)),
+    ).first() is not None
 
 
 def _serialize_global_board(global_board, user_permissions):
@@ -170,7 +250,10 @@ def list_global_boards():
       - session: []
     responses:
       200:
-        description: Global boards with their name and done window
+        description: >
+          Global boards with their name and done window. show_in_menu is true when
+          the user can see a global board and has an agile board or a promoted
+          card, so people who only use kanban boards don't see the global board
       401:
         description: Authentication required
       500:
@@ -180,9 +263,14 @@ def list_global_boards():
     try:
         user_permissions = get_user_permissions(g.user.id)
         boards = get_accessible_global_boards(db, g.user.id)
+        show_in_menu = bool(boards) and (
+            _user_has_agile_board(db, g.user.id)
+            or _user_has_promoted_card(db, g.user.id, [b.id for b in boards])
+        )
         return jsonify({
             "success": True,
             "global_boards": [_serialize_global_board(b, user_permissions) for b in boards],
+            "show_in_menu": show_in_menu,
         }), 200
     except Exception as e:
         logger.error(f"Error listing global boards: {str(e)}")
@@ -272,6 +360,7 @@ def update_global_board(global_board_id):
         global_board.updated_at = utc_now()
         db.commit()
         db.refresh(global_board)
+        _notify_global_board_changed(global_board.id)
 
         return jsonify({
             "success": True,
@@ -539,6 +628,7 @@ def promote_card(global_board_id):
         db.add(promotion)
         db.commit()
         db.refresh(promotion)
+        _notify_global_board_changed(global_board.id)
 
         return jsonify({
             "success": True,
@@ -597,6 +687,7 @@ def demote_card(global_board_id, card_id):
 
         db.delete(promotion)
         db.commit()
+        _notify_global_board_changed(global_board.id)
 
         return jsonify({"success": True, "message": "Card demoted", "card_id": card_id}), 200
     except Exception as e:
@@ -686,6 +777,7 @@ def move_global_card(global_board_id, card_id):
 
         now = utc_now()
         board_id = card.column.board_id
+        was_done = bool(card.done)
 
         if state == GLOBAL_STATE_DONE:
             if not card.done:
@@ -713,6 +805,9 @@ def move_global_card(global_board_id, card_id):
         db.commit()
         db.refresh(card)
         db.refresh(promotion)
+        _notify_global_board_changed(global_board.id)
+        if bool(card.done) != was_done:
+            _notify_card_done_changed(db, card, board_id)
 
         return jsonify({
             "success": True,

@@ -678,3 +678,45 @@ class TestFilters:
         response = authenticated_session.get(_url(api_client, f'/api/global-boards/{gid}/cards'))
         epics = {e['name'] for e in response.json()['epics']}
         assert epics == {'Epic', 'Other epic'}
+
+
+@pytest.mark.api
+class TestMenuVisibility:
+    """show_in_menu keeps the global board out of kanban-only users' menus."""
+
+    def _show_in_menu(self, session, api_client):
+        response = session.get(_url(api_client, '/api/global-boards'))
+        assert response.status_code == 200, response.text
+        return response.json()['show_in_menu']
+
+    def test_hidden_without_agile_boards_or_cards(self, api_client, second_user_session):
+        """Test a user with no boards, then only a kanban board, doesn't get the menu item."""
+        assert self._show_in_menu(second_user_session, api_client) is False
+        _make_board(second_user_session, api_client, 'Kanban only', style='kanban')
+        assert self._show_in_menu(second_user_session, api_client) is False
+
+    def test_shown_with_an_agile_board(self, api_client, second_user_session):
+        """Test an agile board brings the menu item."""
+        _make_board(second_user_session, api_client, 'Agile epic', style='agile')
+        assert self._show_in_menu(second_user_session, api_client) is True
+
+    def test_archived_agile_board_does_not_count(self, api_client, second_user_session):
+        """Test an archived agile board doesn't bring the menu item."""
+        board_id, _ = _make_board(second_user_session, api_client, 'Old epic', style='agile')
+        archive = second_user_session.patch(_url(api_client, f'/api/boards/{board_id}/archive'))
+        assert archive.status_code == 200, archive.text
+        assert self._show_in_menu(second_user_session, api_client) is False
+
+    def test_shown_with_a_promoted_card_on_a_kanban_board(
+        self, api_client, second_user_session, global_board
+    ):
+        """Test a promoted card keeps the menu item after its board switches to kanban."""
+        board_id, (column_id,) = _make_board(second_user_session, api_client, 'Switched epic')
+        card_id = _make_card(second_user_session, api_client, column_id)
+        assert _promote(second_user_session, api_client, global_board['id'], card_id).status_code == 201
+        switch = second_user_session.put(
+            _url(api_client, f'/api/boards/{board_id}/settings/working-style'),
+            json={'value': 'kanban'},
+        )
+        assert switch.status_code == 200, switch.text
+        assert self._show_in_menu(second_user_session, api_client) is True

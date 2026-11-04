@@ -982,6 +982,12 @@ body:not(.board-page) .compact-cards-toggle {
   flex: 1;
 }
 
+/* The global board item is a link, not a view button (#663). */
+a.views-dropdown-item {
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
 .views-icon {
   flex-shrink: 0;
   stroke: var(--text-bold);

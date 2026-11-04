@@ -1,0 +1,341 @@
+/* Global board page (#663). Self-contained rather than loading board.css,
+   whose mobile rules turn off native touch scrolling for board.js's own
+   touch drag. Uses the theme variables, so themes apply. */
+
+body.global-board-page .canvas {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 80px);
+  min-height: 0;
+}
+
+#global-board-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.gb-status-message,
+.gb-hint {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.gb-status-message {
+  margin-top: 40px;
+  font-size: 16px;
+}
+
+/* Filters */
+
+.gb-toolbar {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-self: center;
+  max-width: min(100%, 1100px);
+  min-height: 44px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--background-light);
+}
+
+.gb-assignee-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gb-assignee-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.gb-assignee-btn:hover {
+  border-color: var(--border-color);
+}
+
+.gb-assignee-btn.selected {
+  border: 2px solid var(--primary-color);
+}
+
+.gb-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+.gb-avatar--unassigned {
+  background: var(--secondary-color);
+}
+
+.gb-epic-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.gb-epic-filter select,
+.gb-card-move {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--page-panel-background);
+  color: var(--text-bold);
+  font: inherit;
+}
+
+.gb-epic-filter select {
+  height: 34px;
+  max-width: 240px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+.gb-clear-filters {
+  width: auto;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* Columns */
+
+.gb-columns {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  justify-content: safe center;
+  align-items: stretch;
+}
+
+.gb-column {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 280px;
+  min-width: 0;
+  max-height: 100%;
+  padding: 15px;
+  border-radius: 8px;
+  background: var(--background-light);
+}
+
+.gb-column-header {
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.gb-column-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-bold);
+}
+
+.gb-card-count {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.gb-column-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.gb-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-height: 60px;
+  overflow-y: auto;
+  border-radius: 6px;
+  transition: background-color 0.15s;
+}
+
+.gb-card-list.gb-drop-target {
+  background-color: color-mix(in srgb, var(--primary-color) 10%, transparent);
+}
+
+.gb-empty {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.gb-card-list:has(.gb-card) .gb-empty {
+  display: none;
+}
+
+/* Cards */
+
+.gb-card {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--card-bg-color);
+  transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+
+.gb-card[draggable="true"] {
+  cursor: grab;
+}
+
+.gb-card:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+}
+
+.gb-card.dragging {
+  opacity: 0.5;
+  transform: rotate(2deg);
+  cursor: grabbing;
+}
+
+.gb-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-bold);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.gb-card-title:hover,
+.gb-card-title:focus-visible {
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+
+.gb-card-context {
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gb-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.gb-card-move {
+  margin-left: auto;
+  max-width: 130px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.gb-card--readonly .gb-card-title {
+  color: var(--text-secondary);
+}
+
+/* Desktop with a mouse moves cards by dragging, so the Move to control only
+   shows on the card being pointed at or used. Opacity keeps it reachable by
+   keyboard. Touch leaves :hover stuck on, so touchscreen mode always shows it. */
+@media (min-width: 901px) {
+  body:not(.touchscreen-mode) .gb-card .gb-card-move {
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  body:not(.touchscreen-mode) .gb-card:hover .gb-card-move,
+  body:not(.touchscreen-mode) .gb-card:focus-within .gb-card-move {
+    opacity: 1;
+  }
+
+  body.touchscreen-mode .gb-card-move {
+    height: 40px;
+    font-size: 15px;
+  }
+}
+
+/* Mobile: columns scroll sideways with native touch scrolling. */
+@media (max-width: 900px) {
+  body.global-board-page .canvas {
+    padding: 10px 8px 2px;
+    height: calc(100dvh - 68px);
+  }
+
+  body.global-board-page .header-instance-name {
+    display: none;
+  }
+
+  body.global-board-page .header-mobile-board-name {
+    display: block;
+    min-width: 4ch;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .gb-toolbar {
+    align-self: stretch;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 6px 8px;
+  }
+
+  .gb-columns {
+    gap: 12px;
+    justify-content: flex-start;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+  }
+
+  .gb-column {
+    flex-basis: min(85vw, 320px);
+    padding: 10px;
+    border-radius: 12px;
+    scroll-snap-align: start;
+  }
+
+  .gb-card-move {
+    height: 36px;
+    font-size: 14px;
+  }
+}

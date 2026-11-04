@@ -1,0 +1,290 @@
+"""UI tests for the global board page (#663).
+
+The test admin sees every promoted card on the instance board, including any
+left by other tests, so cards are found by id rather than by position.
+"""
+import time
+
+import pytest
+
+DESKTOP = {"width": 1280, "height": 800}
+MOBILE = {"width": 390, "height": 800}
+
+
+@pytest.fixture
+def global_board(api_session, ui_base_url):
+    response = api_session.get(f"{ui_base_url}/api/global-boards")
+    assert response.status_code == 200, response.text
+    board = response.json()["global_boards"][0]
+    yield board
+    api_session.patch(
+        f"{ui_base_url}/api/global-boards/{board['id']}",
+        json={"name": "Global", "done_visible_days": 14},
+    )
+
+
+@pytest.fixture
+def epic(api_session, ui_base_url, board):
+    """An agile board with two feature columns."""
+    response = api_session.put(
+        f"{ui_base_url}/api/boards/{board['id']}/settings/working-style", json={"value": "agile"}
+    )
+    assert response.status_code == 200, response.text
+    column_ids = []
+    for name in ("Feature A", "Feature B"):
+        column = api_session.post(f"{ui_base_url}/api/boards/{board['id']}/columns", json={"name": name})
+        assert column.status_code == 201, column.text
+        column_ids.append(column.json()["column"]["id"])
+    return {"board": board, "column_ids": column_ids}
+
+
+def _make_card(api_session, ui_base_url, column_id, title):
+    response = api_session.post(f"{ui_base_url}/api/columns/{column_id}/cards", json={"title": title})
+    assert response.status_code == 201, response.text
+    return response.json()["card"]["id"]
+
+
+def _promote(api_session, ui_base_url, global_board, card_id, state="new"):
+    response = api_session.post(
+        f"{ui_base_url}/api/global-boards/{global_board['id']}/cards",
+        json={"card_id": card_id, "state": state},
+    )
+    assert response.status_code == 201, response.text
+
+
+@pytest.fixture
+def stories(api_session, ui_base_url, global_board, epic):
+    """Two promoted cards in New, on different features."""
+    first = _make_card(api_session, ui_base_url, epic["column_ids"][0], "First story")
+    second = _make_card(api_session, ui_base_url, epic["column_ids"][1], "Second story")
+    for card_id in (first, second):
+        _promote(api_session, ui_base_url, global_board, card_id)
+    return {"first": first, "second": second}
+
+
+def _open(page, global_board, viewport=DESKTOP):
+    page.set_viewport_size(viewport)
+    page.goto(f"/global-board.html?id={global_board['id']}")
+    page.wait_for_function("() => window.globalBoardPage?.hasLoaded", timeout=8000)
+
+
+def _card(page, card_id):
+    return page.locator(f'.gb-card[data-card-id="{card_id}"]')
+
+
+def _column_list(page, state):
+    return page.locator(f'.gb-card-list[data-state="{state}"]')
+
+
+def _card_state(api_session, ui_base_url, global_board, card_id):
+    response = api_session.get(f"{ui_base_url}/api/global-boards/{global_board['id']}/cards")
+    assert response.status_code == 200, response.text
+    for state, cards in response.json()["states"].items():
+        if any(card["card_id"] == card_id for card in cards):
+            return state
+    return None
+
+
+def _wait_for_api(check, timeout=8):
+    """Poll until check() is true. The page moves a dragged card before its request ends."""
+    deadline = time.monotonic() + timeout
+    while not check():
+        assert time.monotonic() < deadline, "Timed out waiting for the server to record the move"
+        time.sleep(0.2)
+
+
+def _wait_for_card_in(page, card_id, state):
+    page.wait_for_function(
+        """([cardId, state]) => !!document.querySelector(
+            `.gb-card-list[data-state="${state}"] .gb-card[data-card-id="${cardId}"]`)""",
+        arg=[card_id, state],
+        timeout=8000,
+    )
+
+
+@pytest.mark.ui
+def test_shows_columns_and_card_details(logged_in_page, global_board, epic, stories):
+    page = logged_in_page
+    _open(page, global_board)
+
+    headings = page.locator(".gb-column h2").all_inner_texts()
+    assert [h.split(" (")[0] for h in headings] == ["New", "In Progress", "Waiting", "Done"]
+    assert page.locator(".gb-column-note").inner_text() == "Done in the last 14 days"
+
+    card = _card(page, stories["first"])
+    assert card.locator(".gb-card-title").inner_text() == "First story"
+    assert card.locator(".gb-card-context").inner_text() == f"{epic['board']['name']} › Feature A"
+    assert card.locator(".gb-card-title").get_attribute("href") == (
+        f"/board.html?id={epic['board']['id']}&card={stories['first']}"
+    )
+    assert card.get_attribute("draggable") == "true"
+    assert page.evaluate("document.querySelector('#nav-board-name-text').textContent") == global_board["name"]
+
+
+@pytest.mark.ui
+def test_card_title_is_not_html(logged_in_page, api_session, ui_base_url, global_board, epic):
+    page = logged_in_page
+    title = '<img src=x onerror="window.__gbXss=1">'
+    card_id = _make_card(api_session, ui_base_url, epic["column_ids"][0], title)
+    _promote(api_session, ui_base_url, global_board, card_id)
+    _open(page, global_board)
+
+    assert _card(page, card_id).locator(".gb-card-title").inner_text() == title
+    assert page.evaluate("window.__gbXss") is None
+
+
+@pytest.mark.ui
+def test_drag_between_states_and_into_done(
+    logged_in_page, api_session, ui_base_url, global_board, stories
+):
+    page = logged_in_page
+    _open(page, global_board)
+
+    _card(page, stories["first"]).drag_to(_column_list(page, "in_progress"))
+    _wait_for_api(lambda: _card_state(api_session, ui_base_url, global_board, stories["first"]) == "in_progress")
+    _wait_for_card_in(page, stories["first"], "in_progress")
+
+    _card(page, stories["first"]).drag_to(_column_list(page, "done"))
+    _wait_for_api(lambda: api_session.get(f"{ui_base_url}/api/cards/{stories['first']}/done").json()["done"])
+    _wait_for_card_in(page, stories["first"], "done")
+
+
+@pytest.mark.ui
+def test_drag_reorders_within_a_state(logged_in_page, api_session, ui_base_url, global_board, stories):
+    page = logged_in_page
+    _open(page, global_board)
+    second = _card(page, stories["second"])
+    first = _card(page, stories["first"])
+
+    box = first.bounding_box()
+    second.drag_to(first, target_position={"x": box["width"] / 2, "y": 2})
+    page.wait_for_function(
+        """([a, b]) => {
+            const ids = [...document.querySelectorAll('.gb-card-list[data-state="new"] .gb-card')]
+              .map((el) => Number(el.dataset.cardId));
+            return ids.indexOf(b) !== -1 && ids.indexOf(b) < ids.indexOf(a);
+        }""",
+        arg=[stories["first"], stories["second"]],
+        timeout=8000,
+    )
+
+    def second_is_just_above_first():
+        response = api_session.get(f"{ui_base_url}/api/global-boards/{global_board['id']}/cards")
+        ids = [card["card_id"] for card in response.json()["states"]["new"]]
+        return ids.index(stories["second"]) == ids.index(stories["first"]) - 1
+
+    _wait_for_api(second_is_just_above_first)
+
+
+@pytest.mark.ui
+def test_mobile_uses_move_to_control(logged_in_page, api_session, ui_base_url, global_board, stories):
+    page = logged_in_page
+    _open(page, global_board, MOBILE)
+    card = _card(page, stories["first"])
+    assert card.get_attribute("draggable") == "false"
+
+    select = card.locator(".gb-card-move")
+    assert select.is_visible()
+    assert select.get_attribute("aria-label") == "Move First story to"
+    select.select_option("waiting")
+
+    _wait_for_card_in(page, stories["first"], "waiting")
+    assert _card_state(api_session, ui_base_url, global_board, stories["first"]) == "waiting"
+    assert page.locator(".gb-columns").evaluate("el => el.scrollWidth > el.clientWidth")
+    assert page.evaluate("document.documentElement.scrollWidth") <= MOBILE["width"]
+
+
+@pytest.mark.ui
+def test_filters_by_epic_and_assignee(logged_in_page, api_session, ui_base_url, global_board, epic, stories):
+    page = logged_in_page
+    me = api_session.get(f"{ui_base_url}/api/auth/me").json()["user"]
+    assigned = api_session.put(
+        f"{ui_base_url}/api/cards/{stories['first']}/assignees", json={"assigned_to_id": me["id"]}
+    )
+    assert assigned.status_code == 200, assigned.text
+    _open(page, global_board)
+
+    page.locator("#gb-epic-filter").select_option(str(epic["board"]["id"]))
+    assert page.locator(".gb-card").count() == 2
+
+    page.locator(f'.gb-assignee-btn[data-filter-key="user-{me["id"]}"]').click()
+    assert page.locator(".gb-card").count() == 1
+    assert _card(page, stories["first"]).is_visible()
+
+    page.locator('[data-filter-key="unassigned"]').click()
+    assert page.locator(".gb-card").count() == 2
+
+    # Filters are kept for the next visit.
+    page.reload()
+    page.wait_for_function("() => window.globalBoardPage?.hasLoaded", timeout=8000)
+    assert page.locator(".gb-card").count() == 2
+    assert page.locator('[data-filter-key="unassigned"]').get_attribute("aria-pressed") == "true"
+
+    page.locator('[data-filter-key="clear"]').click()
+    assert page.locator('[data-filter-key="clear"]').count() == 0
+    assert page.locator("#gb-epic-filter").input_value() == ""
+
+
+@pytest.mark.ui
+def test_changes_elsewhere_appear_without_reload(
+    logged_in_page, api_session, ui_base_url, global_board, epic, stories
+):
+    page = logged_in_page
+    _open(page, global_board)
+    page.wait_for_function("() => window.globalBoardPage.roomJoined", timeout=8000)
+
+    # Promoted elsewhere: arrives through the global board room.
+    third = _make_card(api_session, ui_base_url, epic["column_ids"][0], "Third story")
+    _promote(api_session, ui_base_url, global_board, third)
+    _card(page, third).wait_for(state="visible", timeout=8000)
+
+    # Ticked done on the epic board: arrives through the board's own room.
+    done = api_session.patch(f"{ui_base_url}/api/cards/{stories['second']}/done", json={"done": True})
+    assert done.status_code == 200, done.text
+    _wait_for_card_in(page, stories["second"], "done")
+
+    # Renamed on the epic board.
+    rename = api_session.patch(f"{ui_base_url}/api/cards/{stories['first']}", json={"title": "Renamed"})
+    assert rename.status_code == 200, rename.text
+    page.wait_for_function(
+        """(cardId) => document.querySelector(
+            `.gb-card[data-card-id="${cardId}"] .gb-card-title`)?.textContent === 'Renamed'""",
+        arg=stories["first"],
+        timeout=8000,
+    )
+
+
+@pytest.mark.ui
+def test_view_menu_links_to_global_board(logged_in_page, global_board, epic):
+    page = logged_in_page
+    page.set_viewport_size(DESKTOP)
+    page.goto(f"/board.html?id={epic['board']['id']}")
+    item = page.locator("#global-board-view-item")
+    item.wait_for(state="attached", timeout=8000)
+
+    assert item.get_attribute("href") == f"/global-board.html?id={global_board['id']}"
+    assert item.inner_text().strip() == global_board["name"]
+    assert item.get_attribute("data-view") is None
+    # Compact Cards stays last.
+    assert page.evaluate(
+        "document.querySelector('#views-dropdown-menu').lastElementChild.id"
+    ) == "compact-cards-toggle"
+
+    page.locator("#views-dropdown-btn").click()
+    item.click()
+    page.wait_for_url("**/global-board.html?id=*", timeout=8000)
+    page.wait_for_function("() => window.globalBoardPage?.hasLoaded", timeout=8000)
+
+
+@pytest.mark.ui
+def test_mobile_drawer_links_to_global_board(logged_in_page, global_board, epic):
+    page = logged_in_page
+    page.set_viewport_size(MOBILE)
+    page.goto(f"/board.html?id={epic['board']['id']}")
+    link = page.locator("#mobile-global-board-link")
+    link.wait_for(state="attached", timeout=8000)
+
+    page.locator("#mobile-menu-toggle").click()
+    link.click()
+    page.wait_for_url("**/global-board.html?id=*", timeout=8000)
+    page.wait_for_function("() => window.globalBoardPage?.hasLoaded", timeout=8000)
