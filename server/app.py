@@ -30,6 +30,7 @@ from card_routes import card_bp, configure_card_routes
 from schedule_routes import schedule_bp, configure_schedule_routes
 from branding_routes import branding_bp
 from planner_routes import planner_bp
+from global_board_routes import global_board_bp
 from passkey_routes import passkey_bp, WEBAUTHN_SETTINGS
 from broadcasting import (
     broadcast_failures,
@@ -300,6 +301,7 @@ app.register_blueprint(card_bp)
 app.register_blueprint(schedule_bp)
 app.register_blueprint(branding_bp)
 app.register_blueprint(planner_bp)
+app.register_blueprint(global_board_bp)
 app.register_blueprint(passkey_bp)
 
 if WEBAUTHN_SETTINGS:

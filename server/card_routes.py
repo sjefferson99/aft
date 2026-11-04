@@ -29,8 +29,8 @@ from card_serialization import (
 )
 from database import SessionLocal
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
+from global_board_utils import apply_card_done, remove_ineligible_promotions
 from models import Board, BoardColumn, Card, CardSecondaryAssignee, User
-from settings_schema import WORKING_STYLE_AGILE, get_board_working_style
 from utils import (
     MAX_DESCRIPTION_LENGTH,
     MAX_TITLE_LENGTH,
@@ -1007,6 +1007,9 @@ def move_all_cards_in_column(source_column_id):
         moved_values = {Card.column_id: target_column_id}
         if _is_done_like_column_name(target_column.name):
             moved_values[Card.done_datetime] = utc_now()
+        if target_column.board_id != source_column.board_id:
+            remove_ineligible_promotions(db, source_card_ids, target_column.board_id)
+
         if position == "top":
             # Move existing target cards down to make room
             _renumber_cards(db, target_card_ids, len(source_card_ids))
@@ -1421,6 +1424,7 @@ def update_card(card_id):
                     ).first()
                     if not target_board:
                         return create_error_response("Access denied to target board", 403)
+                    remove_ineligible_promotions(db, [card.id], target_column.board_id)
 
                 # Moving to different column is a state change - update timestamp
                 user_content_changed = True
@@ -2129,18 +2133,7 @@ def update_card_done_status(card_id):
             return jsonify({"success": False, "message": "Card not found or access denied"}), 404
 
         board_id = card.column.board_id if card.column else None
-        card.done = done_status
-
-        # Set updated_at timestamp
-        now = utc_now()
-        card.updated_at = now
-
-        if (
-          done_status
-          and board_id is not None
-          and get_board_working_style(db, board_id, fallback_user_id=user_id) == WORKING_STYLE_AGILE
-        ):
-          card.done_datetime = now
+        apply_card_done(db, card, done_status, utc_now(), board_id=board_id)
 
         db.commit()
 

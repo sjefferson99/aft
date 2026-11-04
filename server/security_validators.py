@@ -118,6 +118,8 @@ def validate_schema_integrity(file_path, expected_tables=None):
             'users',
             'user_roles',
             'webauthn_credentials',
+            'global_boards',
+            'global_board_cards',
             'alembic_version'
         ]
 
