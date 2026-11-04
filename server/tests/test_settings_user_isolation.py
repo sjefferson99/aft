@@ -13,6 +13,18 @@ def _get_value(session, url):
     return response.json()['value']
 
 
+# Values the app uses for a setting nobody has saved yet, which reads as 404
+UNSET_DEFAULTS = {'touchscreen_mode': False}
+
+
+def _get_value_or_default(session, url, path):
+    response = session.get(url)
+    if response.status_code == 404 and path in UNSET_DEFAULTS:
+        return UNSET_DEFAULTS[path]
+    assert response.status_code == 200, response.text
+    return response.json()['value']
+
+
 @pytest.fixture
 def second_admin_session(api_client, test_admin_session, second_user_session):
     """Give the second user the administrator role for one test."""
@@ -47,7 +59,7 @@ class TestSettingsUserIsolation:
     ):
         """Test two admins can hold different values for the same setting."""
         url = f'{api_client}/api/settings/{path}'
-        original = _get_value(test_admin_session, url)
+        original = _get_value_or_default(test_admin_session, url, path)
 
         try:
             _set_value(test_admin_session, url, first)
