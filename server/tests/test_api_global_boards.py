@@ -720,3 +720,99 @@ class TestMenuVisibility:
         )
         assert switch.status_code == 200, switch.text
         assert self._show_in_menu(second_user_session, api_client) is True
+
+
+@pytest.mark.api
+class TestEpicCardGlobalFields:
+    """Board cards carry global_board_id and global_state for the epic board badge."""
+
+    def _board_card(self, session, api_client, board_id, card_id):
+        response = session.get(_url(api_client, f'/api/boards/{board_id}/cards'))
+        assert response.status_code == 200, response.text
+        for column in response.json()['board']['columns']:
+            for card in column['cards']:
+                if card['id'] == card_id:
+                    return card
+        raise AssertionError(f'Card {card_id} not on board {board_id}')
+
+    def _detail(self, session, api_client, card_id):
+        response = session.get(_url(api_client, f'/api/cards/{card_id}'))
+        assert response.status_code == 200, response.text
+        return response.json()['card']
+
+    def _fields(self, card):
+        return card['global_board_id'], card['global_state']
+
+    def test_fields_follow_promote_move_done_and_demote(
+        self, api_client, authenticated_session, global_board, epic
+    ):
+        """Test the board list and card detail show the card's global state as it changes."""
+        session = authenticated_session
+        gid = global_board['id']
+        board_id = epic['board_id']
+        card_id = _make_card(session, api_client, epic['column_ids'][0])
+        other_id = _make_card(session, api_client, epic['column_ids'][0], title='Not promoted')
+
+        def both():
+            board_fields = self._fields(self._board_card(session, api_client, board_id, card_id))
+            detail_fields = self._fields(self._detail(session, api_client, card_id))
+            assert board_fields == detail_fields
+            return board_fields
+
+        assert both() == (None, None)
+
+        assert _promote(session, api_client, gid, card_id).status_code == 201
+        assert both() == (gid, 'new')
+        assert self._fields(self._board_card(session, api_client, board_id, other_id)) == (None, None)
+
+        assert _move(session, api_client, gid, card_id, 'in_progress').status_code == 200
+        assert both() == (gid, 'in_progress')
+
+        done = session.patch(_url(api_client, f'/api/cards/{card_id}/done'), json={'done': True})
+        assert done.status_code == 200, done.text
+        assert both() == (gid, 'done')
+
+        undone = session.patch(_url(api_client, f'/api/cards/{card_id}/done'), json={'done': False})
+        assert undone.status_code == 200, undone.text
+        assert both() == (gid, 'in_progress')
+
+        demote = session.delete(_url(api_client, f'/api/global-boards/{gid}/cards/{card_id}'))
+        assert demote.status_code == 200, demote.text
+        assert both() == (None, None)
+
+    def test_fields_stay_after_switch_to_kanban(
+        self, api_client, authenticated_session, global_board, epic
+    ):
+        """Test a promoted card keeps its badge fields after its board turns kanban."""
+        session = authenticated_session
+        gid = global_board['id']
+        card_id = _make_card(session, api_client, epic['column_ids'][0])
+        assert _promote(session, api_client, gid, card_id, state='waiting').status_code == 201
+        switch = session.put(
+            _url(api_client, f"/api/boards/{epic['board_id']}/settings/working-style"),
+            json={'value': 'kanban'},
+        )
+        assert switch.status_code == 200, switch.text
+        card = self._board_card(session, api_client, epic['board_id'], card_id)
+        assert self._fields(card) == (gid, 'waiting')
+
+    def test_public_board_does_not_expose_fields(
+        self, api_client, authenticated_session, global_board, epic
+    ):
+        """Test the public board view never carries global board data."""
+        session = authenticated_session
+        card_id = _make_card(session, api_client, epic['column_ids'][0])
+        assert _promote(session, api_client, global_board['id'], card_id).status_code == 201
+        share = session.patch(
+            _url(api_client, f"/api/boards/{epic['board_id']}"), json={'is_public': True}
+        )
+        assert share.status_code == 200, share.text
+        slug = share.json()['board']['public_slug']
+
+        public = requests.get(_url(api_client, f'/api/public/boards/{slug}'))
+        assert public.status_code == 200, public.text
+        assert 'global_board_id' not in public.text
+        assert 'global_state' not in public.text
+        public_card = requests.get(_url(api_client, f'/api/public/boards/{slug}/cards/{card_id}'))
+        assert public_card.status_code == 200, public_card.text
+        assert 'global_' not in public_card.text

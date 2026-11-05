@@ -288,3 +288,167 @@ def test_mobile_drawer_links_to_global_board(logged_in_page, global_board, epic)
     link.click()
     page.wait_for_url("**/global-board.html?id=*", timeout=8000)
     page.wait_for_function("() => window.globalBoardPage?.hasLoaded", timeout=8000)
+
+
+# ---------------------------------------------------------------------------
+# Epic board integration: promote and demote, the badge and the deep link
+# ---------------------------------------------------------------------------
+
+
+def _open_epic(page, epic, query=""):
+    page.set_viewport_size(DESKTOP)
+    page.goto(f"/board.html?id={epic['board']['id']}{query}")
+    page.wait_for_function("() => window.boardManager?.hasLoadedBoardData", timeout=8000)
+
+
+def _board_card(page, card_id):
+    return page.locator(f'.card[data-card-id="{card_id}"]')
+
+
+def _open_card_modal(page, card_id):
+    _board_card(page, card_id).locator(".card-title").click()
+    page.locator("#edit-card-modal").wait_for(state="visible", timeout=5000)
+
+
+@pytest.mark.ui
+def test_promote_and_demote_from_edit_modal(
+    logged_in_page, api_session, ui_base_url, global_board, epic
+):
+    page = logged_in_page
+    card_id = _make_card(api_session, ui_base_url, epic["column_ids"][0], "Promote me")
+    _open_epic(page, epic)
+    assert _board_card(page, card_id).locator(".card-global-badge").count() == 0
+
+    _open_card_modal(page, card_id)
+    state_text = page.locator("#card-global-state-value")
+    assert state_text.inner_text() == "Not promoted"
+    button = page.locator("#promote-card-detail-btn")
+    assert button.get_attribute("aria-label") == "Promote to global board"
+    button.click()
+    page.wait_for_function(
+        "() => document.querySelector('#promote-card-detail-btn')?.getAttribute('aria-label')"
+        " === 'Demote from global board'",
+        timeout=5000,
+    )
+    assert _card_state(api_session, ui_base_url, global_board, card_id) == "new"
+    badge = _board_card(page, card_id).locator(".card-global-badge")
+    badge.wait_for(state="attached", timeout=5000)
+    assert badge.inner_text() == "New"
+    assert page.locator("#edit-card-modal").is_visible()
+    assert state_text.inner_text() == "New"
+
+    button.click()
+    page.wait_for_function(
+        "() => document.querySelector('#promote-card-detail-btn')?.getAttribute('aria-label')"
+        " === 'Promote to global board'",
+        timeout=5000,
+    )
+    assert _card_state(api_session, ui_base_url, global_board, card_id) is None
+    badge.wait_for(state="detached", timeout=5000)
+    assert state_text.inner_text() == "Not promoted"
+
+
+@pytest.mark.ui
+def test_badge_follows_changes_on_the_global_board(
+    logged_in_page, api_session, ui_base_url, global_board, epic
+):
+    page = logged_in_page
+    card_id = _make_card(api_session, ui_base_url, epic["column_ids"][0], "Badge story")
+    _promote(api_session, ui_base_url, global_board, card_id, state="waiting")
+    _open_epic(page, epic)
+    badge = _board_card(page, card_id).locator(".card-global-badge")
+    assert badge.inner_text() == "Waiting"
+    assert badge.get_attribute("data-global-state") == "waiting"
+
+    move = api_session.patch(
+        f"{ui_base_url}/api/global-boards/{global_board['id']}/cards/{card_id}",
+        json={"state": "in_progress"},
+    )
+    assert move.status_code == 200, move.text
+    page.wait_for_function(
+        """(cardId) => document.querySelector(
+            `.card[data-card-id="${cardId}"] .card-global-badge`)?.textContent === 'In Progress'""",
+        arg=card_id,
+        timeout=8000,
+    )
+
+    demote = api_session.delete(f"{ui_base_url}/api/global-boards/{global_board['id']}/cards/{card_id}")
+    assert demote.status_code == 200, demote.text
+    page.wait_for_function(
+        """(cardId) => {
+            const card = document.querySelector(`.card[data-card-id="${cardId}"]`);
+            return card && !card.querySelector('.card-global-badge');
+        }""",
+        arg=card_id,
+        timeout=8000,
+    )
+
+
+@pytest.mark.ui
+def test_no_promote_on_kanban_board_or_done_card(
+    logged_in_page, api_session, ui_base_url, global_board, epic
+):
+    page = logged_in_page
+    done_id = _make_card(api_session, ui_base_url, epic["column_ids"][0], "Already done")
+    done = api_session.patch(f"{ui_base_url}/api/cards/{done_id}/done", json={"done": True})
+    assert done.status_code == 200, done.text
+    open_id = _make_card(api_session, ui_base_url, epic["column_ids"][0], "Open story")
+
+    # Done cards are listed in the Done view, but the modal opens from the API.
+    _open_epic(page, epic, f"&card={done_id}")
+    page.locator("#edit-card-modal").wait_for(state="visible", timeout=5000)
+    assert page.locator("#card-global-metadata").count() == 0
+    page.locator("#cancel-edit-card-btn").click()
+
+    switch = api_session.put(
+        f"{ui_base_url}/api/boards/{epic['board']['id']}/settings/working-style", json={"value": "kanban"}
+    )
+    assert switch.status_code == 200, switch.text
+    _open_epic(page, epic)
+    _open_card_modal(page, open_id)
+    assert page.locator("#done-card-detail-btn").count() == 0
+    assert page.locator("#card-global-metadata").count() == 0
+
+
+@pytest.mark.ui
+def test_deep_link_opens_card(logged_in_page, api_session, ui_base_url, global_board, epic, stories):
+    page = logged_in_page
+    _open(page, global_board)
+    _card(page, stories["first"]).locator(".gb-card-title").click()
+    page.wait_for_url(f"**/board.html?id={epic['board']['id']}**", timeout=8000)
+    page.wait_for_function("() => window.boardManager?.hasLoadedBoardData", timeout=8000)
+    page.locator("#edit-card-modal").wait_for(state="visible", timeout=5000)
+    assert page.locator("#edit-card-title").input_value() == "First story"
+    assert page.locator("#promote-card-detail-btn").get_attribute("aria-label") == "Demote from global board"
+    assert page.locator("#card-global-state-value").inner_text() == "New"
+    assert "card=" not in page.url
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize("card_param", ["999999999", "abc", "-1", "1e3"])
+def test_deep_link_to_missing_card_fails_quietly(logged_in_page, epic, card_param):
+    page = logged_in_page
+    _open_epic(page, epic, f"&card={card_param}")
+    page.wait_for_timeout(1000)
+    assert page.locator("#edit-card-modal").count() == 0
+    assert page.locator(".error-toast").count() == 0
+    assert "card=" not in page.url
+
+
+@pytest.mark.ui
+def test_deep_link_to_card_on_another_board_fails_quietly(
+    logged_in_page, api_session, ui_base_url, epic
+):
+    page = logged_in_page
+    other = api_session.post(f"{ui_base_url}/api/boards", json={"name": "Other UI board"})
+    assert other.status_code == 201, other.text
+    other_id = other.json()["board"]["id"]
+    try:
+        column = api_session.post(f"{ui_base_url}/api/boards/{other_id}/columns", json={"name": "Col"})
+        assert column.status_code == 201, column.text
+        card_id = _make_card(api_session, ui_base_url, column.json()["column"]["id"], "Elsewhere")
+        _open_epic(page, epic, f"&card={card_id}")
+        page.wait_for_timeout(1000)
+        assert page.locator("#edit-card-modal").count() == 0
+    finally:
+        api_session.delete(f"{ui_base_url}/api/boards/{other_id}")

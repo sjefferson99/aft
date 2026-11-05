@@ -3,7 +3,8 @@
 Promote, demote, move and settings changes send a contentless
 global_board_changed to the global_board_<id> room, and clients refetch through
 the scoped API. A move into or out of Done also sends the done route's
-card_done_status_changed to the epic board's room.
+card_done_status_changed to the epic board's room, and promote, demote and
+other moves send card_updated there, so the epic board's badge updates.
 
 A real Socket.IO client connects through nginx with the test session's
 cookies. Requests from the test session carry no socket id, so the server
@@ -195,8 +196,60 @@ class TestEpicBoardDoneBroadcast:
         assert data['done'] is True
         assert data['card_data']['done'] is True
         assert data['card_data']['done_datetime'] is not None
+        assert data['card_data']['global_state'] == 'done'
 
         assert authenticated_session.patch(move_url, json={'state': 'new'}).status_code == 200
         data = events.expect('card_done_status_changed')
         assert data['done'] is False
         assert data['card_data']['done_datetime'] is None
+        assert data['card_data']['global_state'] == 'new'
+
+
+@pytest.mark.api
+class TestEpicBoardBadgeBroadcast:
+
+    def test_promote_move_demote_update_the_epic_card(
+        self, api_client, authenticated_session, events, global_board_id, epic_card
+    ):
+        """Test the epic board gets card_updated carrying the card's new global state."""
+        board_id, card_id = epic_card
+        assert events.call('join_board', {'board_id': board_id})['success'] is True
+        cards_url = _url(api_client, f'/api/global-boards/{global_board_id}/cards')
+
+        def expect_card(global_state):
+            data = events.expect('card_updated')
+            assert data['board_id'] == board_id
+            assert data['card_id'] == card_id
+            card_data = data['card_data']
+            assert card_data['id'] == card_id
+            assert card_data['global_state'] == global_state
+            assert card_data['global_board_id'] == (global_board_id if global_state else None)
+            assert str(card_data['column_id']) in data['column_counts']
+
+        promote = authenticated_session.post(cards_url, json={'card_id': card_id})
+        assert promote.status_code == 201, promote.text
+        expect_card('new')
+
+        move = authenticated_session.patch(f'{cards_url}/{card_id}', json={'state': 'in_progress'})
+        assert move.status_code == 200, move.text
+        expect_card('in_progress')
+
+        demote = authenticated_session.delete(f'{cards_url}/{card_id}')
+        assert demote.status_code == 200, demote.text
+        expect_card(None)
+
+    def test_other_board_room_gets_nothing(
+        self, api_client, authenticated_session, events, global_board_id, epic_card
+    ):
+        """Test the badge update goes only to the card's own board."""
+        _, card_id = epic_card
+        other = authenticated_session.post(_url(api_client, '/api/boards'), json={'name': 'Other'})
+        assert other.status_code == 201, other.text
+        other_id = other.json()['board']['id']
+        assert events.call('join_board', {'board_id': other_id})['success'] is True
+
+        promote = authenticated_session.post(
+            _url(api_client, f'/api/global-boards/{global_board_id}/cards'), json={'card_id': card_id}
+        )
+        assert promote.status_code == 201, promote.text
+        assert events.wait_for('card_updated', timeout=QUIET_SECONDS) is None

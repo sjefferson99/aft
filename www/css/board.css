@@ -1173,6 +1173,26 @@ body.compact-cards .card.collapsed .card-content-wrapper {
   font-weight: 500;
 }
 
+/* Global board state on a promoted card (#663). Stays visible in compact
+   cards, because it's how a board shows what's on the global board. */
+.card-global-badge {
+  display: inline-block;
+  margin: -4px 0 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--primary-color);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--primary-color);
+  white-space: nowrap;
+}
+
+.card-global-badge[data-global-state="done"] {
+  border-color: var(--success-color);
+  color: var(--success-color);
+}
+
 .card-description:not(:empty) + .card-meta-row {
   margin-top: 10px;
 }
@@ -2004,6 +2024,11 @@ body.compact-cards .card.collapsed .card-content-wrapper {
   text-decoration: underline;
 }
 
+.card-global-state-text {
+  color: var(--text-bold);
+  font-size: 13px;
+}
+
 /* Comments Section */
 .comments-section {
   margin-top: 30px;
@@ -2421,7 +2446,8 @@ button.readonly-disabled,
   .card-checklist-item,
   .card-checklist-summary,
   .card-comments-indicator,
-  .card-timestamp {
+  .card-timestamp,
+  .card-global-badge {
     font-size: 10px;
   }
 

@@ -22,10 +22,12 @@ from sqlalchemy.orm import selectinload
 from card_serialization import (
     build_card_broadcast_data,
     count_cards_by_column,
+    get_card_promotions,
     get_column_card_counts,
     get_column_card_orders,
     get_comment_counts,
     serialize_board_card,
+    serialize_card_global_fields,
 )
 from database import SessionLocal
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
@@ -463,6 +465,7 @@ def get_board_cards(board_id):
             apply_view_filters(db.query(Card).filter(Card.column_id.in_([column.id for column in columns])))
         )
 
+        column_cards = []
         for column in columns:
             cards_query = apply_view_filters(db.query(Card).filter(Card.column_id == column.id))
             # The done filter only narrows the listed cards; card_counts include both.
@@ -475,18 +478,21 @@ def get_board_cards(board_id):
                 selectinload(Card.checklist_items),
             )
 
-            cards = cards_query.order_by(Card.order).all()
+            column_cards.append((column, cards_query.order_by(Card.order).all()))
 
-            # Comment count only (never the comment bodies — the board view
-            # doesn't display them, only the count; full comment content is
-            # fetched separately when a card is opened via GET /api/cards/:id).
-            # A single grouped COUNT query per column instead of loading and
-            # discarding every comment row.
-            comment_counts = get_comment_counts(db, [card.id for card in cards])
+        # Comment counts and global board state for the whole board in one
+        # grouped query each, rather than one per column. Comment count only
+        # (never the comment bodies — the board view doesn't display them;
+        # full comment content is fetched when a card is opened via
+        # GET /api/cards/:id).
+        all_card_ids = [card.id for _, cards in column_cards for card in cards]
+        comment_counts = get_comment_counts(db, all_card_ids)
+        promotions = get_card_promotions(db, all_card_ids)
 
+        for column, cards in column_cards:
             # Serialize cards with checklist items and comment counts while session is active
             cards_data = [
-                serialize_board_card(card, comment_counts.get(card.id, 0))
+                serialize_board_card(card, comment_counts.get(card.id, 0), promotions.get(card.id))
                 for card in cards
             ]
 
@@ -1097,6 +1103,15 @@ def get_card(card_id):
                   type: array
                   items:
                     type: object
+                global_board_id:
+                  type: integer
+                  x-nullable: true
+                  description: Global board the card is promoted to, or null
+                global_state:
+                  type: string
+                  x-nullable: true
+                  enum: [new, in_progress, waiting, done]
+                  description: The card's state on its global board, or null if not promoted
       401:
         description: Authentication required
       403:
@@ -1148,7 +1163,8 @@ def get_card(card_id):
                     "edited_at": serialize_datetime(comment.edited_at)
                 }
                 for comment in card.comments
-            ]
+            ],
+            **serialize_card_global_fields(card, get_card_promotions(db, [card.id]).get(card.id)),
         }
 
         return jsonify({"success": True, "card": card_data})

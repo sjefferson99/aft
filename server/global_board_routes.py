@@ -116,6 +116,24 @@ def _notify_card_done_changed(db, card, board_id):
     }, board_id, get_request_socket_id())
 
 
+def _notify_epic_card_changed(db, card, board_id):
+    """Send card_updated to the card's own board so its global badge updates.
+
+    Promote, demote and global moves change only global_board_id and
+    global_state in the board card, and the epic board patches the card in
+    place from this event.
+    """
+    if _broadcast_event is None or not board_id:
+        return
+    _broadcast_event('card_updated', {
+        'board_id': board_id,
+        'card_id': card.id,
+        'column_id': card.column_id,
+        'card_data': build_card_broadcast_data(db, card),
+        'column_counts': get_column_card_counts(db, [card.column_id], board_id),
+    }, board_id, get_request_socket_id())
+
+
 def _user_has_agile_board(db, user_id):
     """Return whether the user can see an active agile board."""
     board_ids = [
@@ -629,6 +647,7 @@ def promote_card(global_board_id):
         db.commit()
         db.refresh(promotion)
         _notify_global_board_changed(global_board.id)
+        _notify_epic_card_changed(db, card, board.id)
 
         return jsonify({
             "success": True,
@@ -685,9 +704,11 @@ def demote_card(global_board_id, card_id):
         if promotion is None or promotion.global_board_id != global_board.id:
             return create_error_response("Card is not on this global board", 404)
 
+        board_id = card.column.board_id
         db.delete(promotion)
         db.commit()
         _notify_global_board_changed(global_board.id)
+        _notify_epic_card_changed(db, card, board_id)
 
         return jsonify({"success": True, "message": "Card demoted", "card_id": card_id}), 200
     except Exception as e:
@@ -808,6 +829,8 @@ def move_global_card(global_board_id, card_id):
         _notify_global_board_changed(global_board.id)
         if bool(card.done) != was_done:
             _notify_card_done_changed(db, card, board_id)
+        else:
+            _notify_epic_card_changed(db, card, board_id)
 
         return jsonify({
             "success": True,
