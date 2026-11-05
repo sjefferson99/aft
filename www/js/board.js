@@ -4050,6 +4050,7 @@ class BoardManager {
       this.invalidateDragMidpointCache(this.getColumnCardsContainer(columnId));
     });
 
+    this.updateBoardDoneCount();
     this.refreshPlannerIfVisible();
     return true;
   }
@@ -4679,6 +4680,30 @@ class BoardManager {
     return column.cards.length.toString();
   }
 
+  /**
+   * Show the epic's done/total count in the header, summed from every
+   * column's server card_counts so it covers cards the view doesn't list.
+   * Agile boards only, and hidden in views whose endpoint sends no counts.
+   */
+  updateBoardDoneCount() {
+    if (!window.header || typeof window.header.setBoardDoneCount !== 'function') {
+      return;
+    }
+
+    const columns = Array.isArray(this.columns) ? this.columns : [];
+    const hasCounts = columns.length > 0 && columns.every((column) => column.card_counts);
+    if (this.isPublicMode || this.workingStyle !== 'agile' || !hasCounts) {
+      window.header.setBoardDoneCount(null);
+      return;
+    }
+
+    const counts = columns.reduce((totals, column) => ({
+      done: totals.done + column.card_counts.done,
+      total: totals.total + column.card_counts.total
+    }), { done: 0, total: 0 });
+    window.header.setBoardDoneCount(counts);
+  }
+
   renderAssigneeFilterBar() {
     if (!this.assigneeFilterVisible) {
       return '';
@@ -4818,7 +4843,8 @@ class BoardManager {
     if (window.header) {
       window.header.showViewsDropdown(this.columns.length > 0);
     }
-    
+    this.updateBoardDoneCount();
+
     // Add or remove read-only class from container
     if (!this.canEdit) {
       this.container.classList.add('board-readonly');

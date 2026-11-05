@@ -335,6 +335,9 @@ class Header {
 
     document.body.prepend(document.importNode(headerElement, true));
     this.updatePrimaryNavigationTargets();
+    if (this.boardDoneCounts) {
+      this.setBoardDoneCount(this.boardDoneCounts);
+    }
 
     // Apply default branding first, then replace with custom instance branding if configured.
     this.applyBrandingAssets();
@@ -731,6 +734,43 @@ class Header {
         document.title = 'AFT';
       }
     }
+  }
+
+  // Show the epic's done/total card count beside the board name, or hide it
+  // when counts is null (kanban boards and views without counts).
+  // The board can render before the header loads, so load() reapplies them.
+  setBoardDoneCount(counts) {
+    this.boardDoneCounts = counts;
+    const navBoardName = document.querySelector('.nav-board-name');
+    if (!navBoardName) {
+      return;
+    }
+
+    let countElement = document.getElementById('board-done-count');
+    if (!counts) {
+      if (countElement) {
+        countElement.hidden = true;
+      }
+      return;
+    }
+
+    if (!countElement) {
+      countElement = document.createElement('span');
+      countElement.id = 'board-done-count';
+      countElement.className = 'board-done-count';
+      const nameText = document.getElementById('nav-board-name-text');
+      if (nameText) {
+        nameText.after(countElement);
+      } else {
+        navBoardName.appendChild(countElement);
+      }
+    }
+
+    const label = `${counts.done} of ${counts.total} cards done on this board`;
+    countElement.textContent = `${counts.done}/${counts.total}`;
+    countElement.title = label;
+    countElement.setAttribute('aria-label', label);
+    countElement.hidden = false;
   }
 
   setPublicBoardContext(options = {}) {

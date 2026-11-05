@@ -822,6 +822,32 @@ body.board-page:not(.public-board-page) .board-search-control {
   transition-delay: 0.5s;
 }
 
+/* Epic done/total count beside the board name (agile boards). */
+.board-done-count {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--header-text-color);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.board-done-count[hidden] {
+  display: none;
+}
+
+/* Up to 1200px the title needs the room (see the header widths note). */
+@media (max-width: 1200px) {
+  .board-done-count {
+    display: none;
+  }
+}
+
 .public-board-badge-btn {
   display: inline-flex;
   align-items: center;

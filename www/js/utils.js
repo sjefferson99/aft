@@ -957,7 +957,7 @@ window.currentUser = null;
 window.userDataReady = false;
 
 // Holding any of these opens Instance Settings, which shows only what each one allows.
-window.INSTANCE_SETTINGS_PERMISSIONS = ['branding.edit', 'admin.database', 'user.manage', 'user.role', 'role.manage'];
+window.INSTANCE_SETTINGS_PERMISSIONS = ['branding.edit', 'admin.database', 'user.manage', 'user.role', 'role.manage', 'global_board.manage'];
 
 /**
  * Check if the current user has a specific permission.

@@ -42,11 +42,21 @@ Remove or comment out the `nginx` service in `compose.example.yml` before renami
 - **User Management**: one list for accounts and roles, including adding users and approving new registrations
 - **Role Management**: build custom roles from individual permissions
 - **Backup & Restore**: see [Backups](#backups)
+- **Global Board**: the global board's name and how long done cards stay on it. See [Global board settings](#global-board-settings)
 - **Theme Builder**: see [Themes](user-guide.md#themes)
 
 ![User Management in Instance Settings](../images/docs/user_management.png)
 
 The instance default theme applies to new users when their account is created and to anonymous public board viewers. Existing users don't change. Only system themes and global themes can be selected, and the fallback is Fresh Green.
+
+### Global board settings
+
+The [Global Board](user-guide.md#global-board) tab is for people with the `global_board.manage` permission. Administrators have it, and you can add it to a custom role in Role Management. That permission alone is enough to open Instance Settings, which then shows only this tab.
+
+- **Name**: shown in the views dropdown and as the global board's page title, up to 100 characters. Rename it to suit how your team works, for example "Sprint"
+- **Show done cards for**: how many days a done card stays on the global board, from 1 to 3650, or **None (always show)**. The default is 14. Hidden done cards stay promoted, and unticking done on one brings it back
+
+Changes reach open global board pages straight away. Who can see the global board and which cards they see doesn't depend on this permission. See [Who Sees What](user-guide.md#who-sees-what).
 
 ## Backups
 

@@ -452,3 +452,156 @@ def test_deep_link_to_card_on_another_board_fails_quietly(
         assert page.locator("#edit-card-modal").count() == 0
     finally:
         api_session.delete(f"{ui_base_url}/api/boards/{other_id}")
+
+
+# ---------------------------------------------------------------------------
+# Instance Settings tab and the epic done/total count
+# ---------------------------------------------------------------------------
+
+
+def _open_global_board_settings(page, global_board):
+    page.set_viewport_size(DESKTOP)
+    page.goto("/settings.html#global-board")
+    page.locator("#settings-tab-global-board[aria-selected='true']").wait_for(timeout=8000)
+    form = page.locator(f'.global-board-settings-form[data-global-board-id="{global_board["id"]}"]')
+    form.wait_for(timeout=8000)
+    return form
+
+
+def _saved_global_board(api_session, ui_base_url, global_board):
+    response = api_session.get(f"{ui_base_url}/api/global-boards")
+    assert response.status_code == 200, response.text
+    return next(b for b in response.json()["global_boards"] if b["id"] == global_board["id"])
+
+
+@pytest.mark.ui
+def test_settings_tab_renames_board_and_sets_done_window(
+    logged_in_page, api_session, ui_base_url, global_board, epic
+):
+    page = logged_in_page
+    form = _open_global_board_settings(page, global_board)
+    prefix = f"#global-board-{global_board['id']}"
+
+    assert page.locator("#settings-panel-instance").is_hidden()
+    assert form.locator(f"{prefix}-name").input_value() == global_board["name"]
+    assert form.locator(f"{prefix}-done-mode").input_value() == "days"
+    assert form.locator(f"{prefix}-done-days").input_value() == "14"
+
+    form.locator(f"{prefix}-name").fill("Sprint 42")
+    form.locator(f"{prefix}-done-days").fill("7")
+    form.locator(".global-board-save-btn").click()
+    form.locator(".settings-status.success").wait_for(timeout=5000)
+    saved = _saved_global_board(api_session, ui_base_url, global_board)
+    assert (saved["name"], saved["done_visible_days"]) == ("Sprint 42", 7)
+
+    form.locator(f"{prefix}-done-mode").select_option("always")
+    assert form.locator(f"{prefix}-done-days").is_hidden()
+    form.locator(".global-board-save-btn").click()
+    form.locator(".settings-status.success").wait_for(timeout=5000)
+    assert _saved_global_board(api_session, ui_base_url, global_board)["done_visible_days"] is None
+
+    # The new name reaches the view menu and the page title.
+    page.goto(f"/board.html?id={epic['board']['id']}")
+    item = page.locator("#global-board-view-item")
+    item.wait_for(state="attached", timeout=8000)
+    assert item.inner_text().strip() == "Sprint 42"
+    _open(page, global_board)
+    assert page.evaluate("document.querySelector('#nav-board-name-text').textContent") == "Sprint 42"
+    assert page.locator(".gb-column-note").count() == 0
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize("name, days, message", [
+    ("   ", "14", "Please enter a name."),
+    ("Global", "0", "Enter a whole number of days from 1 to 3650."),
+    ("Global", "3651", "Enter a whole number of days from 1 to 3650."),
+    ("Global", "2.5", "Enter a whole number of days from 1 to 3650."),
+])
+def test_settings_tab_rejects_invalid_values(
+    logged_in_page, api_session, ui_base_url, global_board, name, days, message
+):
+    page = logged_in_page
+    form = _open_global_board_settings(page, global_board)
+    prefix = f"#global-board-{global_board['id']}"
+    requests_sent = []
+    page.on("request", lambda r: requests_sent.append(r) if r.method == "PATCH" else None)
+
+    form.locator(f"{prefix}-name").fill(name)
+    form.locator(f"{prefix}-done-days").fill(days)
+    form.locator(".global-board-save-btn").click()
+
+    assert form.locator(".settings-status.error").inner_text() == message
+    assert requests_sent == []
+    saved = _saved_global_board(api_session, ui_base_url, global_board)
+    assert (saved["name"], saved["done_visible_days"]) == (global_board["name"], 14)
+
+
+@pytest.mark.ui
+def test_settings_tab_shows_name_as_text(logged_in_page, api_session, ui_base_url, global_board):
+    name = '<img src=x onerror="window.__gbSettingsXss=1">'
+    response = api_session.patch(
+        f"{ui_base_url}/api/global-boards/{global_board['id']}", json={"name": name}
+    )
+    assert response.status_code == 200, response.text
+    page = logged_in_page
+    form = _open_global_board_settings(page, global_board)
+
+    assert form.locator(f"#global-board-{global_board['id']}-name").input_value() == name
+    assert page.evaluate("window.__gbSettingsXss") is None
+
+
+def _done_count(page):
+    return page.locator("#board-done-count")
+
+
+@pytest.mark.ui
+def test_epic_header_shows_done_count(logged_in_page, api_session, ui_base_url, epic):
+    page = logged_in_page
+    first = _make_card(api_session, ui_base_url, epic["column_ids"][0], "Count one")
+    _make_card(api_session, ui_base_url, epic["column_ids"][0], "Count two")
+    third = _make_card(api_session, ui_base_url, epic["column_ids"][1], "Count three")
+    response = api_session.patch(f"{ui_base_url}/api/cards/{third}/done", json={"done": True})
+    assert response.status_code == 200, response.text
+
+    _open_epic(page, epic)
+    count = _done_count(page)
+    count.wait_for(state="visible", timeout=5000)
+    assert count.inner_text() == "1/3"
+    assert count.get_attribute("aria-label") == "1 of 3 cards done on this board"
+
+    # Ticking done on the board updates the count.
+    _board_card(page, first).hover()
+    _board_card(page, first).locator(".card-done-btn").click()
+    page.wait_for_function(
+        "() => document.querySelector('#board-done-count')?.textContent === '2/3'", timeout=5000
+    )
+
+    # So does a change made elsewhere, and a new card.
+    response = api_session.patch(f"{ui_base_url}/api/cards/{third}/done", json={"done": False})
+    assert response.status_code == 200, response.text
+    page.wait_for_function(
+        "() => document.querySelector('#board-done-count')?.textContent === '1/3'", timeout=5000
+    )
+    _make_card(api_session, ui_base_url, epic["column_ids"][1], "Count four")
+    page.wait_for_function(
+        "() => document.querySelector('#board-done-count')?.textContent === '1/4'", timeout=5000
+    )
+
+    # Up to 1200px the board title needs the room.
+    page.set_viewport_size({"width": 1024, "height": 800})
+    assert count.is_hidden()
+
+
+@pytest.mark.ui
+def test_no_done_count_on_kanban_board(logged_in_page, api_session, ui_base_url, board, column):
+    page = logged_in_page
+    response = api_session.put(
+        f"{ui_base_url}/api/boards/{board['id']}/settings/working-style", json={"value": "kanban"}
+    )
+    assert response.status_code == 200, response.text
+    _make_card(api_session, ui_base_url, column["id"], "Kanban card")
+    page.set_viewport_size(DESKTOP)
+    page.goto(f"/board.html?id={board['id']}")
+    page.wait_for_function("() => window.boardManager?.hasLoadedBoardData", timeout=8000)
+    page.wait_for_timeout(300)
+    assert _done_count(page).is_hidden()
