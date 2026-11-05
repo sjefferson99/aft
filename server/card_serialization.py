@@ -7,14 +7,22 @@ place instead of refetching the whole board.
 from sqlalchemy import case, func
 
 from datetime_helpers import serialize_datetime
-from models import BoardColumn, Card, Comment
+from global_board_utils import GLOBAL_STATE_DONE
+from models import BoardColumn, Card, Comment, GlobalBoardCard
 
 
-def serialize_board_card(card, comment_count):
+def serialize_board_card(card, comment_count, promotion=None):
     """Serialize a card as the board view renders it.
 
     Callers serializing many cards should eager-load `assigned_to` and
-    `checklist_items` (selectinload) to avoid per-card queries.
+    `checklist_items` (selectinload) to avoid per-card queries, and get
+    `promotion` from get_card_promotions() in one query.
+
+    Args:
+        card: Card row.
+        comment_count: Number of comments on the card.
+        promotion: (global_board_id, stored_state) if the card is on a global
+            board, otherwise None. A done card shows as done there.
     """
     return {
         "id": card.id,
@@ -47,6 +55,24 @@ def serialize_board_card(card, comment_count):
             for item in card.checklist_items
         ],
         "comment_count": comment_count,
+        **serialize_card_global_fields(card, promotion),
+    }
+
+
+def serialize_card_global_fields(card, promotion):
+    """Return a card's `global_board_id` and `global_state` for card payloads.
+
+    Args:
+        card: Card row.
+        promotion: (global_board_id, stored_state) from get_card_promotions(),
+            or None. A done card shows as done, whatever its stored state.
+    """
+    if promotion is None:
+        return {"global_board_id": None, "global_state": None}
+    global_board_id, stored_state = promotion
+    return {
+        "global_board_id": global_board_id,
+        "global_state": GLOBAL_STATE_DONE if card.done else stored_state,
     }
 
 
@@ -62,13 +88,31 @@ def get_comment_counts(db, card_ids):
     )
 
 
+def get_card_promotions(db, card_ids):
+    """Return {card_id: (global_board_id, stored_state)} for promoted cards, in one query."""
+    if not card_ids:
+        return {}
+    return {
+        card_id: (global_board_id, state)
+        for card_id, global_board_id, state in db.query(
+            GlobalBoardCard.card_id, GlobalBoardCard.global_board_id, GlobalBoardCard.state
+        )
+        .filter(GlobalBoardCard.card_id.in_(card_ids))
+        .all()
+    }
+
+
 def build_card_broadcast_data(db, card):
     """Serialize one card for a card WebSocket broadcast's `card_data`.
 
     The board card shape plus `column_id`, `start_date` and `end_date`, which
     earlier broadcast payloads carried and existing listeners may read.
     """
-    data = serialize_board_card(card, get_comment_counts(db, [card.id]).get(card.id, 0))
+    data = serialize_board_card(
+        card,
+        get_comment_counts(db, [card.id]).get(card.id, 0),
+        get_card_promotions(db, [card.id]).get(card.id),
+    )
     data["column_id"] = card.column_id
     data["start_date"] = serialize_datetime(card.start_date)
     data["end_date"] = serialize_datetime(card.end_date)

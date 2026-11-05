@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global - AFT</title>
+  <link rel="icon" type="image/png" href="/images/AFT_logo.png">
+  <link rel="icon" type="image/webp" href="/images/AFT_logo.webp">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#2C3E50">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="AFT">
+  <script src="/js/theme-loader.js"></script>
+  <script src="/js/pwa.js"></script>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/header.css?v=20261105a">
+  <link rel="stylesheet" href="/css/global-board.css?v=20261104a">
+</head>
+<body class="global-board-page">
+  <!-- Header component will be loaded here -->
+
+  <main class="canvas">
+    <div id="global-board-container" aria-busy="true">
+      <p class="gb-status-message">Loading...</p>
+    </div>
+  </main>
+
+  <script src="/js/utils.js?v=20261105a"></script>
+  <script src="/js/permission-manager.js"></script>
+  <script src="/js/notifications.js"></script>
+  <script src="/js/header.js?v=20261105a"></script>
+  <script src="/js/socket.io.min.js"></script>
+  <script src="/js/global-board.js?v=20261104a"></script>
+</body>
+</html>

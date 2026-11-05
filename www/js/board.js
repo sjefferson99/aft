@@ -22,6 +22,13 @@ const BOARD_LOADING_OVERLAY_DELAY_MS = 500;
 const INITIAL_BOARD_LOAD_TIMEOUT_MS = 15000;
 const SUBSEQUENT_BOARD_LOAD_TIMEOUT_MS = 10000;
 const MAX_INITIAL_BOARD_LOAD_ATTEMPTS = 2;
+// Labels for a promoted card's state on its global board (#663).
+const GLOBAL_STATE_LABELS = Object.freeze({
+  new: 'New',
+  in_progress: 'In Progress',
+  waiting: 'Waiting',
+  done: 'Done'
+});
 const BOARD_SEARCH_TOOLTIP_FALLBACK_TEXT = 'Search cards using spaces (AND), commas (OR), and quoted phrases for exact matches.';
 const BOARD_RELOAD_DEBOUNCE_MS = 150;
 
@@ -1318,6 +1325,10 @@ class BoardManager {
     this.boardWorkingStyleChangedHandler = this.handleBoardWorkingStyleChanged.bind(this);
     this.assigneeFilterVisibilityLoadedForUserId = null;
     this.assigneeFilterVisibilityWatcherId = null;
+    // Global boards this board's cards can be promoted to (#663). Null until
+    // loaded; the edit card modal reads it synchronously.
+    this.eligibleGlobalBoards = null;
+    this.eligibleGlobalBoardsPromise = null;
   }
 
   isValidPublicSlug(slug) {
@@ -2342,8 +2353,12 @@ class BoardManager {
     // Show loading state on the card
     card.classList.add('updating');
 
-    // Reload card data to get latest state
-    const cardData = await this.getCardData(cardId);
+    // Reload card data to get latest state. The modal reads the eligible
+    // global boards synchronously, so make sure they have loaded.
+    const [cardData] = await Promise.all([
+      this.getCardData(cardId),
+      this.isPublicMode ? null : this.loadEligibleGlobalBoards()
+    ]);
 
     // Remove loading state
     card.classList.remove('updating');
@@ -3389,10 +3404,14 @@ class BoardManager {
       
       // Load working style preference
       await this.loadWorkingStyle();
-      
+      if (!this.isPublicMode) {
+        this.loadEligibleGlobalBoards();
+      }
+
       await this.loadBoard();
       if (!this.isPublicMode) {
         this.notifyBoardFilterActiveStateChanged();
+        await this.openDeepLinkedCard(urlParams.get('card'));
       }
       this.setupBoardTouchScrolling();
       this.setupMobileViewportSync();
@@ -3402,6 +3421,172 @@ class BoardManager {
     } finally {
       this.isBootstrappingBoard = false;
     }
+  }
+
+  /**
+   * Load the global boards this board's cards can be promoted to (#663).
+   *
+   * The result is cached in `eligibleGlobalBoards`, which the edit card modal
+   * reads. A failed load leaves an empty list, so Promote stays hidden.
+   *
+   * @param {boolean} force - Refetch even if already loaded, such as after
+   *   the board's working style changes.
+   * @returns {Promise<void>}
+   */
+  loadEligibleGlobalBoards(force = false) {
+    if (this.eligibleGlobalBoardsPromise && !force) {
+      return this.eligibleGlobalBoardsPromise;
+    }
+    const boardId = this.boardId;
+    const promise = (async () => {
+      let boards = [];
+      try {
+        const response = await fetch(`/api/boards/${boardId}/global-boards`, {
+          signal: AbortSignal.timeout(5000)
+        });
+        const data = await response.json();
+        if (response.ok && data.success && Array.isArray(data.global_boards)) {
+          boards = data.global_boards;
+        }
+      } catch (err) {
+        console.warn('Could not load eligible global boards:', err.message);
+      }
+      // A newer request (a working style change) wins.
+      if (this.eligibleGlobalBoardsPromise === promise) {
+        this.eligibleGlobalBoards = boards;
+      }
+    })();
+    this.eligibleGlobalBoardsPromise = promise;
+    return promise;
+  }
+
+  /**
+   * Open the edit card modal for the `card` URL parameter, which the global
+   * board links to (#663). Fails quietly if the card is missing, archived or
+   * on another board, then drops the parameter so a reload doesn't reopen it.
+   *
+   * @param {string|null} cardParam - Raw `card` query parameter.
+   * @returns {Promise<void>}
+   */
+  async openDeepLinkedCard(cardParam) {
+    if (!cardParam) {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('card');
+    window.history.replaceState(window.history.state, '', url);
+
+    if (!/^\d{1,10}$/.test(cardParam)) {
+      return;
+    }
+    const cardId = parseInt(cardParam, 10);
+
+    try {
+      const [response] = await Promise.all([
+        fetch(`/api/cards/${cardId}`, { signal: AbortSignal.timeout(5000) }),
+        this.loadEligibleGlobalBoards()
+      ]);
+      if (!response.ok) {
+        return;
+      }
+      const data = await response.json();
+      const card = data.success ? data.card : null;
+      const onThisBoard = card && this.columns.some((column) => column.id === card.column_id);
+      if (!onThisBoard || card.archived || card.scheduled) {
+        return;
+      }
+      this.openEditCardModal(cardId, card);
+    } catch (err) {
+      console.warn('Could not open linked card:', err.message);
+    }
+  }
+
+  /**
+   * Promote or demote a card from the edit card modal (#663).
+   *
+   * @param {Object} cardData - The modal's card data. Its global fields are
+   *   updated on success.
+   * @returns {Promise<boolean>} True if the change was saved.
+   */
+  async toggleCardPromotion(cardData) {
+    const promoting = !cardData.global_board_id;
+    let globalBoardId = cardData.global_board_id;
+    if (promoting) {
+      const boards = this.eligibleGlobalBoards || [];
+      // Only one global board can be eligible for now. Choosing between
+      // several needs a picker, which comes with several global boards.
+      if (boards.length !== 1) {
+        this.showErrorToast('This card can\'t be promoted to a global board.');
+        return false;
+      }
+      globalBoardId = boards[0].id;
+    }
+
+    const url = promoting
+      ? `/api/global-boards/${globalBoardId}/cards`
+      : `/api/global-boards/${globalBoardId}/cards/${cardData.id}`;
+    const action = promoting ? 'promote' : 'demote';
+
+    try {
+      const response = await fetch(url, {
+        method: promoting ? 'POST' : 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: promoting ? JSON.stringify({ card_id: cardData.id, state: 'new' }) : undefined,
+        signal: AbortSignal.timeout(5000)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.success) {
+        this.showErrorToast(`Failed to ${action} card: ${data.message || `Server error: ${response.status}`}`);
+        return false;
+      }
+    } catch (err) {
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        this.showErrorToast(`${promoting ? 'Promote' : 'Demote'} card timed out (5s). Please check your connection.`);
+      } else {
+        this.showErrorToast(`Error trying to ${action} card: ${err.message}`);
+      }
+      return false;
+    }
+
+    cardData.global_board_id = promoting ? globalBoardId : null;
+    cardData.global_state = promoting ? 'new' : null;
+    this.showSuccessToast(promoting ? 'Card promoted' : 'Card demoted', 2000);
+    this.applyCardGlobalState(cardData.id, cardData.global_board_id, cardData.global_state);
+    return true;
+  }
+
+  /**
+   * Show a card's new global state on the board after this client changed it.
+   * The server skips the acting client's socket, so the board patches itself.
+   */
+  applyCardGlobalState(cardId, globalBoardId, globalState) {
+    const column = this.columns.find((candidate) =>
+      candidate.cards.some((card) => card.id === cardId));
+    if (!column) {
+      return;
+    }
+    const card = column.cards.find((candidate) => candidate.id === cardId);
+    const patched = {
+      ...card,
+      column_id: column.id,
+      global_board_id: globalBoardId,
+      global_state: globalState
+    };
+    if (!this.patchCard(patched, null, { [column.id]: column.card_counts })) {
+      this.scheduleBoardReload();
+    }
+  }
+
+  /**
+   * The global board badge on a board card, or '' if it isn't promoted.
+   */
+  renderGlobalBadgeHtml(card) {
+    const label = GLOBAL_STATE_LABELS[card.global_state];
+    if (!label) {
+      return '';
+    }
+    return `<span class="card-global-badge" data-global-state="${card.global_state}" title="Global board: ${label}" aria-label="Global board: ${label}">${label}</span>`;
   }
 
   async loadWorkingStyle() {
@@ -3648,6 +3833,7 @@ class BoardManager {
     }
 
     this.workingStyle = nextStyle;
+    this.loadEligibleGlobalBoards(true);
 
     // The done view only exists in Agile; the archived view exists in both styles.
     if (this.workingStyle !== 'agile' && this.showDone) {
@@ -3864,6 +4050,7 @@ class BoardManager {
       this.invalidateDragMidpointCache(this.getColumnCardsContainer(columnId));
     });
 
+    this.updateBoardDoneCount();
     this.refreshPlannerIfVisible();
     return true;
   }
@@ -4493,6 +4680,30 @@ class BoardManager {
     return column.cards.length.toString();
   }
 
+  /**
+   * Show the epic's done/total count in the header, summed from every
+   * column's server card_counts so it covers cards the view doesn't list.
+   * Agile boards only, and hidden in views whose endpoint sends no counts.
+   */
+  updateBoardDoneCount() {
+    if (!window.header || typeof window.header.setBoardDoneCount !== 'function') {
+      return;
+    }
+
+    const columns = Array.isArray(this.columns) ? this.columns : [];
+    const hasCounts = columns.length > 0 && columns.every((column) => column.card_counts);
+    if (this.isPublicMode || this.workingStyle !== 'agile' || !hasCounts) {
+      window.header.setBoardDoneCount(null);
+      return;
+    }
+
+    const counts = columns.reduce((totals, column) => ({
+      done: totals.done + column.card_counts.done,
+      total: totals.total + column.card_counts.total
+    }), { done: 0, total: 0 });
+    window.header.setBoardDoneCount(counts);
+  }
+
   renderAssigneeFilterBar() {
     if (!this.assigneeFilterVisible) {
       return '';
@@ -4632,7 +4843,8 @@ class BoardManager {
     if (window.header) {
       window.header.showViewsDropdown(this.columns.length > 0);
     }
-    
+    this.updateBoardDoneCount();
+
     // Add or remove read-only class from container
     if (!this.canEdit) {
       this.container.classList.add('board-readonly');
@@ -4879,6 +5091,7 @@ class BoardManager {
         </div>
         <div class="card-content-wrapper" id="card-content-${card.id}">
           <h5 class="card-title">${linkifyUrls(this.escapeHtml(card.title))}</h5>
+          ${this.renderGlobalBadgeHtml(card)}
           <p class="card-description">${linkifyUrls(this.escapeHtml(card.description))}</p>
           ${card.updated_at || (card.comment_count > 0) ? `
             <div class="card-meta-row">
@@ -7786,6 +7999,15 @@ class BoardManager {
     const canDeleteCard = this.canCallPermissionEndpoint('DELETE', '/api/cards/:id');
     const canToggleDone = this.canCallPermissionEndpoint('PATCH', '/api/cards/:id/done');
     const canMoveCard = this.canEdit || this.canCallPermissionEndpoint('PATCH', '/api/cards/:id');
+    // Promote needs an eligible global board and a card that isn't done.
+    // Demote shows for any promoted card, even after the board turns kanban.
+    const canChangePromotion = !this.isPublicMode && !isReadOnly && !isTemplate && !cardData.archived && (
+      cardData.global_board_id
+        ? this.canCallPermissionEndpoint('DELETE', '/api/global-boards/:id/cards/:card_id')
+        : !cardData.done
+          && (this.eligibleGlobalBoards || []).length > 0
+          && this.canCallPermissionEndpoint('POST', '/api/global-boards/:id/cards')
+    );
     const canManageAssignees = this.canCallPermissionEndpoint('PUT', '/api/cards/:id/assignees');
     const canCreateSchedule = this.canCallPermissionEndpoint('POST', '/api/schedules');
     const canEditSchedule = this.canCallPermissionEndpoint('PUT', '/api/schedules/:id');
@@ -7916,6 +8138,13 @@ class BoardManager {
                 <span class="card-metadata-label">Done:</span>
                 <span class="card-metadata-value" id="card-done-metadata-value" ${cardData.done_datetime ? `data-tooltip="${formatTooltipDateTime(cardData.done_datetime)}" aria-label="Marked done on ${formatTooltipDateTime(cardData.done_datetime)}" tabindex="0"` : ''}>${cardData.done_datetime ? formatTimeAgoLong(cardData.done_datetime) : ''}</span>
               </div>
+              ${cardData.global_board_id || canChangePromotion ? `
+              <div class="card-metadata-item" id="card-global-metadata">
+                <span class="card-metadata-label">Global board:</span>
+                <span class="card-global-state-text" id="card-global-state-value"></span>
+                ${canChangePromotion ? `<button type="button" class="btn btn-secondary btn-sm" id="promote-card-detail-btn" data-card-id="${cardData.id}"></button>` : ''}
+              </div>
+              ` : ''}
               <div class="card-metadata-item" id="card-assignee-metadata">
                 <span class="card-metadata-label">Assigned To:</span>
                 <span class="card-metadata-value card-owner-value" id="card-primary-assignee-display">Loading…</span>
@@ -8257,6 +8486,42 @@ class BoardManager {
         // Get the card element for visual feedback
         const cardElement = document.querySelector(`.card[data-card-id="${cardId}"]`);
         await this.unarchiveCard(cardId, cardElement);
+      });
+    }
+
+    // Global board row (#663): the card's state there, with Promote or
+    // Demote. It sits with the card details because the header actions
+    // already fill two rows on a phone. The modal stays open on a change.
+    const globalStateValue = document.getElementById('card-global-state-value');
+    const promoteBtn = document.getElementById('promote-card-detail-btn');
+    const renderGlobalRow = () => {
+      const promoted = !!cardData.global_board_id;
+      if (globalStateValue) {
+        globalStateValue.textContent = promoted
+          ? (GLOBAL_STATE_LABELS[cardData.global_state] || '')
+          : 'Not promoted';
+      }
+      if (promoteBtn) {
+        const label = promoted ? 'Demote from global board' : 'Promote to global board';
+        promoteBtn.textContent = promoted ? 'Demote' : 'Promote';
+        promoteBtn.title = label;
+        promoteBtn.setAttribute('aria-label', label);
+        // A card demoted from a board that has since turned kanban can't go back.
+        const canPromote = promoted || (this.eligibleGlobalBoards || []).length > 0;
+        promoteBtn.style.display = canPromote ? '' : 'none';
+      }
+    };
+    renderGlobalRow();
+    if (promoteBtn) {
+      promoteBtn.addEventListener('click', async () => {
+        promoteBtn.disabled = true;
+        try {
+          if (await this.toggleCardPromotion(cardData)) {
+            renderGlobalRow();
+          }
+        } finally {
+          promoteBtn.disabled = false;
+        }
       });
     }
 

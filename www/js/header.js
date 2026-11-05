@@ -335,6 +335,9 @@ class Header {
 
     document.body.prepend(document.importNode(headerElement, true));
     this.updatePrimaryNavigationTargets();
+    if (this.boardDoneCounts) {
+      this.setBoardDoneCount(this.boardDoneCounts);
+    }
 
     // Apply default branding first, then replace with custom instance branding if configured.
     this.applyBrandingAssets();
@@ -421,6 +424,9 @@ class Header {
     if (!this.isPublicBoardPage) {
       // Load boards dropdown
       this.loadBoardsDropdown();
+
+      // Add the global board to the view menu and the mobile drawer
+      this.loadGlobalBoardNavigation();
 
       // Fetch version info immediately (without checking status)
       this.loadVersionInfo();
@@ -656,7 +662,7 @@ class Header {
                          window.boardManager.wsManager.socket);
     const boardSocketConnected = boardSocket && boardSocket.connected;
     
-    const themeSocket = window.AFT?.themeBuilderSocket || window.themeBuilderSocket;
+    const themeSocket = window.AFT?.themeBuilderSocket || window.themeBuilderSocket || window.aftPageSocket;
     const themeSocketConnected = themeSocket && themeSocket.connected;
     
     // Check if either socket is connecting
@@ -728,6 +734,43 @@ class Header {
         document.title = 'AFT';
       }
     }
+  }
+
+  // Show the epic's done/total card count beside the board name, or hide it
+  // when counts is null (kanban boards and views without counts).
+  // The board can render before the header loads, so load() reapplies them.
+  setBoardDoneCount(counts) {
+    this.boardDoneCounts = counts;
+    const navBoardName = document.querySelector('.nav-board-name');
+    if (!navBoardName) {
+      return;
+    }
+
+    let countElement = document.getElementById('board-done-count');
+    if (!counts) {
+      if (countElement) {
+        countElement.hidden = true;
+      }
+      return;
+    }
+
+    if (!countElement) {
+      countElement = document.createElement('span');
+      countElement.id = 'board-done-count';
+      countElement.className = 'board-done-count';
+      const nameText = document.getElementById('nav-board-name-text');
+      if (nameText) {
+        nameText.after(countElement);
+      } else {
+        navBoardName.appendChild(countElement);
+      }
+    }
+
+    const label = `${counts.done} of ${counts.total} cards done on this board`;
+    countElement.textContent = `${counts.done}/${counts.total}`;
+    countElement.title = label;
+    countElement.setAttribute('aria-label', label);
+    countElement.hidden = false;
   }
 
   setPublicBoardContext(options = {}) {
@@ -3217,7 +3260,10 @@ class Header {
           dropdownMenu.classList.remove('show');
         });
         
-        dropdownMenu.insertBefore(doneItem, document.getElementById('compact-cards-toggle'));
+        dropdownMenu.insertBefore(
+          doneItem,
+          document.getElementById('global-board-view-item') || document.getElementById('compact-cards-toggle')
+        );
       }
     } else {
       // Remove done view if it exists
@@ -3540,7 +3586,8 @@ class Header {
     // Detect if we're on a page that should have Socket.IO loaded
     // Check for page-specific elements rather than socket existence to handle Socket.IO load failures
     const isOnBoardPage = (window.boardManager && window.boardManager.wsManager) || 
-                          (document.getElementById('theme-builder-select') !== null);
+                          (document.getElementById('theme-builder-select') !== null) ||
+                          !!window.aftPageSocket;
     
     if (isOnBoardPage) {
       const { hasSocket, wsHealthy, wsConnecting, ioLoaded } = this._getWebSocketConnectionState();
@@ -3748,6 +3795,71 @@ class Header {
     } catch (error) {
       // Silently fail - version info is optional
       console.debug('Could not load version info:', error);
+    }
+  }
+
+  /**
+   * Add the global board (#663) to the view menu and the mobile drawer.
+   *
+   * The view menu item navigates, so it has no data-view and doesn't go
+   * through setView. It sits just above Compact Cards, which stays last. The
+   * server's show_in_menu leaves it out for people who only use kanban boards.
+   */
+  async loadGlobalBoardNavigation() {
+    let data = null;
+    try {
+      const response = await fetch('/api/global-boards', { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) {
+        return;
+      }
+      data = await response.json();
+    } catch (error) {
+      // The entry is optional; leave it out if the request fails.
+      return;
+    }
+
+    const globalBoard = data && data.success && data.show_in_menu && Array.isArray(data.global_boards)
+      ? data.global_boards[0]
+      : null;
+    if (!globalBoard || document.getElementById('global-board-view-item')) {
+      return;
+    }
+
+    const href = `/global-board.html?id=${encodeURIComponent(globalBoard.id)}`;
+    const name = globalBoard.name || 'Global';
+    const onGlobalBoard = document.body.classList.contains('global-board-page');
+
+    const dropdownMenu = document.getElementById('views-dropdown-menu');
+    if (dropdownMenu) {
+      const item = document.createElement('a');
+      item.className = 'views-dropdown-item global-board-view-item';
+      item.id = 'global-board-view-item';
+      item.href = href;
+      item.innerHTML = `
+        <svg class="views-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+        </svg>
+        <span></span>
+      `;
+      item.querySelector('span').textContent = name;
+      dropdownMenu.insertBefore(item, document.getElementById('compact-cards-toggle'));
+    }
+
+    // The mobile board page hides the drawer's views section, so the drawer
+    // gets its own link under Boards.
+    const allBoardsLink = document.querySelector('#mobile-menu-drawer .mobile-tree-items > a.mobile-menu-link[href="/?show_boards=1"]');
+    if (allBoardsLink && !document.getElementById('mobile-global-board-link')) {
+      const mobileLink = document.createElement('a');
+      mobileLink.className = 'mobile-menu-link';
+      mobileLink.id = 'mobile-global-board-link';
+      mobileLink.href = href;
+      mobileLink.textContent = name;
+      if (onGlobalBoard) {
+        mobileLink.setAttribute('aria-current', 'page');
+      }
+      allBoardsLink.insertAdjacentElement('afterend', mobileLink);
     }
   }
 

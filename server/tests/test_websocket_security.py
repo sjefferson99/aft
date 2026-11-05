@@ -125,3 +125,29 @@ class TestWebSocketSecurity:
         finally:
             sender.disconnect()
             receiver.disconnect()
+
+    def test_join_global_board_requires_access(self, monkeypatch):
+        """join_global_board must go through the global board access check (#663)."""
+        app_module = _get_app_module()
+        ws_module = _get_ws_module()
+        user = SimpleNamespace(id=1)
+        monkeypatch.setattr(ws_module, 'get_authenticated_socket_user', lambda: user)
+        checked = []
+
+        def _mock_access(user_id, global_board_id):
+            checked.append((user_id, global_board_id))
+            return global_board_id == 5
+
+        monkeypatch.setattr(ws_module, '_can_access_global_board', _mock_access)
+
+        client = _make_socket_client(app_module)
+        try:
+            allowed_ack = _ack_payload(client.emit('join_global_board', {'global_board_id': 5}, callback=True))
+            assert allowed_ack == {'success': True, 'global_board_id': 5}
+
+            denied_ack = _ack_payload(client.emit('join_global_board', {'global_board_id': 6}, callback=True))
+            assert denied_ack['success'] is False
+            assert denied_ack['message'] == 'Access denied to this global board'
+            assert checked == [(1, 5), (1, 6)]
+        finally:
+            client.disconnect()
