@@ -10,10 +10,10 @@ pytest==9.2.0
 requests==2.34.2
 # Socket.IO client for broadcast payload tests (websocket transport: the
 # server runs several workers, so polling needs sticky sessions it doesn't have)
-python-socketio==5.17.0
+python-socketio==5.18.1
 websocket-client==1.9.2
 # Software passkey authenticator for passkey API tests (tests/soft_authenticator.py)
-cbor2==6.1.5
+cbor2==6.2.0.post2
 cryptography==50.0.2
 
 # Code quality tools (optional but recommended)
