@@ -24,7 +24,7 @@
 
 services:
   db:
-    image: mysql:9.5.0
+    image: mysql:26.10.0
     container_name: aft-db
     restart: unless-stopped
     # MySQL memory tuning, defaulted for small self-hosted installs. Each value can be
