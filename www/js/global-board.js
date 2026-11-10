@@ -102,7 +102,6 @@ class GlobalBoardPage {
     this.loadFilters();
     await this.load();
     this.connectSocket();
-    window.addEventListener('message', (event) => this.handleCardFrameMessage(event));
 
     // Drag is desktop only, so re-render when the width or touchscreen mode
     // (a body class set once the user's setting loads) changes.
@@ -727,20 +726,31 @@ class GlobalBoardPage {
     this.cardOverlay = state;
   }
 
-  handleCardFrameMessage(event) {
+  /**
+   * Called by the card frame's board page (reportCardModalToParent in
+   * board.js). The browser only lets a same-origin page reach this, and it
+   * acts only for the frame this page opened.
+   *
+   * @param {Window} source - The calling frame's window.
+   * @param {string} type - 'opened' or 'closed'.
+   * @param {boolean} opened - For 'closed', whether the modal ever opened.
+   * @param {string|null} reason - Why it didn't open: 'not_found' or 'unavailable'.
+   */
+  handleCardFrameEvent(source, type, opened = true, reason = null) {
     const state = this.cardOverlay;
-    if (!state || state.closing || event.origin !== window.location.origin
-        || event.source !== state.frame.contentWindow || !event.data) {
+    if (!state || state.closing || source !== state.frame.contentWindow) {
       return;
     }
-    if (event.data.type === 'aft:card-modal-opened') {
+    if (type === 'opened') {
       state.opened = true;
       clearTimeout(state.timer);
       state.element.classList.add('is-ready');
       state.frame.focus();
-    } else if (event.data.type === 'aft:card-modal-closed') {
-      if (!event.data.opened) {
-        this.showToast('This card can\'t be opened. It may have been archived or deleted.', true);
+    } else if (type === 'closed') {
+      if (!opened) {
+        this.showToast(reason === 'unavailable'
+          ? 'Couldn\'t open the card. Check your connection and try again.'
+          : 'This card can\'t be opened. It may have been archived or deleted.', true);
       }
       this.closeCardOverlay(true);
     }

@@ -255,6 +255,33 @@ class TestPromotion:
         assert _promote(authenticated_session, api_client, global_board['id'], card_id).status_code == 201
         assert _promote(authenticated_session, api_client, global_board['id'], card_id).status_code == 409
 
+    def test_simultaneous_promotes_conflict_rather_than_fail(
+        self, api_client, authenticated_session, global_board, epic
+    ):
+        """Test promotes racing on one card give one 201 and 409s, never a 500."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        card_id = _make_card(authenticated_session, api_client, epic['column_ids'][0])
+        url = _url(api_client, f"/api/global-boards/{global_board['id']}/cards")
+
+        def promote(_):
+            # A session per thread, sharing the signed-in cookies.
+            session = requests.Session()
+            session.cookies.update(authenticated_session.cookies)
+            session.headers.update(authenticated_session.headers)
+            return session.post(url, json={'card_id': card_id}, timeout=10).status_code
+
+        # Three at a time races the check without exhausting the server's
+        # database connection pool, which each request draws on more than once.
+        for _ in range(5):
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                statuses = list(pool.map(promote, range(3)))
+            assert 500 not in statuses, statuses
+            assert set(statuses) <= {201, 409}, statuses
+            authenticated_session.delete(
+                _url(api_client, f"/api/global-boards/{global_board['id']}/cards/{card_id}")
+            )
+
     def test_cannot_promote_done_or_archived_card(
         self, api_client, authenticated_session, global_board, epic
     ):

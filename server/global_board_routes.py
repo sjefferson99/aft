@@ -22,6 +22,7 @@ from datetime import timedelta
 
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from board_routes import (
@@ -644,7 +645,12 @@ def promote_card(global_board_id):
             promoted_at=utc_now(),
         )
         db.add(promotion)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # Another request promoted it between the check above and here.
+            db.rollback()
+            return create_error_response("Card is already promoted", 409)
         db.refresh(promotion)
         _notify_global_board_changed(global_board.id)
         _notify_epic_card_changed(db, card, board.id)

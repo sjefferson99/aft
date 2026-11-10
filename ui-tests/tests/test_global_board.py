@@ -858,3 +858,15 @@ def test_g_and_b_are_ignored_while_typing_or_editing(logged_in_page, global_boar
     assert "global-board.html" in page.url
     frame.locator("#cancel-edit-card-btn").click()
     _wait_overlay_closed(page)
+
+
+@pytest.mark.ui
+def test_card_frame_without_a_database_check_says_so(logged_in_page, global_board, stories):
+    """If the database check never passes, the message blames the connection, not the card."""
+    page = logged_in_page
+    _open(page, global_board)
+    page.context.route("**/api/health/live", lambda route: route.abort())
+
+    _card(page, stories["first"]).dispatch_event("click")
+    page.get_by_text("Couldn't open the card. Check your connection").wait_for(timeout=15000)
+    _wait_overlay_closed(page)

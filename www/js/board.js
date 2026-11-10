@@ -3474,16 +3474,27 @@ class BoardManager {
    * reports closed straight away.
    */
   reportCardModalToParent() {
-    const post = (type, extra = {}) => {
-      window.parent.postMessage({ type, ...extra }, window.location.origin);
+    // A direct call rather than postMessage: the browser only allows it when
+    // the parent is on this origin, so nothing else can be told.
+    const post = (type, opened = true, reason = null) => {
+      try {
+        const page = window.parent.globalBoardPage;
+        if (page && typeof page.handleCardFrameEvent === 'function') {
+          page.handleCardFrameEvent(window, type, opened, reason);
+        }
+      } catch (err) {
+        // The parent isn't an AFT page on this origin.
+      }
     };
     const dialogOpen = () => !!document.querySelector('.modal, .modal-app.show');
 
     if (!document.getElementById('edit-card-modal')) {
-      post('aft:card-modal-closed', { opened: false });
+      // openEditCardModal refuses while the database check hasn't passed.
+      const reason = window.header && !window.header.dbConnected ? 'unavailable' : 'not_found';
+      post('closed', false, reason);
       return;
     }
-    post('aft:card-modal-opened');
+    post('opened');
 
     // Two empty checks in a row, so a dialog replacing another isn't a close.
     let emptyChecks = 0;
@@ -3491,7 +3502,7 @@ class BoardManager {
       emptyChecks = dialogOpen() ? 0 : emptyChecks + 1;
       if (emptyChecks >= 2) {
         clearInterval(timer);
-        post('aft:card-modal-closed', { opened: true });
+        post('closed', true);
       }
     }, 200);
   }
