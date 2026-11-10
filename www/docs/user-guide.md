@@ -246,7 +246,7 @@ Each card shows its title, its assignee and where it came from, as `Board › Co
 
 - **Move cards**: drag them between columns and up and down a column. On a phone, or in touchscreen mode, use the **Move to** control on each card instead
 - **Done**: moving a card into Done marks it done on its own board, and moving it out marks it not done. Ticking done on the card's own board moves it to Done too. When you untick it, it goes back to the column it was in before
-- **Done column**: the newest done cards are at the top, and the column can't be reordered by hand. Done cards stay on the board for the number of days your administrator chose, 14 by default, which shows above the column. Older done cards are hidden but stay promoted, so unticking one brings it back
+- **Done column**: the newest done cards are at the top, and the column can't be reordered by hand. Done cards stay on the board for the number of days your administrator chose, 14 by default, which shows beside the column name. Older done cards are hidden but stay promoted, so unticking one brings it back
 - **Filters**: filter by assignee, including unassigned cards, and by epic board. Your filters are remembered on this device
 - **Live updates**: changes made by others, on the global board or on the epic boards, appear without reloading
 

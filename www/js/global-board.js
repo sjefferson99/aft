@@ -553,10 +553,9 @@ class GlobalBoardPage {
     header.appendChild(heading);
     if (state.key === GLOBAL_BOARD_DONE_STATE && this.globalBoard && this.globalBoard.done_visible_days) {
       const days = this.globalBoard.done_visible_days;
-      header.appendChild(this.el('p', {
-        className: 'gb-column-note',
-        text: `Done in the last ${days} ${days === 1 ? 'day' : 'days'}`,
-      }));
+      const note = `Done in the last ${days} ${days === 1 ? 'day' : 'days'}`;
+      // Shares the heading's line, so it may be cut short; the title keeps it whole.
+      header.appendChild(this.el('p', { className: 'gb-column-note', text: note, attrs: { title: note } }));
     }
     column.appendChild(header);
 

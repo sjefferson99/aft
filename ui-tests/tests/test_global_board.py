@@ -122,6 +122,22 @@ def test_shows_columns_and_card_details(logged_in_page, global_board, epic, stor
 
 
 @pytest.mark.ui
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+def test_done_note_keeps_columns_in_line(logged_in_page, global_board, stories, viewport):
+    """The Done window note shares the heading's line, so every column's cards start level."""
+    page = logged_in_page
+    _open(page, global_board, viewport)
+    note = page.locator(".gb-column-note")
+    assert note.get_attribute("title") == "Done in the last 14 days"
+
+    tops = page.evaluate(
+        "() => [...document.querySelectorAll('.gb-card-list')].map(l => l.getBoundingClientRect().top)"
+    )
+    assert len(tops) == 4
+    assert max(tops) - min(tops) < 1, f"card lists don't start level: {tops}"
+
+
+@pytest.mark.ui
 def test_card_title_is_not_html(logged_in_page, api_session, ui_base_url, global_board, epic):
     page = logged_in_page
     title = '<img src=x onerror="window.__gbXss=1">'
