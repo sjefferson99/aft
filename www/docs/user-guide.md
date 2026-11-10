@@ -22,13 +22,22 @@ To use these shortcuts:
 - In the Scheduled View, **N** and **M** add a scheduled card. **A** does nothing there
 - Shortcuts don't work while typing in text fields, when a modal is open, or on boards you can't edit
 
+Two more keys move between pages:
+
+| Key | Goes to | Works on |
+|---|---|---|
+| <kbd>G</kbd> | The [Global Board](#global-board) | A board and the boards page |
+| <kbd>B</kbd> | The boards page | A board and the global board |
+
+These work on boards you can only view too, but not while typing or when a modal is open.
+
 ## Boards
 
 ![The boards list](../images/docs/boards.png)
 
 - **Create as many boards as you need**, and rename or delete them from the boards list
 - **Archive a board** to clear it from the list and keep its data. Switch between Active Boards and Archived Boards in the header view menu to find it and unarchive it
-- **Default board**: choose a board to open on startup in your [Preferences](#preferences)
+- **Default board**: choose a board, or the [Global Board](#global-board), to open on startup in your [Preferences](#preferences)
 - **Change the owner**: board owners and administrators can reassign ownership from the board menu
 - **Share a board**: boards are owned by one user and shared per board, with viewer or editor access
 
@@ -280,7 +289,7 @@ Your own settings are on your **Profile** page, under **Preferences**.
 
 ![Profile preferences](../images/docs/preferences.png)
 
-- **Default Board**: the board to open on startup
+- **Default Board**: the board to open on startup. The global board is in the list too, if you can see it
 - **Time Format**: 12-hour or 24-hour
 - **Timezone**: used to show times across the app
 - **Theme**: your colour theme

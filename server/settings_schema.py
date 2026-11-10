@@ -1,10 +1,30 @@
 """Shared settings schema and working-style helpers."""
 
 import json
+import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from models import BoardSetting, Setting
 from utils import get_user_scoped_query
+
+
+# default_board can name a global board instead of a board (#663).
+DEFAULT_BOARD_GLOBAL_PATTERN = re.compile(r"^global:([1-9][0-9]{0,9})$")
+
+
+def parse_default_global_board(value):
+    """Return the global board id a default_board value names, or None."""
+    if isinstance(value, str):
+        match = DEFAULT_BOARD_GLOBAL_PATTERN.match(value)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _validate_default_board(value):
+    if value is None or parse_default_global_board(value) is not None:
+        return True
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 WORKING_STYLE_KANBAN = "kanban"
@@ -72,9 +92,11 @@ SETTINGS_SCHEMA = {
     "default_board": {
         "type": "integer",
         "nullable": True,
-        "description": "ID of the board to load by default on application startup",
-        "validate": lambda value: value is None
-        or (isinstance(value, int) and not isinstance(value, bool) and value > 0),
+        "description": (
+            "ID of the board to load by default on application startup, "
+            "or \"global:<id>\" for a global board"
+        ),
+        "validate": _validate_default_board,
     },
     "backup_enabled": {
         "type": "boolean",

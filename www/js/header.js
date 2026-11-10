@@ -3903,6 +3903,49 @@ class Header {
     dropdown.prepend(link);
   }
 
+  /**
+   * G goes to the global board from a board or the boards page, and B goes
+   * to the boards page from a board or the global board (#663). Board pages
+   * keep their own shortcuts in board.js; these only navigate.
+   */
+  setupNavigationShortcuts() {
+    const body = document.body;
+    const onBoard = body.classList.contains('board-page') && !body.classList.contains('public-board-page');
+    const onBoards = body.classList.contains('boards-page');
+    const onGlobal = body.classList.contains('global-board-page');
+    if (!(onBoard || onBoards || onGlobal) || document.documentElement.classList.contains('embedded-page')) {
+      return;
+    }
+
+    document.addEventListener('keydown', async (e) => {
+      const key = e.key.toLowerCase();
+      if ((key !== 'g' && key !== 'b') || e.repeat || e.ctrlKey || e.metaKey || e.altKey) {
+        return;
+      }
+      const target = e.target;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable) {
+        return;
+      }
+      const dialogOpen = Array.from(document.querySelectorAll('.modal, .modal-app.show, .gb-card-overlay:not(.is-closed)'))
+        .some((element) => window.getComputedStyle(element).display !== 'none');
+      if (dialogOpen || document.querySelector('.header.mobile-menu-open')) {
+        return;
+      }
+
+      if (key === 'b' && (onBoard || onGlobal)) {
+        e.preventDefault();
+        // show_boards skips the default board redirect.
+        window.location.href = '/?show_boards=1';
+      } else if (key === 'g' && (onBoard || onBoards)) {
+        e.preventDefault();
+        const globalBoard = await this.getMenuGlobalBoard();
+        if (globalBoard) {
+          window.location.href = `/global-board.html?id=${encodeURIComponent(globalBoard.id)}`;
+        }
+      }
+    });
+  }
+
   // Load boards for dropdown menu
   async loadBoardsDropdown() {
     try {
@@ -3998,6 +4041,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     await header.load();
+    header.setupNavigationShortcuts();
 
     if (typeof loadTouchscreenMode === 'function') {
       loadTouchscreenMode();

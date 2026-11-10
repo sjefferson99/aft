@@ -120,7 +120,13 @@ class BoardsManager {
       if (response.ok) {
         const data = await response.json();
         
-        if (data.success && data.value) {
+        const globalMatch = typeof data.value === 'string' ? /^global:(\d+)$/.exec(data.value) : null;
+        if (data.success && globalMatch) {
+          // The default is the global board (#663).
+          window.location.href = `/global-board.html?id=${globalMatch[1]}`;
+          return true;
+        }
+        if (data.success && Number.isInteger(data.value) && data.value > 0) {
           // Redirect to default board
           window.location.href = `/board.html?id=${data.value}`;
           return true; // Indicate redirect is happening

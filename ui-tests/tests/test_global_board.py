@@ -780,3 +780,81 @@ def test_context_links_to_the_board_without_opening_the_card(logged_in_page, glo
     page.wait_for_function("() => window.boardManager?.hasLoadedBoardData", timeout=8000)
     page.wait_for_timeout(500)
     assert page.locator("#edit-card-modal").count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Default board and navigation shortcuts
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def reset_default_board(api_session, ui_base_url):
+    yield
+    api_session.put(f"{ui_base_url}/api/settings/default_board", json={"value": None})
+
+
+@pytest.mark.ui
+def test_global_board_can_be_the_default_board(
+    logged_in_page, api_session, ui_base_url, global_board, epic, reset_default_board
+):
+    page = logged_in_page
+    page.goto("/profile.html#preferences")
+    value = f"global:{global_board['id']}"
+    option = page.locator(f'#default-board option[value="{value}"]')
+    option.wait_for(state="attached", timeout=8000)
+    assert option.inner_text() == f"{global_board['name']} (global board)"
+    page.wait_for_load_state("networkidle")
+
+    page.select_option("#default-board", value)
+    page.locator("#settings-status", has_text="Saved").wait_for(state="visible", timeout=5000)
+    assert api_session.get(f"{ui_base_url}/api/settings/default_board").json()["value"] == value
+
+    page.goto("/")
+    page.wait_for_url(f"**/global-board.html?id={global_board['id']}", timeout=8000)
+    page.wait_for_function("() => window.globalBoardPage?.hasLoaded", timeout=8000)
+
+    page.goto("/profile.html#preferences")
+    page.wait_for_load_state("networkidle")
+    assert page.locator("#default-board").input_value() == value
+
+
+def _press_and_wait(page, key, url_glob):
+    page.locator("body").click(position={"x": 5, "y": 400})
+    page.keyboard.press(key)
+    page.wait_for_url(url_glob, timeout=8000)
+
+
+@pytest.mark.ui
+def test_g_and_b_move_between_boards_and_the_global_board(logged_in_page, global_board, epic):
+    page = logged_in_page
+    _open_epic(page, epic)
+    page.wait_for_function("() => !!window.header?.menuGlobalBoardPromise", timeout=8000)
+
+    _press_and_wait(page, "g", f"**/global-board.html?id={global_board['id']}")
+    page.wait_for_function("() => window.globalBoardPage?.hasLoaded", timeout=8000)
+    page.keyboard.press("g")  # no-op here
+    _press_and_wait(page, "b", "**/?show_boards=1")
+    page.locator(".board-card").first.wait_for(timeout=8000)
+    _press_and_wait(page, "G", f"**/global-board.html?id={global_board['id']}")
+
+    _open_epic(page, epic)
+    _press_and_wait(page, "b", "**/?show_boards=1")
+
+
+@pytest.mark.ui
+def test_g_and_b_are_ignored_while_typing_or_editing(logged_in_page, global_board, epic, stories):
+    page = logged_in_page
+    _open_epic(page, epic)
+    url = page.url
+    page.locator("#board-header-search-input").fill("gb")
+    page.wait_for_timeout(500)
+    assert page.url == url
+
+    _open(page, global_board)
+    frame = _open_in_place(page, stories["first"])
+    frame.locator("#edit-card-title").press("End")
+    page.keyboard.press("b")
+    page.wait_for_timeout(500)
+    assert "global-board.html" in page.url
+    frame.locator("#cancel-edit-card-btn").click()
+    _wait_overlay_closed(page)
