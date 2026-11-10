@@ -25,6 +25,10 @@ const GLOBAL_BOARD_REQUEST_TIMEOUT_MS = 5000;
 const GLOBAL_BOARD_REFRESH_DEBOUNCE_MS = 250;
 const GLOBAL_BOARD_MOBILE_BREAKPOINT = 900;
 const GLOBAL_BOARD_DEFAULT_AVATAR_COLOUR = '#90A4AE';
+// How long to wait for a card's board to load and open its modal.
+const GLOBAL_BOARD_CARD_OPEN_TIMEOUT_MS = 15000;
+// A closed card's frame lingers hidden, so a save it started can finish.
+const GLOBAL_BOARD_CARD_FRAME_LINGER_MS = 10000;
 
 // Board room events that can change what the global board shows. card_created
 // is left out: a new card can't already be promoted.
@@ -66,6 +70,7 @@ class GlobalBoardPage {
     this.liveRegion = null;
 
     this.mobileQuery = window.matchMedia(`(max-width: ${GLOBAL_BOARD_MOBILE_BREAKPOINT}px)`);
+    this.cardOverlay = null;
   }
 
   async init() {
@@ -97,6 +102,7 @@ class GlobalBoardPage {
     this.loadFilters();
     await this.load();
     this.connectSocket();
+    window.addEventListener('message', (event) => this.handleCardFrameMessage(event));
 
     // Drag is desktop only, so re-render when the width or touchscreen mode
     // (a body class set once the user's setting loads) changes.
@@ -598,7 +604,17 @@ class GlobalBoardPage {
     element.appendChild(link);
 
     const context = `${card.board_name} › ${card.column_name}`;
-    element.appendChild(this.el('p', { className: 'gb-card-context', text: context, attrs: { title: context } }));
+    const contextLine = this.el('p', { className: 'gb-card-context' });
+    contextLine.appendChild(this.el('a', {
+      className: 'gb-card-board-link',
+      text: context,
+      attrs: {
+        href: `/board.html?id=${encodeURIComponent(card.board_id)}`,
+        title: `Open ${card.board_name}`,
+        draggable: 'false',
+      },
+    }));
+    element.appendChild(contextLine);
 
     const footer = this.el('div', { className: 'gb-card-footer' });
     if (card.assigned_to) {
@@ -636,7 +652,135 @@ class GlobalBoardPage {
       element.addEventListener('dragstart', (event) => this.handleDragStart(event, card, element));
       element.addEventListener('dragend', () => this.handleDragEnd(element));
     }
+
+    // The card itself opens the edit modal here. Its links and controls keep
+    // their own jobs: the title opens the card on its board, the context line
+    // opens the board, and Move to moves it.
+    element.tabIndex = 0;
+    element.setAttribute('aria-label', `${card.title}. Press Enter to edit here.`);
+    element.addEventListener('click', (event) => {
+      if (!event.target.closest('a, select, button, input')) {
+        this.openCardOverlay(card);
+      }
+    });
+    element.addEventListener('keydown', (event) => {
+      if (event.target === element && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        this.openCardOverlay(card);
+      }
+    });
     return element;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Card edit overlay
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Open a card's edit modal over the global board. The modal belongs to the
+   * board page, so this shows the card's board in a frame in card-modal-only
+   * mode, which shows just the modal and reports back when it closes.
+   */
+  openCardOverlay(card) {
+    if (this.cardOverlay && !this.cardOverlay.closing) {
+      return;
+    }
+    this.removeCardOverlay();
+
+    const overlay = this.el('div', {
+      className: 'gb-card-overlay',
+      attrs: { role: 'dialog', 'aria-modal': 'true', 'aria-label': `Edit ${card.title}` },
+    });
+    const loading = this.el('div', { className: 'gb-card-overlay-loading', attrs: { role: 'status' } });
+    loading.appendChild(this.el('span', { className: 'gb-card-overlay-spinner', attrs: { 'aria-hidden': 'true' } }));
+    loading.appendChild(this.el('span', { text: 'Opening card...' }));
+    const frame = this.el('iframe', {
+      className: 'gb-card-frame',
+      attrs: {
+        title: `Edit ${card.title}`,
+        src: `/board.html?id=${encodeURIComponent(card.board_id)}&card=${encodeURIComponent(card.card_id)}&embedded=1`,
+      },
+    });
+    overlay.append(loading, frame);
+    document.body.appendChild(overlay);
+    document.body.classList.add('gb-card-overlay-open');
+
+    const state = {
+      element: overlay,
+      frame,
+      cardId: card.card_id,
+      opened: false,
+      closing: false,
+      keyHandler: (event) => {
+        if (event.key === 'Escape' && !state.opened) {
+          this.closeCardOverlay(false);
+        }
+      },
+      timer: setTimeout(() => {
+        if (!state.opened) {
+          this.showToast('The card took too long to open. Please try again.', true);
+          this.closeCardOverlay(false);
+        }
+      }, GLOBAL_BOARD_CARD_OPEN_TIMEOUT_MS),
+    };
+    document.addEventListener('keydown', state.keyHandler);
+    this.cardOverlay = state;
+  }
+
+  handleCardFrameMessage(event) {
+    const state = this.cardOverlay;
+    if (!state || state.closing || event.origin !== window.location.origin
+        || event.source !== state.frame.contentWindow || !event.data) {
+      return;
+    }
+    if (event.data.type === 'aft:card-modal-opened') {
+      state.opened = true;
+      clearTimeout(state.timer);
+      state.element.classList.add('is-ready');
+      state.frame.focus();
+    } else if (event.data.type === 'aft:card-modal-closed') {
+      if (!event.data.opened) {
+        this.showToast('This card can\'t be opened. It may have been archived or deleted.', true);
+      }
+      this.closeCardOverlay(true);
+    }
+  }
+
+  // Hide at once, but leave the frame running for a moment so a request the
+  // modal started on its way out (such as Move to top) can finish.
+  closeCardOverlay(refresh) {
+    const state = this.cardOverlay;
+    if (!state || state.closing) {
+      return;
+    }
+    state.closing = true;
+    clearTimeout(state.timer);
+    document.removeEventListener('keydown', state.keyHandler);
+    state.element.classList.add('is-closed');
+    state.element.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('gb-card-overlay-open');
+    state.removeTimer = setTimeout(() => this.removeCardOverlay(), GLOBAL_BOARD_CARD_FRAME_LINGER_MS);
+
+    const cardElement = this.container.querySelector(`.gb-card[data-card-id="${state.cardId}"]`);
+    if (cardElement) {
+      cardElement.focus({ preventScroll: true });
+    }
+    if (refresh) {
+      this.scheduleRefresh();
+    }
+  }
+
+  removeCardOverlay() {
+    const state = this.cardOverlay;
+    if (!state) {
+      return;
+    }
+    clearTimeout(state.timer);
+    clearTimeout(state.removeTimer);
+    document.removeEventListener('keydown', state.keyHandler);
+    state.element.remove();
+    document.body.classList.remove('gb-card-overlay-open');
+    this.cardOverlay = null;
   }
 
   renderAvatar(user, className, labelled = false) {
@@ -676,7 +820,8 @@ class GlobalBoardPage {
     if (card) {
       return {
         cardId: card.dataset.cardId,
-        selector: active.classList.contains('gb-card-move') ? '.gb-card-move' : '.gb-card-title',
+        selector: active === card ? null
+          : (active.classList.contains('gb-card-move') ? '.gb-card-move' : '.gb-card-title'),
       };
     }
     const filterKey = active.getAttribute('data-filter-key');
@@ -690,7 +835,7 @@ class GlobalBoardPage {
     let target = null;
     if (focus.cardId) {
       const card = this.container.querySelector(`.gb-card[data-card-id="${CSS.escape(focus.cardId)}"]`);
-      target = card ? card.querySelector(focus.selector) : null;
+      target = card && focus.selector ? card.querySelector(focus.selector) : card;
     } else if (focus.filterKey) {
       target = this.container.querySelector(`[data-filter-key="${CSS.escape(focus.filterKey)}"]`);
     }

@@ -3144,3 +3144,16 @@ body.touchscreen-mode .column-cards {
     font-size: 15px;
   }
 }
+
+/* Card modal only (#663): the global board shows a card's edit modal in a
+   frame of its board. Only the modals and toasts show, over the global board. */
+html.card-modal-only,
+html.card-modal-only body {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+html.card-modal-only .canvas,
+html.card-modal-only #view-planner-btn {
+  display: none !important;
+}

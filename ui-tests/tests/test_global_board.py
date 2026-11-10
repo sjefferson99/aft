@@ -677,3 +677,106 @@ def test_boards_page_links_to_global_board(logged_in_page, global_board, epic):
     card.click()
     page.wait_for_url("**/global-board.html?id=*", timeout=8000)
     page.wait_for_function("() => window.globalBoardPage?.hasLoaded", timeout=8000)
+
+
+# ---------------------------------------------------------------------------
+# Editing a card in place
+# ---------------------------------------------------------------------------
+
+
+def _open_in_place(page, card_id):
+    """Click the card itself, away from its links and controls."""
+    card = _card(page, card_id)
+    box = card.bounding_box()
+    footer = card.locator(".gb-card-footer").bounding_box()
+    # The middle of the footer row, left of Move to and right of the avatar.
+    page.mouse.click(box["x"] + box["width"] * 0.45, footer["y"] + footer["height"] / 2)
+    page.locator(".gb-card-overlay.is-ready").wait_for(timeout=15000)
+    frame = page.frame_locator(".gb-card-frame")
+    frame.locator("#edit-card-modal").wait_for(state="visible", timeout=5000)
+    return frame
+
+
+def _wait_overlay_closed(page):
+    page.wait_for_function(
+        "() => !document.querySelector('.gb-card-overlay:not(.is-closed)')", timeout=8000
+    )
+
+
+@pytest.mark.ui
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+def test_clicking_a_card_edits_it_in_place(
+    logged_in_page, api_session, ui_base_url, global_board, stories, viewport
+):
+    page = logged_in_page
+    _open(page, global_board, viewport)
+    url = page.url
+    frame = _open_in_place(page, stories["first"])
+
+    assert page.url == url
+    assert frame.locator("#edit-card-title").input_value() == "First story"
+    # Only the modal shows: the frame's board and header are hidden.
+    assert frame.locator(".canvas").is_hidden()
+    assert frame.locator(".header").is_hidden()
+    assert frame.locator("#view-planner-btn").is_hidden()
+
+    frame.locator("#edit-card-title").fill("Renamed in place")
+    frame.locator("#cancel-edit-card-btn").click()
+    _wait_overlay_closed(page)
+
+    assert page.url == url
+    page.wait_for_function(
+        """(id) => document.querySelector(`.gb-card[data-card-id="${id}"] .gb-card-title`)
+            ?.textContent === 'Renamed in place'""",
+        arg=stories["first"],
+        timeout=8000,
+    )
+    response = api_session.get(f"{ui_base_url}/api/cards/{stories['first']}")
+    assert response.json()["card"]["title"] == "Renamed in place"
+    assert page.evaluate("document.activeElement?.dataset?.cardId") == str(stories["first"])
+
+
+@pytest.mark.ui
+def test_escape_closes_the_card_and_keyboard_opens_it(logged_in_page, global_board, stories):
+    page = logged_in_page
+    _open(page, global_board)
+    _card(page, stories["second"]).focus()
+    page.keyboard.press("Enter")
+    page.locator(".gb-card-overlay.is-ready").wait_for(timeout=15000)
+    frame = page.frame_locator(".gb-card-frame")
+    frame.locator("#edit-card-modal").wait_for(state="visible", timeout=5000)
+
+    frame.locator("#edit-card-title").press("Escape")
+    _wait_overlay_closed(page)
+    assert page.url.endswith(f"/global-board.html?id={global_board['id']}")
+
+
+@pytest.mark.ui
+def test_card_that_cannot_open_closes_with_a_message(
+    logged_in_page, api_session, ui_base_url, global_board, stories
+):
+    page = logged_in_page
+    _open(page, global_board)
+    # Archive it behind the page's back, then open the stale card.
+    page.evaluate("() => window.globalBoardPage.socket?.disconnect()")
+    response = api_session.patch(f"{ui_base_url}/api/cards/{stories['first']}/archive")
+    assert response.status_code == 200, response.text
+
+    _card(page, stories["first"]).dispatch_event("click")
+    _wait_overlay_closed(page)
+    page.get_by_text("This card can't be opened").wait_for(timeout=5000)
+
+
+@pytest.mark.ui
+def test_context_links_to_the_board_without_opening_the_card(logged_in_page, global_board, epic, stories):
+    page = logged_in_page
+    _open(page, global_board)
+    link = _card(page, stories["first"]).locator(".gb-card-board-link")
+    assert link.get_attribute("href") == f"/board.html?id={epic['board']['id']}"
+    assert link.inner_text() == f"{epic['board']['name']} › Feature A"
+
+    link.click()
+    page.wait_for_url(f"**/board.html?id={epic['board']['id']}", timeout=8000)
+    page.wait_for_function("() => window.boardManager?.hasLoadedBoardData", timeout=8000)
+    page.wait_for_timeout(500)
+    assert page.locator("#edit-card-modal").count() == 0

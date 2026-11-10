@@ -3415,6 +3415,9 @@ class BoardManager {
       if (!this.isPublicMode) {
         this.notifyBoardFilterActiveStateChanged();
         await this.openDeepLinkedCard(urlParams.get('card'));
+        if (document.documentElement.classList.contains('card-modal-only')) {
+          this.reportCardModalToParent();
+        }
       }
       this.setupBoardTouchScrolling();
       this.setupMobileViewportSync();
@@ -3461,6 +3464,36 @@ class BoardManager {
     })();
     this.eligibleGlobalBoardsPromise = promise;
     return promise;
+  }
+
+  /**
+   * In card-modal-only mode, the global board shows this page in a frame to
+   * edit one card (#663). Tell it when the modal is up, and when no dialog
+   * is left, which covers every way out of the modal, including the move,
+   * assignee and confirm dialogs it can lead to. A card that can't open
+   * reports closed straight away.
+   */
+  reportCardModalToParent() {
+    const post = (type, extra = {}) => {
+      window.parent.postMessage({ type, ...extra }, window.location.origin);
+    };
+    const dialogOpen = () => !!document.querySelector('.modal, .modal-app.show');
+
+    if (!document.getElementById('edit-card-modal')) {
+      post('aft:card-modal-closed', { opened: false });
+      return;
+    }
+    post('aft:card-modal-opened');
+
+    // Two empty checks in a row, so a dialog replacing another isn't a close.
+    let emptyChecks = 0;
+    const timer = setInterval(() => {
+      emptyChecks = dialogOpen() ? 0 : emptyChecks + 1;
+      if (emptyChecks >= 2) {
+        clearInterval(timer);
+        post('aft:card-modal-closed', { opened: true });
+      }
+    }, 200);
   }
 
   /**

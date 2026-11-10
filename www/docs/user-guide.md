@@ -251,7 +251,10 @@ Open a card on an Agile board. Its details include a **Global board** row with a
 
 ### Working on the Global Board
 
-Each card shows its title, its assignee and where it came from, as `Board › Column`. Select the title to open the card on its own board.
+Each card shows its title, its assignee and where it came from, as `Board › Column`.
+
+- **Edit a card**: select the card to open it for editing over the global board, with everything you'd see on its own board. Close it to return to the global board where you left it
+- **Go to the card's board**: select the title to open the card on its own board, or select `Board › Column` to open the board without opening the card
 
 - **Move cards**: drag them between columns and up and down a column. On a phone, or in touchscreen mode, use the **Move to** control on each card instead
 - **Done**: moving a card into Done marks it done on its own board, and moving it out marks it not done. Ticking done on the card's own board moves it to Done too. When you untick it, it goes back to the column it was in before
