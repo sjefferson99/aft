@@ -1026,6 +1026,7 @@
 .card-delete-btn,
 .card-move-btn,
 .card-top-btn,
+.card-promote-btn,
 .card-archive-btn,
 .card-unarchive-btn {
   background: none;
@@ -1073,7 +1074,8 @@
 }
 
 .card-move-btn:hover,
-.card-top-btn:hover {
+.card-top-btn:hover,
+.card-promote-btn:hover {
   transform: scale(1.2);
   color: var(--text-bold);
 }
@@ -1081,6 +1083,26 @@
 .card-archive-btn,
 .card-unarchive-btn {
   color: var(--primary-color);
+}
+
+/* Promote/Demote card action (#663). Like Move to top, it shows only when
+   chosen in Card Actions. Pressed means the card is on the global board. */
+.card-promote-btn {
+  display: none;
+  color: var(--secondary-color);
+}
+
+.card-promote-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.card-promote-btn[aria-pressed="true"] {
+  color: var(--primary-color);
+}
+
+.card-promote-btn[aria-pressed="true"] svg {
+  fill: color-mix(in srgb, var(--primary-color) 20%, transparent);
 }
 
 .card-archive-btn svg,
@@ -2465,6 +2487,7 @@ button.readonly-disabled,
   .card-delete-btn,
   .card-move-btn,
   .card-top-btn,
+  .card-promote-btn,
   .card-archive-btn,
   .card-unarchive-btn {
     width: 24px;
@@ -3039,6 +3062,7 @@ body.touchscreen-mode .column-cards {
   body.touchscreen-mode .card-delete-btn,
   body.touchscreen-mode .card-move-btn,
   body.touchscreen-mode .card-top-btn,
+  body.touchscreen-mode .card-promote-btn,
   body.touchscreen-mode .card-done-btn,
   body.touchscreen-mode .card-archive-btn,
   body.touchscreen-mode .card-unarchive-btn {
@@ -3074,8 +3098,15 @@ body.touchscreen-mode .column-cards {
   }
 
   body.desktop-card-action-move .card-move-btn,
-  body.desktop-card-action-top .card-top-btn {
+  body.desktop-card-action-top .card-top-btn,
+  body.desktop-card-action-promote .card-promote-btn {
     display: flex;
+  }
+
+  /* Touchscreen mode shows every other action, but its row has no room
+     for one more 44px button unless the user chose it. */
+  body.touchscreen-mode:not(.desktop-card-action-promote) .card-promote-btn {
+    display: none;
   }
 
   body:not(.touchscreen-mode).desktop-card-actions .card .card-title {
@@ -3093,8 +3124,13 @@ body.touchscreen-mode .column-cards {
 
   body.mobile-card-action-archive .card-archive-btn,
   body.mobile-card-action-delete .card-delete-btn,
-  body.mobile-card-action-top .card-top-btn {
+  body.mobile-card-action-top .card-top-btn,
+  body.mobile-card-action-promote .card-promote-btn {
     display: flex;
+  }
+
+  body.touchscreen-mode:not(.mobile-card-action-promote) .card-promote-btn {
+    display: none;
   }
 
   body.mobile-card-actions .card .card-title {

@@ -2315,7 +2315,7 @@ class BoardManager {
       return true;
     }
 
-    const actionBtn = target.closest('.card-delete-btn, .card-archive-btn, .card-unarchive-btn, .card-done-btn, .card-move-btn, .card-top-btn');
+    const actionBtn = target.closest('.card-delete-btn, .card-archive-btn, .card-unarchive-btn, .card-done-btn, .card-move-btn, .card-top-btn, .card-promote-btn');
     if (!actionBtn) {
       return false;
     }
@@ -2337,6 +2337,8 @@ class BoardManager {
       this.openMoveCardModal(cardId);
     } else if (actionBtn.classList.contains('card-top-btn')) {
       this.moveCardToTop(cardId);
+    } else if (actionBtn.classList.contains('card-promote-btn')) {
+      this.promoteCardFromAction(cardId);
     }
     return true;
   }
@@ -2481,6 +2483,7 @@ class BoardManager {
       '.card-done-btn',
       '.card-move-btn',
       '.card-top-btn',
+      '.card-promote-btn',
       '.card-expand-btn',
       '.card-checklist-checkbox',
       '.card-action-buttons',
@@ -3461,6 +3464,20 @@ class BoardManager {
   }
 
   /**
+   * Resolve once the header reports the database connected, or after
+   * timeoutMs, whichever comes first.
+   *
+   * @param {number} timeoutMs - Longest wait.
+   * @returns {Promise<void>}
+   */
+  async waitForDatabaseConnected(timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (window.header && !window.header.dbConnected && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  /**
    * Open the edit card modal for the `card` URL parameter, which the global
    * board links to (#663). Fails quietly if the card is missing, archived or
    * on another board, then drops the parameter so a reload doesn't reopen it.
@@ -3496,6 +3513,9 @@ class BoardManager {
       if (!onThisBoard || card.archived || card.scheduled) {
         return;
       }
+      // The modal won't open until the header's first database check passes,
+      // which can still be running straight after the page loads.
+      await this.waitForDatabaseConnected(5000);
       this.openEditCardModal(cardId, card);
     } catch (err) {
       console.warn('Could not open linked card:', err.message);
@@ -3576,6 +3596,47 @@ class BoardManager {
     if (!this.patchCard(patched, null, { [column.id]: column.card_counts })) {
       this.scheduleBoardReload();
     }
+  }
+
+  /**
+   * The Promote/Demote card action, hidden unless chosen in Card Actions.
+   * Promote matches the edit card modal: agile boards, open cards only.
+   * Demote shows on any promoted card, as it does after a switch to kanban.
+   */
+  renderPromoteButtonHtml(card, permissions) {
+    const promoted = Boolean(card.global_board_id);
+    const canPromote = this.workingStyle === 'agile' && !card.done && !card.scheduled;
+    if (this.isPublicMode || card.archived || this.currentView === 'scheduled' || !permissions.canMoveCard ||
+        (!promoted && !canPromote)) {
+      return '';
+    }
+    const label = promoted ? 'Demote from global board' : 'Promote to global board';
+    return `<button class="card-promote-btn" data-card-id="${card.id}" title="${label}" aria-label="${label}" aria-pressed="${promoted}" draggable="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"></circle>
+        <path d="M3 12h18"></path>
+        <path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18"></path>
+      </svg>
+    </button>`;
+  }
+
+  /**
+   * Promote or demote from the card action. Reuses the modal's toggle, which
+   * patches the card, so the button redraws in its new state.
+   */
+  async promoteCardFromAction(cardId) {
+    const card = this.columns
+      .flatMap((column) => column.cards || [])
+      .find((candidate) => candidate.id === cardId);
+    if (!card) {
+      return;
+    }
+    await this.loadEligibleGlobalBoards();
+    await this.toggleCardPromotion({
+      id: card.id,
+      global_board_id: card.global_board_id || null,
+      global_state: card.global_state || null
+    });
   }
 
   /**
@@ -5087,6 +5148,7 @@ class BoardManager {
           }
           ${!card.archived && permissions.canMoveCard ? '<button class="card-move-btn" data-card-id="' + card.id + '" title="Move card" draggable="false">↔</button>' : ''}
           ${!card.archived && permissions.canMoveCard ? '<button class="card-top-btn" data-card-id="' + card.id + '" title="Move to top" aria-label="Move to top" draggable="false">⤒</button>' : ''}
+          ${this.renderPromoteButtonHtml(card, permissions)}
           ${permissions.canDeleteCard ? '<button class="card-delete-btn" data-card-id="' + card.id + '" title="Delete card" draggable="false">×</button>' : ''}
         </div>
         <div class="card-content-wrapper" id="card-content-${card.id}">
@@ -5245,7 +5307,7 @@ class BoardManager {
 
     // Remove card move buttons if user cannot call card update endpoint.
     if (!canMoveCard) {
-      document.querySelectorAll('.card-move-btn, .card-top-btn').forEach(btn => btn.remove());
+      document.querySelectorAll('.card-move-btn, .card-top-btn, .card-promote-btn').forEach(btn => btn.remove());
     }
     
     console.log('Permission-based rendering complete');

@@ -217,6 +217,17 @@
   text-align: center;
 }
 
+.boards-dropdown-item.boards-dropdown-global {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.boards-dropdown-global svg {
+  flex: 0 0 auto;
+}
+
 .boards-dropdown-item {
   padding: 12px 20px;
   color: var(--header-menu-text-color);

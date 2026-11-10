@@ -3805,22 +3805,35 @@ class Header {
    * through setView. It sits just above Compact Cards, which stays last. The
    * server's show_in_menu leaves it out for people who only use kanban boards.
    */
-  async loadGlobalBoardNavigation() {
-    let data = null;
-    try {
-      const response = await fetch('/api/global-boards', { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) {
-        return;
-      }
-      data = await response.json();
-    } catch (error) {
-      // The entry is optional; leave it out if the request fails.
-      return;
+  /**
+   * The global board to link to, or null when there's none to show. One
+   * request serves the view menu and the Boards dropdown. show_in_menu leaves
+   * it out for people who only use kanban boards.
+   * @returns {Promise<{id: number, name: string}|null>}
+   */
+  getMenuGlobalBoard() {
+    if (!this.menuGlobalBoardPromise) {
+      this.menuGlobalBoardPromise = (async () => {
+        try {
+          const response = await fetch('/api/global-boards', { signal: AbortSignal.timeout(5000) });
+          if (!response.ok) {
+            return null;
+          }
+          const data = await response.json();
+          return data && data.success && data.show_in_menu && Array.isArray(data.global_boards)
+            ? (data.global_boards[0] || null)
+            : null;
+        } catch (error) {
+          // The links are optional; leave them out if the request fails.
+          return null;
+        }
+      })();
     }
+    return this.menuGlobalBoardPromise;
+  }
 
-    const globalBoard = data && data.success && data.show_in_menu && Array.isArray(data.global_boards)
-      ? data.global_boards[0]
-      : null;
+  async loadGlobalBoardNavigation() {
+    const globalBoard = await this.getMenuGlobalBoard();
     if (!globalBoard || document.getElementById('global-board-view-item')) {
       return;
     }
@@ -3863,6 +3876,33 @@ class Header {
     }
   }
 
+  // Pin the global board (#663) to the top of the Boards dropdown. The mobile
+  // drawer already links to it under All Boards.
+  async addGlobalBoardToBoardsDropdown(dropdown) {
+    const globalBoard = await this.getMenuGlobalBoard();
+    if (!globalBoard || !dropdown || dropdown.querySelector('#boards-dropdown-global-board')) {
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.id = 'boards-dropdown-global-board';
+    link.className = 'boards-dropdown-item boards-dropdown-global';
+    link.href = `/global-board.html?id=${encodeURIComponent(globalBoard.id)}`;
+    link.innerHTML = `
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="2" y1="12" x2="22" y2="12"></line>
+        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+      </svg>
+      <span></span>
+    `;
+    link.querySelector('span').textContent = globalBoard.name || 'Global';
+    if (document.body.classList.contains('global-board-page')) {
+      link.setAttribute('aria-current', 'page');
+    }
+    dropdown.prepend(link);
+  }
+
   // Load boards for dropdown menu
   async loadBoardsDropdown() {
     try {
@@ -3902,6 +3942,7 @@ class Header {
           mobileBoardsMenu.innerHTML = '<div class="mobile-menu-loading">No boards yet</div>';
         }
       }
+      await this.addGlobalBoardToBoardsDropdown(dropdown);
     } catch (error) {
       console.error('Error loading boards dropdown:', error);
       const dropdown = document.getElementById('boards-dropdown-menu');

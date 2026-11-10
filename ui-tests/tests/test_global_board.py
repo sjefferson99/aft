@@ -441,6 +441,23 @@ def test_deep_link_opens_card(logged_in_page, api_session, ui_base_url, global_b
 
 
 @pytest.mark.ui
+def test_deep_link_waits_for_database_check(logged_in_page, epic, stories):
+    """The modal refuses to open until the header's first database check passes."""
+    page = logged_in_page
+
+    def slow_health(route):
+        time.sleep(1.5)
+        route.continue_()
+
+    # The service worker makes the requests, so route on the context.
+    page.context.route("**/api/health/live", slow_health)
+    _open_epic(page, epic, f"&card={stories['first']}")
+    page.locator("#edit-card-modal").wait_for(state="visible", timeout=8000)
+    assert page.locator("#edit-card-title").input_value() == "First story"
+    assert page.locator(".error-toast").count() == 0
+
+
+@pytest.mark.ui
 @pytest.mark.parametrize("card_param", ["999999999", "abc", "-1", "1e3"])
 def test_deep_link_to_missing_card_fails_quietly(logged_in_page, epic, card_param):
     page = logged_in_page
@@ -621,3 +638,42 @@ def test_no_done_count_on_kanban_board(logged_in_page, api_session, ui_base_url,
     page.wait_for_function("() => window.boardManager?.hasLoadedBoardData", timeout=8000)
     page.wait_for_timeout(300)
     assert _done_count(page).is_hidden()
+
+
+# ---------------------------------------------------------------------------
+# Boards dropdown and boards page
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.ui
+def test_boards_dropdown_pins_global_board(logged_in_page, global_board, epic):
+    page = logged_in_page
+    _open_epic(page, epic)
+    link = page.locator("#boards-dropdown-global-board")
+    link.wait_for(state="attached", timeout=8000)
+
+    assert page.evaluate(
+        "document.querySelector('#boards-dropdown-menu').firstElementChild.id"
+    ) == "boards-dropdown-global-board"
+    assert link.inner_text().strip() == global_board["name"]
+    assert link.get_attribute("href") == f"/global-board.html?id={global_board['id']}"
+    assert page.locator('#boards-dropdown-menu a.boards-dropdown-item[href^="/board.html"]').count() > 0
+
+
+@pytest.mark.ui
+def test_boards_page_links_to_global_board(logged_in_page, global_board, epic):
+    page = logged_in_page
+    page.set_viewport_size(DESKTOP)
+    page.goto("/?show_boards=1")
+    card = page.locator("#boards-global-board-card")
+    card.wait_for(state="visible", timeout=8000)
+
+    assert page.evaluate("document.querySelector('#boards-list').firstElementChild.id") == (
+        "boards-global-board-card"
+    )
+    assert card.locator("h4").inner_text() == global_board["name"]
+    assert page.locator(".board-card").count() > 0
+
+    card.click()
+    page.wait_for_url("**/global-board.html?id=*", timeout=8000)
+    page.wait_for_function("() => window.globalBoardPage?.hasLoaded", timeout=8000)

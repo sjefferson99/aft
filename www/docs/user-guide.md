@@ -129,9 +129,11 @@ The setting is remembered for each board in this browser. It doesn't change what
 
 ## Card Actions
 
-Choose which buttons appear on board cards in **Card Actions** in your Profile preferences. Pick up to 3 of Done, Archive, Move, Move to top and Delete, separately for desktop and mobile. For example, on an Agile board you could show Done and hide Delete.
+Choose which buttons appear on board cards in **Card Actions** in your Profile preferences. Pick up to 3 of Done, Archive, Move, Move to top, Delete and Promote / Demote, separately for desktop and mobile. For example, on an Agile board you could show Done and hide Delete.
 
 **Move to top** sends a card to the top of its whole column, even when a search, filter or view is hiding other cards. You can filter a long column to find a card, move it up, and it will be first when you clear the filter. It's also on the Top button when you open a card, and on the <kbd>T</kbd> shortcut. After typing in the search box, click away from it first, or the T is typed into the search.
+
+**Promote / Demote** puts a card on the [Global Board](#global-board), or takes it off, with one tap. The globe button is filled in while the card is on the global board. It shows on open cards on Agile boards, and on promoted cards anywhere so you can still demote them. Like Move to top, it only shows if you choose it, including in touchscreen mode.
 
 Every action is still there when you open a card. Unarchive always shows on cards in the Archived View.
 
@@ -230,11 +232,18 @@ There is one global board for the whole instance. An administrator can rename it
 
 ### Opening the Global Board
 
-The global board is in the views dropdown on board pages, under its own name and just above Compact Cards. On a phone it's in the menu drawer. It appears once you have an Agile board or can see a promoted card, so it stays out of the way if you only use Kanban.
+The global board appears under its own name in several places:
+
+- At the top of the **Boards** dropdown in the header
+- First on the boards page, marked **Global board**
+- In the views dropdown on board pages, just above Compact Cards
+- In the menu drawer on a phone
+
+It appears once you have an Agile board or can see a promoted card, so it stays out of the way if you only use Kanban.
 
 ### Promoting and Demoting Cards
 
-Open a card on an Agile board. Its details include a **Global board** row with a **Promote** button. Promoting adds the card to the New column. Once a card is promoted, the row shows its state and the button changes to **Demote**, which takes the card off the global board. Demoting is the only way to remove a card, and it doesn't change the card on its own board.
+Open a card on an Agile board. Its details include a **Global board** row with a **Promote** button. Promoting adds the card to the New column. You can also add a Promote / Demote button to your cards, in [Card Actions](#card-actions). Once a card is promoted, the row shows its state and the button changes to **Demote**, which takes the card off the global board. Demoting is the only way to remove a card, and it doesn't change the card on its own board.
 
 - Promoted cards show their global state, such as **In Progress**, under the title on their own board, even with compact cards on
 - Done, archived and scheduled template cards can't be promoted, and nor can cards on Kanban boards

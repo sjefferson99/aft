@@ -53,7 +53,7 @@ The instance default theme applies to new users when their account is created an
 
 The [Global Board](user-guide.md#global-board) tab is for people with the `global_board.manage` permission. Administrators have it, and you can add it to a custom role in Role Management. That permission alone is enough to open Instance Settings, which then shows only this tab.
 
-- **Name**: shown in the views dropdown and as the global board's page title, up to 100 characters. Rename it to suit how your team works, for example "Sprint"
+- **Name**: shown in the Boards dropdown, on the boards page, in the views dropdown and as the global board's page title, up to 100 characters. Rename it to suit how your team works, for example "Sprint"
 - **Show done cards for**: how many days a done card stays on the global board, from 1 to 3650, or **None (always show)**. The default is 14. Hidden done cards stay promoted, and unticking done on one brings it back
 
 Changes reach open global board pages straight away. Who can see the global board and which cards they see doesn't depend on this permission. See [Who Sees What](user-guide.md#who-sees-what).
