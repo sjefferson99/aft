@@ -13,7 +13,8 @@ It is fully open source and is self hosted using a simple docker deployment appr
 ### Work the way you want
 
 - **[Kanban boards](www/docs/user-guide.md#working-style)** - Custom columns, with cards you drag between them to reflect your work
-- **[Agile boards](www/docs/user-guide.md#working-style)** - A board for each epic or group of tasks, with columns for features you tick off card by card, and done counts showing how far along each one is
+- **[Agile boards](www/docs/user-guide.md#working-style)** - A board for each epic or group of tasks, with columns for features you tick off card by card, and done counts showing how far along each feature and the whole board are
+- **[Global board](www/docs/user-guide.md#global-board)** - Promote the stories you're working on from any agile board onto one sprint-style board, with New, In Progress, Waiting and Done columns that stay in step with the original cards
 - **[Keyboard shortcuts](www/docs/user-guide.md#keyboard-shortcuts)** - Add, archive and reorder cards and add columns without leaving the keyboard
 - **[Compact cards](www/docs/user-guide.md#compact-cards)** and **[card actions](www/docs/user-guide.md#card-actions)** - Shrink a busy board to titles, and choose which buttons appear on your cards
 

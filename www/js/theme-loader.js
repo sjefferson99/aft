@@ -5,6 +5,12 @@
   // Instance Settings shows the admin pages in frames, which drop their own header
   if (window.self !== window.top && new URLSearchParams(window.location.search).has('embedded')) {
     document.documentElement.classList.add('embedded-page');
+    // The global board opens a card's edit modal in a frame of its board,
+    // which shows only the modal (#663).
+    if (window.location.pathname === '/board.html'
+        && new URLSearchParams(window.location.search).has('card')) {
+      document.documentElement.classList.add('card-modal-only');
+    }
   }
 
   const THEME_COLOR_STORAGE_KEY = 'aftThemeColor';

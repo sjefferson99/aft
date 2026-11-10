@@ -22,13 +22,22 @@ To use these shortcuts:
 - In the Scheduled View, **N** and **M** add a scheduled card. **A** does nothing there
 - Shortcuts don't work while typing in text fields, when a modal is open, or on boards you can't edit
 
+Two more keys move between pages:
+
+| Key | Goes to | Works on |
+|---|---|---|
+| <kbd>G</kbd> | The [Global Board](#global-board) | A board and the boards page |
+| <kbd>B</kbd> | The boards page | A board and the global board |
+
+These work on boards you can only view too, but not while typing or when a modal is open.
+
 ## Boards
 
 ![The boards list](../images/docs/boards.png)
 
 - **Create as many boards as you need**, and rename or delete them from the boards list
 - **Archive a board** to clear it from the list and keep its data. Switch between Active Boards and Archived Boards in the header view menu to find it and unarchive it
-- **Default board**: choose a board to open on startup in your [Preferences](#preferences)
+- **Default board**: choose a board, or the [Global Board](#global-board), to open on startup in your [Preferences](#preferences)
 - **Change the owner**: board owners and administrators can reassign ownership from the board menu
 - **Share a board**: boards are owned by one user and shared per board, with viewer or editor access
 
@@ -113,7 +122,7 @@ Select the filter icon in the search field to filter by assignee, include unassi
 
 ### Views
 
-Switch view from the views dropdown in the header: Task, Scheduled, Archived and Planner, plus the Done View on Agile boards.
+Switch view from the views dropdown in the header: Task, Scheduled, Archived and Planner, plus the Done View on Agile boards. The dropdown also links to the [Global Board](#global-board).
 
 ### Archiving Cards
 
@@ -129,9 +138,11 @@ The setting is remembered for each board in this browser. It doesn't change what
 
 ## Card Actions
 
-Choose which buttons appear on board cards in **Card Actions** in your Profile preferences. Pick up to 3 of Done, Archive, Move, Move to top and Delete, separately for desktop and mobile. For example, on an Agile board you could show Done and hide Delete.
+Choose which buttons appear on board cards in **Card Actions** in your Profile preferences. Pick up to 3 of Done, Archive, Move, Move to top, Delete and Promote / Demote, separately for desktop and mobile. For example, on an Agile board you could show Done and hide Delete.
 
 **Move to top** sends a card to the top of its whole column, even when a search, filter or view is hiding other cards. You can filter a long column to find a card, move it up, and it will be first when you clear the filter. It's also on the Top button when you open a card, and on the <kbd>T</kbd> shortcut. After typing in the search box, click away from it first, or the T is typed into the search.
+
+**Promote / Demote** puts a card on the [Global Board](#global-board), or takes it off, with one tap. The globe button is filled in while the card is on the global board. It shows on open cards on Agile boards, and on promoted cards anywhere so you can still demote them. Like Move to top, it only shows if you choose it, including in touchscreen mode.
 
 Every action is still there when you open a card. Unarchive always shows on cards in the Archived View.
 
@@ -218,13 +229,67 @@ In the Agile Task View, column headers show both counts in parentheses:
 
 The Done View shows only the done count.
 
+On a wide screen, wider than 1200 pixels, a count beside the board name in the header shows the same figures for the whole board, for example **12/30**. It counts done cards even when the view hides them, and leaves out archived cards and schedule templates.
+
+## Global Board
+
+The global board brings work from all your Agile boards into one place, like a sprint board. If each Agile board is an epic and its columns are features, each card is a story. Promote the stories you're working on now, and the global board shows them in four columns: **New**, **In Progress**, **Waiting** and **Done**.
+
+![The global board, with stories from two Agile boards](../images/docs/global_board.png)
+
+There is one global board for the whole instance. An administrator can rename it, for example to "Sprint", and choose how long done cards stay on it. See [Instance Settings](administration.md#instance-settings).
+
+### Opening the Global Board
+
+The global board appears under its own name in several places:
+
+- At the top of the **Boards** dropdown in the header
+- First on the boards page, marked **Global board**
+- In the views dropdown on board pages, just above Compact Cards
+- In the menu drawer on a phone
+
+It appears once you have an Agile board or can see a promoted card, so it stays out of the way if you only use Kanban.
+
+### Promoting and Demoting Cards
+
+Open a card on an Agile board. Its details include a **Global board** row with a **Promote** button. Promoting adds the card to the New column. You can also add a Promote / Demote button to your cards, in [Card Actions](#card-actions). Once a card is promoted, the row shows its state and the button changes to **Demote**, which takes the card off the global board. Demoting is the only way to remove a card, and it doesn't change the card on its own board.
+
+- Promoted cards show their global state, such as **In Progress**, under the title on their own board, even with compact cards on
+- Done, archived and scheduled template cards can't be promoted, and nor can cards on Kanban boards
+- A card can only be on one global board at a time
+
+### Working on the Global Board
+
+Each card shows its title, its assignee and where it came from, as `Board › Column`.
+
+- **Edit a card**: select the card to open it for editing over the global board, with everything you'd see on its own board. Close it to return to the global board where you left it
+- **Go to the card's board**: select the title to open the card on its own board, or select `Board › Column` to open the board without opening the card
+
+- **Move cards**: drag them between columns and up and down a column. On a phone, or in touchscreen mode, use the **Move to** control on each card instead
+- **Done**: moving a card into Done marks it done on its own board, and moving it out marks it not done. Ticking done on the card's own board moves it to Done too. When you untick it, it goes back to the column it was in before
+- **Done column**: the newest done cards are at the top, and the column can't be reordered by hand. Done cards stay on the board for the number of days your administrator chose, 14 by default, which shows beside the column name. Older done cards are hidden but stay promoted, so unticking one brings it back
+- **Filters**: filter by assignee, including unassigned cards, and by epic board. Your filters are remembered on this device
+- **Live updates**: changes made by others, on the global board or on the epic boards, appear without reloading
+
+### Who Sees What
+
+You only see promoted cards from boards you can open, so two people can see different cards on the same global board. You can move cards on boards you can edit, and other cards are read only. The global board is never shown on public boards.
+
+### What Happens to Promoted Cards
+
+- **Archived** cards, and cards on an archived board, are hidden from the global board. They come back in the same state when unarchived
+- **Deleted** cards, columns and boards are removed from the global board
+- **Moving a card to another board** keeps it promoted
+- **Switching a board to Kanban** keeps its cards promoted, but no new cards can be promoted from it
+- **Exporting, importing and copying** a board doesn't carry the global board state
+
 ## Preferences
 
 Your own settings are on your **Profile** page, under **Preferences**.
 
 ![Profile preferences](../images/docs/preferences.png)
 
-- **Default Board**: the board to open on startup
+- **Default Board**: the board to open on startup. The global board is in the list too, if you can see it
 - **Time Format**: 12-hour or 24-hour
 - **Timezone**: used to show times across the app
 - **Theme**: your colour theme

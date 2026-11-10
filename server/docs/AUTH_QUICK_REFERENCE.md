@@ -156,6 +156,7 @@ After migration:
 - `system.admin` - Full system administration
 - `user.manage` - Manage users
 - `role.manage` - Manage roles
+- `global_board.manage` - Rename global boards and set how long done cards show
 
 ### Boards
 - `board.create` - Create boards

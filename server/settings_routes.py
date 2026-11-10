@@ -12,7 +12,9 @@ from utils import (
     require_board_access,
     create_error_response,
 )
+from global_board_utils import get_accessible_global_board
 from settings_schema import (
+    parse_default_global_board,
     SETTINGS_SCHEMA,
     WORKING_STYLE_ALLOWED_VALUES,
     get_board_working_style,
@@ -145,8 +147,12 @@ def get_setting(key):
 
         # Special validation for default_board
         if key == "default_board" and value is not None:
-            # Check if board exists AND is still accessible to this user
-            board = get_user_scoped_query(db, Board, user_id).filter(Board.id == value).first()
+            # Check the board, or global board (#663), exists AND is still accessible
+            global_board_id = parse_default_global_board(value)
+            if global_board_id is not None:
+                board = get_accessible_global_board(db, user_id, global_board_id)
+            else:
+                board = get_user_scoped_query(db, Board, user_id).filter(Board.id == value).first()
             if not board:
                 # Board doesn't exist or is no longer accessible — auto-correct to null
                 logger.warning(f"Default board {value} not found or inaccessible for user {user_id}, resetting to null")
@@ -245,8 +251,22 @@ def set_setting(key):
 
         user_id = g.user.id
         
-        # Additional validation for default_board: verify board exists and user owns it
-        if key == "default_board" and data["value"] is not None:
+        # Additional validation for default_board: verify the board, or the
+        # global board, exists and the user can see it
+        global_board_id = (
+            parse_default_global_board(data["value"]) if key == "default_board" else None
+        )
+        if global_board_id is not None:
+            db_check = SessionLocal()
+            try:
+                if get_accessible_global_board(db_check, user_id, global_board_id) is None:
+                    return jsonify({
+                        "success": False,
+                        "message": "Global board does not exist or you don't have access",
+                    }), 400
+            finally:
+                db_check.close()
+        elif key == "default_board" and data["value"] is not None:
             db_check = SessionLocal()
             try:
                 board_exists = (

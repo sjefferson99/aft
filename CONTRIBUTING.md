@@ -427,6 +427,7 @@ Use consistent tags so related endpoints are grouped together in the UI:
 | `Backups` | Backup management |
 | `Schedules` | Scheduled card management |
 | `Planner` | Year/month planner view endpoints |
+| `Global Boards` | Global boards and promoted cards |
 
 ### Security Declaration
 

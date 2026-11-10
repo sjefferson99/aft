@@ -44,7 +44,7 @@ All existing tables have been updated for multi-tenancy:
 
 Permissions are granular strings in the format `resource.action`:
 
-- **System**: `system.admin`, `user.manage`, `role.manage`
+- **System**: `system.admin`, `user.manage`, `role.manage`, `global_board.manage`
 - **Boards**: `board.create`, `board.view`, `board.edit`, `board.delete`
 - **Cards**: `card.create`, `card.view`, `card.edit`, `card.delete`, `card.archive`
 - **Schedules**: `schedule.create`, `schedule.edit`, `schedule.delete`
