@@ -105,20 +105,42 @@ body.global-board-page .canvas {
   color: var(--text-secondary);
 }
 
+/* Matches the app's other selects (.form-group select, .setting-select):
+   theme colours, a darker border on hover and the primary focus ring. */
 .gb-epic-filter select,
 .gb-card-move {
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--page-panel-background);
-  color: var(--text-bold);
+  border-radius: 5px;
+  background-color: var(--card-bg-color);
+  color: var(--text-color);
   font: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.gb-epic-filter select:hover,
+.gb-card-move:hover {
+  border-color: var(--text-muted);
+}
+
+.gb-epic-filter select:focus,
+.gb-card-move:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
+}
+
+.gb-epic-filter label {
+  font-weight: 500;
 }
 
 .gb-epic-filter select {
+  box-sizing: border-box;
   height: 34px;
+  min-width: 160px;
   max-width: 240px;
-  padding: 0 8px;
-  font-size: 13px;
+  padding: 0 10px;
+  font-size: 14px;
 }
 
 .gb-clear-filters {
