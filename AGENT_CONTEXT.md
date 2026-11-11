@@ -148,7 +148,7 @@ Non-obvious behaviour that is easy to break:
 2. Create a local branch from `origin/main` and merge each dependabot branch into it.
    - Dependabot pins in `server/requirements.txt` sit on adjacent lines, so expect content conflicts.
    - Resolve each conflict by keeping every bumped version.
-   - Dependabot watches pip in `/server` and `/ui-tests` together, Dockerfiles in `/server`, compose images and GitHub Actions. A MySQL bump in the compose files upgrades the data directory, so label it `upgrade-note`. The vendored `marked` and DOMPurify in `www/js` aren't covered, so check them by hand now and then.
+   - Dependabot watches pip in `/server` and `/ui-tests` together, Dockerfiles in `/server`, compose images and GitHub Actions. A MySQL bump in the compose files upgrades the data directory, so label it `upgrade-note`. MySQL stays on the LTS line (9.7), and `dependabot.yml` ignores the 26.x Innovation releases (#609). The vendored `marked` and DOMPurify in `www/js` aren't covered, so check them by hand now and then.
 3. Install into the venv: `.venv\Scripts\python.exe -m pip install -r server/requirements.txt -r server/requirements-dev.txt -r ui-tests/requirements-dev.txt`.
 4. Reset to a clean DB and rebuild (see the commands table), then wait for `http://localhost` to return 200.
 5. Run the UI tests first, because they need the fresh DB. Then run the backend tests, one after the other.

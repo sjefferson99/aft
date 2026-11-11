@@ -38,9 +38,10 @@ updates:
       - "dependencies"
       - "docker"
 
-  # Images pinned in compose.yml and compose.example.yml (MySQL). Floating
-  # tags such as redis:7-alpine are left alone. A MySQL bump upgrades the
-  # data directory, so treat it as an upgrade-note PR.
+  # MySQL and Redis images in compose.yml and compose.example.yml. A MySQL
+  # bump upgrades the data directory, so treat it as an upgrade-note PR.
+  # MySQL stays on the 9.7 LTS line (#609): the year-numbered releases
+  # (26.x) are Innovation releases that need a one-way upgrade every quarter.
   - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
@@ -51,6 +52,9 @@ updates:
     labels:
       - "dependencies"
       - "docker"
+    ignore:
+      - dependency-name: "mysql"
+        versions: [">= 9.8"]
 
   # Actions used in .github/workflows
   - package-ecosystem: "github-actions"
