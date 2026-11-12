@@ -1,4 +1,4 @@
-# Use Python 3.11 slim image as base
+# Python 3.14 slim base image
 FROM python:3.14-slim
 
 # Set working directory

@@ -23,6 +23,12 @@ Then recreate the services so env changes take effect:
 docker compose up -d --force-recreate
 ```
 
+### MySQL and Redis versions
+
+The `db` and `redis` images are pinned to exact versions in `compose.example.yml`, so they only change when you copy a new version into your `compose.yml`. AFT follows the MySQL LTS line (currently 9.7) rather than the quarterly Innovation releases.
+
+A newer MySQL upgrades the data directory in place the first time it starts, and an older version can't open it again. Before changing the `db` image, take a backup from **Backups** and keep a copy outside the server. Then pull and recreate as above, and check the `db` logs (`docker compose logs db`) show it ready for connections before you sign in. To go back, restore the old image with an empty data directory and then restore your backup.
+
 Available images, both published for `linux/amd64` and `linux/arm64`, so the same compose file works on a Raspberry Pi:
 
 - `ghcr.io/sjefferson99/aft:latest`: API server only
