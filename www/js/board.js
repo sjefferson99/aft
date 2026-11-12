@@ -5,6 +5,16 @@ const COLUMN_AUTO_SCROLL_HOVER_DELAY_MS = 500;
 const COLUMN_AUTO_SCROLL_BASE_STEP_PX = 6;
 const COLUMN_AUTO_SCROLL_MAX_EXTRA_STEP_PX = 12;
 const COLUMN_AUTO_SCROLL_MIN_STEP_PX = 4;
+// Sideways board scroll while dragging a card near the left/right edge (#684).
+// Columns are wide, so it steps faster than the in-column scroll.
+const BOARD_AUTO_SCROLL_EDGE_THRESHOLD_PX = 48;
+const BOARD_AUTO_SCROLL_BASE_STEP_PX = 8;
+const BOARD_AUTO_SCROLL_MAX_EXTRA_STEP_PX = 16;
+const BOARD_AUTO_SCROLL_NATIVE_STALE_MS = 1000;
+// Steps are tuned for a board this wide and scale down with narrower ones, so
+// a phone scrolls about the same share of the screen per second as a desktop.
+const BOARD_AUTO_SCROLL_REFERENCE_WIDTH_PX = 1200;
+const BOARD_AUTO_SCROLL_MIN_SPEED_SCALE = 0.25;
 const MOBILE_BOARD_TOUCH_SCROLL_BREAKPOINT_PX = 900;
 const MOBILE_BOARD_TOUCH_SCROLL_LOCK_THRESHOLD_PX = 8;
 const MOBILE_CARD_LONG_PRESS_DELAY_MS = 500;
@@ -1299,6 +1309,7 @@ class BoardManager {
     this.autoScrollPointerY = 0;
     this.autoScrollPendingContainer = null;
     this.autoScrollPendingDirection = 0;
+    this.boardAutoScroll = null;
     this.boardTouchScrollState = null;
     this.boardTouchScrollingSetup = false;
     this.mobileCardLongPressArmedCardId = null;
@@ -2516,6 +2527,7 @@ class BoardManager {
       state.touchDragState.cardElement.classList.remove('mobile-drag-armed');
       state.touchDragState.cardElement.classList.remove('mobile-touch-drag-source');
       this.stopColumnAutoScroll();
+      this.stopBoardAutoScroll();
     }
 
     if (state.touchDragState?.moveRafId) {
@@ -2689,6 +2701,8 @@ class BoardManager {
 
       if (!touchDragState.active || !draggedCard.isConnected) return;
 
+      this.updateBoardAutoScrollDuringDrag(draggedCard, clientX, clientY);
+
       const columnContainer = this.resolveColumnCardsContainerFromPoint(clientX, clientY);
       if (!columnContainer) {
         this.stopColumnAutoScroll();
@@ -2715,6 +2729,7 @@ class BoardManager {
       touchDragState.ghostElement.remove();
     }
     this.stopColumnAutoScroll();
+    this.stopBoardAutoScroll();
     if (touchDragState.moveRafId) {
       cancelAnimationFrame(touchDragState.moveRafId);
       touchDragState.moveRafId = null;
@@ -4241,6 +4256,7 @@ class BoardManager {
     }
 
     this.stopColumnAutoScroll();
+    this.stopBoardAutoScroll();
     this.captureColumnScrollPositions();
     this.captureBoardHorizontalScrollPosition();
     this.captureExpandedCardState();
@@ -4732,6 +4748,7 @@ class BoardManager {
     }
 
     this.stopColumnAutoScroll();
+    this.stopBoardAutoScroll();
 
     this.persistColumnScrollPositions();
     this.persistBoardHorizontalScrollPosition();
@@ -4938,6 +4955,7 @@ class BoardManager {
 
   renderBoard() {
     this.stopColumnAutoScroll();
+    this.stopBoardAutoScroll();
     // Rebuilding the DOM invalidates any cached drag-midpoint rects and
     // detaches the containers they're keyed on — clear them regardless of
     // whether a drag is in progress (e.g. a concurrent edit from another
@@ -5506,6 +5524,146 @@ class BoardManager {
     this.scheduleColumnAutoScroll(container, direction, clientY);
   }
 
+  // Sideways board auto-scroll while a card is dragged near the left or right
+  // edge of the columns (#684). Kept separate from the in-column scroll so the
+  // two can run together, and so placeDraggedCard() stopping the vertical
+  // scroll doesn't stop this one.
+  stopBoardAutoScroll() {
+    const state = this.boardAutoScroll;
+    if (!state) {
+      return;
+    }
+
+    if (state.hoverTimeoutId) {
+      clearTimeout(state.hoverTimeoutId);
+    }
+    if (state.rafId) {
+      cancelAnimationFrame(state.rafId);
+    }
+    state.scroller.classList.remove('board-auto-scrolling');
+    this.boardAutoScroll = null;
+  }
+
+  getBoardAutoScrollDirection(scroller, clientX, clientY) {
+    const rect = scroller.getBoundingClientRect();
+    if (clientY < rect.top || clientY > rect.bottom) {
+      return 0;
+    }
+
+    // The scroller can extend past the visible area, so measure from the
+    // edges the user can actually see.
+    const left = Math.max(rect.left, 0);
+    const right = Math.min(rect.right, document.documentElement.clientWidth);
+    const threshold = BOARD_AUTO_SCROLL_EDGE_THRESHOLD_PX;
+
+    if (clientX - left <= threshold && scroller.scrollLeft > 0) {
+      return -1;
+    }
+    if (right - clientX <= threshold && scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1) {
+      return 1;
+    }
+    return 0;
+  }
+
+  updateBoardAutoScrollDuringDrag(draggedCard, clientX, clientY, { native = false } = {}) {
+    const scroller = this.container?.querySelector('.columns-container');
+    const direction = scroller && draggedCard?.isConnected
+      ? this.getBoardAutoScrollDirection(scroller, clientX, clientY)
+      : 0;
+
+    if (direction === 0) {
+      this.stopBoardAutoScroll();
+      return;
+    }
+
+    const state = this.boardAutoScroll;
+    if (state && state.scroller === scroller && state.direction === direction) {
+      state.pointerX = clientX;
+      state.pointerY = clientY;
+      state.draggedCard = draggedCard;
+      state.lastUpdate = performance.now();
+      return;
+    }
+
+    this.stopBoardAutoScroll();
+    const newState = {
+      scroller,
+      direction,
+      pointerX: clientX,
+      pointerY: clientY,
+      draggedCard,
+      native,
+      lastUpdate: performance.now(),
+      hoverTimeoutId: null,
+      rafId: null
+    };
+    this.boardAutoScroll = newState;
+
+    // Same hover delay as the in-column scroll, so a drop into the edge
+    // column doesn't slide the board away first.
+    newState.hoverTimeoutId = setTimeout(() => {
+      newState.hoverTimeoutId = null;
+      if (this.boardAutoScroll !== newState) {
+        return;
+      }
+      // Scroll snapping would pull small programmatic steps back.
+      scroller.classList.add('board-auto-scrolling');
+      this.runBoardAutoScroll();
+    }, COLUMN_AUTO_SCROLL_HOVER_DELAY_MS);
+  }
+
+  runBoardAutoScroll() {
+    const state = this.boardAutoScroll;
+    if (!state) {
+      return;
+    }
+    state.rafId = null;
+
+    const { scroller, draggedCard } = state;
+    // Browsers repeat dragover every few hundred ms while a native drag sits
+    // still, so silence means it left the board. Touch sends nothing while
+    // the finger is still, and touchend stops it instead.
+    const nativeDragWentQuiet = state.native &&
+      performance.now() - state.lastUpdate > BOARD_AUTO_SCROLL_NATIVE_STALE_MS;
+    if (!scroller.isConnected || !draggedCard.isConnected || nativeDragWentQuiet) {
+      this.stopBoardAutoScroll();
+      return;
+    }
+
+    const rect = scroller.getBoundingClientRect();
+    const threshold = BOARD_AUTO_SCROLL_EDGE_THRESHOLD_PX;
+    const distanceToEdge = state.direction < 0
+      ? Math.max(0, state.pointerX - Math.max(rect.left, 0))
+      : Math.max(0, Math.min(rect.right, document.documentElement.clientWidth) - state.pointerX);
+    const edgeProximity = Math.max(0, Math.min(1, (threshold - distanceToEdge) / threshold));
+    const speedScale = Math.max(
+      BOARD_AUTO_SCROLL_MIN_SPEED_SCALE,
+      Math.min(1, scroller.clientWidth / BOARD_AUTO_SCROLL_REFERENCE_WIDTH_PX)
+    );
+    const scrollStep = Math.max(1, Math.round(
+      (BOARD_AUTO_SCROLL_BASE_STEP_PX + edgeProximity * BOARD_AUTO_SCROLL_MAX_EXTRA_STEP_PX) * speedScale
+    ));
+
+    const previousScrollLeft = scroller.scrollLeft;
+    scroller.scrollLeft += state.direction * scrollStep;
+    if (scroller.scrollLeft === previousScrollLeft) {
+      this.stopBoardAutoScroll();
+      return;
+    }
+
+    // Columns have moved under a pointer that may be standing still, and
+    // touch sends no events then, so place the card in whatever column is
+    // under it now. Card midpoints are vertical, so the caches stay valid.
+    const columnContainer = this.resolveColumnCardsContainerFromPoint(state.pointerX, state.pointerY);
+    if (columnContainer) {
+      this.placeDraggedCard(columnContainer, draggedCard, state.pointerY);
+    }
+
+    if (this.boardAutoScroll === state) {
+      state.rafId = requestAnimationFrame(() => this.runBoardAutoScroll());
+    }
+  }
+
   // Native (desktop) card drag-and-drop, delegated from this.container so
   // re-renders don't need to re-wire per-card listeners. Drag state lives on
   // the instance rather than in a per-render closure.
@@ -5585,6 +5743,7 @@ class BoardManager {
     this.nativeDragCard = null;
     this.nativeDragOriginalPosition = null; // Clear stored position
     this.stopColumnAutoScroll();
+    this.stopBoardAutoScroll();
     this.clearDragMidpointCaches();
     if (this.nativeDragoverRafId) {
       cancelAnimationFrame(this.nativeDragoverRafId);
@@ -5600,6 +5759,12 @@ class BoardManager {
   }
 
   handleBoardDragOver(e) {
+    // Checked before the column lookup: the pointer may be over a column
+    // header or the gap between columns at the board's edge.
+    if (this.nativeDragCard && this.canEdit) {
+      this.updateBoardAutoScrollDuringDrag(this.nativeDragCard, e.clientX, e.clientY, { native: true });
+    }
+
     const columnContainer = this.getDragColumnContainer(e);
     if (!columnContainer) return;
 
@@ -5626,7 +5791,8 @@ class BoardManager {
 
     e.preventDefault();
     this.stopColumnAutoScroll();
-    
+    this.stopBoardAutoScroll();
+
     const draggedCard = this.nativeDragCard;
     const originalPosition = this.nativeDragOriginalPosition;
 
@@ -5682,6 +5848,13 @@ class BoardManager {
   }
 
   handleBoardDragLeave(e) {
+    // Dragged off the board. Some browsers give no relatedTarget, and leaving
+    // the window gives none, so runBoardAutoScroll() also stops once dragover
+    // goes quiet.
+    if (e.relatedTarget instanceof Node && !this.container.contains(e.relatedTarget)) {
+      this.stopBoardAutoScroll();
+    }
+
     const columnContainer = this.getDragColumnContainer(e);
     if (columnContainer && !columnContainer.contains(e.relatedTarget)) {
       this.stopColumnAutoScroll();

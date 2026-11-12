@@ -100,7 +100,7 @@ Select a card to open it. Changes save as you leave each field, and a small "Sav
 
 - **Enter** saves and closes the card, **Shift+Enter** adds a new line, and **Escape** reverts the field you're editing, then closes the card. On touchscreens, Enter adds a new line in descriptions and comments
 - **New cards** can start with dates, a duration, assignees, a checklist and a schedule, using the same keyboard rules as editing
-- **Move a card** by dragging it to another column or position
+- **Move a card** by dragging it to another column or position. On a phone, press and hold the card first. Hold a dragged card near the top or bottom of a column to scroll the column, or near the left or right edge of the board to scroll to columns off screen
 - **Assignees**: set a primary assignee and optional secondary assignees from the users with access to the board. Cards show the primary assignee's initials in their profile colour
 - **Dates and times** use a picker with minutes in steps of 5. To enter an exact minute, type it into the field
 - **Timestamps**: cards show when they were last updated, and the edit modal shows created and updated times. Checklist items show theirs in a tooltip. Reordering doesn't change a card's timestamp, and adding or editing a comment or checklist item does

@@ -2333,6 +2333,12 @@ button.readonly-disabled,
   scroll-snap-align: start;
 }
 
+/* Snapping would pull the small steps of a card drag's sideways auto-scroll
+   back to the nearest column (#684). */
+.columns-container.board-auto-scrolling {
+  scroll-snap-type: none;
+}
+
 @media (max-width: 900px) {
   .board-page .canvas {
     padding: 10px 8px 2px;
