@@ -274,8 +274,20 @@
   flex-direction: column;
   min-height: 0;
   max-height: 100%;
-  transition: opacity 0.2s;
+  transition: opacity 0.2s, box-shadow 0.15s, background-color 0.15s;
   position: relative;
+}
+
+/* #414: a subtle outline on the column under the mouse, where the N and M
+   shortcuts add a card, and a clearer one on the column a dragged card will
+   drop into. Inset, because the board's scroller clips outside shadows. */
+.column.column-hovered {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-color) 45%, transparent);
+}
+
+.column.column-drop-target {
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--background-light));
+  box-shadow: inset 0 0 0 2px var(--primary-color);
 }
 
 /* Sits in the gap to the right of a column. Absolutely positioned so it adds
@@ -650,6 +662,28 @@
   padding: 10px;
   font-size: 14px;
   margin-top: 0;
+}
+
+/* Adds a column after this one, so a wide board doesn't need scrolling to
+   its end. Kept quieter than Add Card, which sits just above it. */
+.column-add-column-btn {
+  flex: 0 0 auto;
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border: 1px dashed var(--primary-color);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--primary-color);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.column-add-column-btn:hover,
+.column-add-column-btn:focus-visible {
+  background: var(--primary-color);
+  color: white;
 }
 
 /* Card Styles */
@@ -3162,4 +3196,95 @@ html.card-modal-only body {
 html.card-modal-only .canvas,
 html.card-modal-only #view-planner-btn {
   display: none !important;
+}
+
+/* Sections layout (#297): columns become sections, only as tall as their
+   cards, stacked in lanes that board.js fills. The board scrolls up and down,
+   and sideways when the lanes don't fit. Lane width and gap are
+   SECTION_LANE_WIDTH_PX and SECTION_LANE_GAP_PX in board.js, so change them
+   together. */
+.columns-container.sections-layout {
+  gap: 20px;
+  overflow-x: auto;
+  overflow-y: auto;
+  align-items: flex-start;
+  justify-content: safe center;
+  scroll-snap-type: none;
+}
+
+.section-lane {
+  flex: 0 0 300px;
+  width: 300px;
+  min-width: 0;
+  /* Fill the board's height, so the space under a lane's last section is
+     somewhere to drop. */
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.columns-container.sections-layout .column {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  align-self: stretch;
+}
+
+.columns-container.sections-layout .column-cards {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-bottom: 0;
+}
+
+/* Each lane ends with its own Add Column, so the lane gap spaces it. */
+.columns-container.sections-layout .section-lane-add-column-btn {
+  margin-top: 0;
+  padding: 10px;
+}
+
+.columns-container.sections-layout .column-header[draggable="true"] {
+  cursor: grab;
+}
+
+.columns-container.sections-layout .column-header[draggable="true"] button {
+  cursor: pointer;
+}
+
+.columns-container.sections-layout .column.section-dragging {
+  opacity: 0.4;
+  outline: 2px dashed var(--primary-color);
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  .columns-container.sections-layout {
+    gap: 12px;
+  }
+
+  /* Lanes keep the desktop arrangement at the mobile column width, so part
+     of the next lane shows and the board scrolls both ways. */
+  .columns-container.sections-layout .section-lane {
+    flex: 0 0 var(--mobile-column-width);
+    width: var(--mobile-column-width);
+    gap: 12px;
+  }
+
+  .columns-container.sections-layout .column {
+    flex: 0 0 auto;
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    max-height: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .columns-container.sections-layout .section-lane {
+    flex-basis: var(--mobile-column-width-tight);
+    width: var(--mobile-column-width-tight);
+  }
 }

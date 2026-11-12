@@ -87,9 +87,13 @@ class BoardColumn(Base):
     board_id = Column(Integer, ForeignKey('boards.id', ondelete='CASCADE'), nullable=False, index=True)
     name = Column(String(255), nullable=False)
     order = Column(Integer, nullable=False, default=0)
+    # Position in the sections layout (#297), separate from order. Null until
+    # the layout is arranged; null sections are placed automatically.
+    section_lane = Column(Integer, nullable=True)
+    section_order = Column(Integer, nullable=True)
     created_at = Column(DateTime, server_default=func.current_timestamp(), nullable=True)
     updated_at = Column(DateTime, nullable=True)
-    
+
     # Relationship to board
     board = relationship("Board", back_populates="columns")
     

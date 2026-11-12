@@ -505,6 +505,8 @@ def get_permissions_mapping():
             'GET /api/boards/:id/cards': {'permission': 'card.view', 'description': 'View board cards'},
             'GET /api/boards/:id/settings/working-style': {'permission': 'board.view', 'description': 'View board working style'},
             'PUT /api/boards/:id/settings/working-style': {'permission': 'board.edit', 'description': 'Update board working style'},
+            'PUT /api/boards/:id/settings/layout': {'permission': 'board.edit', 'description': 'Switch board between columns and sections'},
+            'PUT /api/boards/:id/section-layout': {'permission': 'column.update', 'description': 'Arrange sections on a board'},
             'GET /api/boards/:id/columns': {'permission': 'board.view', 'description': 'View board columns'},
             'POST /api/boards/:id/columns': {'permission': 'column.create', 'description': 'Create column'},
             'DELETE /api/columns/:id': {'permission': 'column.delete', 'description': 'Delete column'},

@@ -33,6 +33,7 @@ from database import SessionLocal
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
 from global_board_utils import apply_card_done, remove_ineligible_promotions
 from models import Board, BoardColumn, Card, CardSecondaryAssignee, User
+from section_layout import get_board_layout, section_layout_fields
 from utils import (
     MAX_DESCRIPTION_LENGTH,
     MAX_TITLE_LENGTH,
@@ -434,6 +435,7 @@ def get_board_cards(board_id):
           "is_public": bool(board.is_public),
           "public_slug": board.public_slug,
           "archived": bool(board.archived),
+          "layout": get_board_layout(db, board_id),
           "columns": [],
         }
         result.update(_build_board_owner_metadata(board, g.user.id, db, include_candidates=include_owner_candidates))
@@ -500,6 +502,7 @@ def get_board_cards(board_id):
                 "id": column.id,
                 "name": column.name,
                 "order": column.order,
+                **section_layout_fields(column),
                 "created_at": serialize_datetime(column.created_at),
                 "updated_at": serialize_datetime(column.updated_at),
                 "cards": cards_data,

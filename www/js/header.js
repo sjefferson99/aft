@@ -402,6 +402,9 @@ class Header {
     // Initialize board style toggle in settings menu
     this.initializeBoardStyleToggleMenu();
 
+    // Initialize board layout (columns or sections) toggle in settings menu
+    this.initializeBoardLayoutToggleMenu();
+
     // Initialize compact cards toggle in settings menu
     this.initializeCompactCardsToggleMenu();
 
@@ -1544,6 +1547,99 @@ class Header {
         menuItem.dataset.boundStyleToggleHandler = 'true';
       }
     });
+  }
+
+  getBoardLayoutMenuItems() {
+    return [
+      document.getElementById('toggle-board-layout-menu-item'),
+      document.getElementById('mobile-toggle-board-layout-menu-item')
+    ].filter(Boolean);
+  }
+
+  /**
+   * Layout (#297) is a board-wide setting, changed by the same people as
+   * Board style. board.js owns the value: it reports each loaded layout with
+   * boardLayoutLoaded, and applies a saved change on boardLayoutSet.
+   */
+  initializeBoardLayoutToggleMenu() {
+    const menuItems = this.getBoardLayoutMenuItems();
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    const editable = Boolean(this.currentBoardId && this.boardStyleEditable);
+    menuItems.forEach((menuItem) => {
+      menuItem.style.display = editable ? '' : 'none';
+    });
+    if (!editable) {
+      return;
+    }
+
+    menuItems.forEach((menuItem) => {
+      if (!menuItem.dataset.boundLayoutToggleHandler) {
+        menuItem.addEventListener('click', async (e) => {
+          const option = e.target.closest('button[data-value]');
+          if (!option) {
+            return;
+          }
+          await this.setBoardLayout(option.dataset.value);
+          closeAllMenusExcept(null);
+          updateMenuHoverState();
+        });
+        menuItem.dataset.boundLayoutToggleHandler = 'true';
+      }
+    });
+
+    if (!this.boardLayoutListenerBound) {
+      window.addEventListener('boardLayoutLoaded', (e) => {
+        this.boardLayout = e.detail?.layout === 'sections' ? 'sections' : 'columns';
+        this.syncBoardLayoutToggles();
+      });
+      this.boardLayoutListenerBound = true;
+    }
+    // The board can load before the header.
+    if (window.boardManager?.hasLoadedBoardData) {
+      this.boardLayout = window.boardManager.boardLayout;
+    }
+    this.syncBoardLayoutToggles();
+  }
+
+  syncBoardLayoutToggles() {
+    const value = this.boardLayout === 'sections' ? 'sections' : 'columns';
+    this.getBoardLayoutMenuItems().forEach((menuItem) => {
+      this.setBoardMenuToggleValue(menuItem, value);
+    });
+  }
+
+  async setBoardLayout(nextLayout) {
+    const current = this.boardLayout === 'sections' ? 'sections' : 'columns';
+    if (!this.currentBoardId || !this.boardStyleEditable || nextLayout === current) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/boards/${this.currentBoardId}/settings/layout`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ value: nextLayout })
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `HTTP error ${response.status}`);
+      }
+
+      this.boardLayout = data.value;
+      this.syncBoardLayoutToggles();
+      window.dispatchEvent(new CustomEvent('boardLayoutSet', {
+        detail: { layout: data.value }
+      }));
+    } catch (error) {
+      console.error('Error changing board layout:', error);
+      this.showBoardPageToast('Failed to change the board layout.');
+    }
   }
 
   getPublicBoardShareUrl(slug) {

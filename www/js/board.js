@@ -41,6 +41,13 @@ const GLOBAL_STATE_LABELS = Object.freeze({
 });
 const BOARD_SEARCH_TOOLTIP_FALLBACK_TEXT = 'Search cards using spaces (AND), commas (OR), and quoted phrases for exact matches.';
 const BOARD_RELOAD_DEBOUNCE_MS = 150;
+// Sections layout (#297): keep the lane width and gap in step with
+// .section-lane in board.css.
+const SECTION_LANE_WIDTH_PX = 300;
+const SECTION_LANE_GAP_PX = 20;
+// Pointing within this distance of a section's top places a dragged section
+// above it rather than below.
+const SECTION_DROP_ABOVE_PX = 32;
 
 /**
  * Calculate the percentage of checked items in a checklist
@@ -961,6 +968,10 @@ class WebSocketManager {
     this.socket.on('column_reordered', (data) => {
       this.handleColumnReordered(data);
     });
+    this.socket.on('board_layout_changed', () => {
+      // Another client switched between columns and sections (#297).
+      this.boardManager.scheduleBoardReload();
+    });
     this.socket.on('column_created', (data) => {
       this.handleColumnCreated(data);
     });
@@ -1264,6 +1275,17 @@ class BoardManager {
     this.currentView = 'task'; // Track current view: 'task', 'scheduled', or 'archived'
     this._pendingPlannerRender = null; // What to render once the 'viewChanged' switch to planner lands
     this.workingStyle = 'kanban'; // Track working style: 'kanban' or 'agile'
+    this.boardLayout = 'columns'; // 'columns' or 'sections' (#297)
+    this.sectionLaneCount = 0; // Lanes currently shown in the sections layout
+    this.sectionDrag = null; // State of a section being dragged by its header
+    this.sectionDragoverRafId = null;
+    this.boardSectionsScrollTop = 0; // Kept across re-renders in the sections layout
+    this.boardSectionsScrollLeft = 0;
+    this.sectionSpreadLanes = 0;
+    this.sectionLayoutObserver = null;
+    this.sectionLayoutRafId = null;
+    this.boardLayoutSetHandler = this.handleBoardLayoutSet.bind(this);
+    this.sectionDragEndHandler = this.handleSectionDragEnd.bind(this);
     this.canEdit = true; // Track if user has edit permissions for this board
     this.keyboardHandler = this.handleKeydown.bind(this);
     this.mouseMoveHandler = this.handleMouseMove.bind(this);
@@ -1290,6 +1312,10 @@ class BoardManager {
     this.nativeDragCard = null;
     this.nativeDragOriginalPosition = null;
     this.nativeDragoverRafId = null;
+    this.dropTargetColumn = null; // Column highlighted under a dragged card (#414)
+    this.hoverHighlightColumn = null; // Column highlighted under the mouse (#414)
+    this.hoverHighlightColumnId = null;
+    this.boardPointerOverHandler = this.handleBoardPointerOver.bind(this);
     this.viewportMetricsRafId = null;
     this.currentLoadController = null; // Track in-flight board load requests
     this.currentViewState = null; // Track the view state for the current load
@@ -2066,6 +2092,14 @@ class BoardManager {
   }
 
   captureBoardHorizontalScrollPosition() {
+    const sectionsScroller = this.container?.querySelector('.columns-container.sections-layout');
+    if (sectionsScroller) {
+      // Sections scroll up and down; leave the columns layout's position alone.
+      this.boardSectionsScrollTop = sectionsScroller.scrollTop;
+      this.boardSectionsScrollLeft = sectionsScroller.scrollLeft;
+      return;
+    }
+
     const columnsContainer = this.container?.querySelector('.columns-container');
     if (!columnsContainer) return;
 
@@ -2114,6 +2148,12 @@ class BoardManager {
     requestAnimationFrame(() => {
       const columnsContainer = this.container?.querySelector('.columns-container');
       if (!columnsContainer) return;
+
+      if (columnsContainer.classList.contains('sections-layout')) {
+        columnsContainer.scrollTop = this.boardSectionsScrollTop;
+        columnsContainer.scrollLeft = this.boardSectionsScrollLeft;
+        return;
+      }
 
       if (this.boardHorizontalScrollLeft > 0) {
         columnsContainer.scrollLeft = this.boardHorizontalScrollLeft;
@@ -2174,6 +2214,12 @@ class BoardManager {
       this.viewportMetricsObserver = new ResizeObserver(this.viewportMetricsHandler);
       this.viewportMetricsObserver.observe(document.body);
     }
+
+    // The number of section lanes follows the board's width.
+    if (typeof ResizeObserver !== 'undefined' && this.container && !this.sectionLayoutObserver) {
+      this.sectionLayoutObserver = new ResizeObserver(() => this.queueSectionLayoutUpdate());
+      this.sectionLayoutObserver.observe(this.container);
+    }
   }
 
   setupBoardTouchScrolling() {
@@ -2202,7 +2248,13 @@ class BoardManager {
     // scroll doesn't bubble; capture it from the column and board scrollers.
     this.container.addEventListener('scroll', this.boardScrollHandler, { capture: true, passive: true });
     this.container.addEventListener('mouseover', this.boardMouseOverHandler);
+    this.container.addEventListener('pointerover', this.boardPointerOverHandler);
     this.container.addEventListener('mouseleave', this.boardMouseLeaveHandler);
+    // dragstart's target is the draggable section header, not the control
+    // the drag began on, so note what was pressed.
+    this.container.addEventListener('mousedown', (e) => {
+      this.boardPointerDownTarget = e.target instanceof Element ? e.target : null;
+    }, { capture: true });
     this.container.addEventListener('dragstart', this.boardDragStartHandler);
     this.container.addEventListener('dragover', this.boardDragOverHandler);
     this.container.addEventListener('drop', this.boardDropHandler);
@@ -2218,6 +2270,21 @@ class BoardManager {
 
     if (target.closest('#add-column-empty-btn, #add-column-inline-btn')) {
       this.openAddColumnModal();
+      return;
+    }
+
+    // Below each column (columns layout): adds a column after it, so a wide
+    // board doesn't need scrolling to its end.
+    const laneAddColumnBtn = target.closest('.section-lane-add-column-btn');
+    if (laneAddColumnBtn) {
+      this.openAddColumnModal(null, parseInt(laneAddColumnBtn.getAttribute('data-lane'), 10));
+      return;
+    }
+
+    const addColumnAfterBtn = target.closest('.column-add-column-btn');
+    if (addColumnAfterBtn) {
+      const order = parseInt(addColumnAfterBtn.getAttribute('data-order'), 10);
+      this.openAddColumnModal(Number.isNaN(order) ? null : order);
       return;
     }
 
@@ -2285,6 +2352,8 @@ class BoardManager {
       this.openAddCardModal(columnId, 0, scheduled); // Add at top (order 0)
     } else if (menuItem.classList.contains('column-menu-rename-btn')) {
       this.openEditColumnModal(columnId, menuItem.getAttribute('data-column-name'));
+    } else if (menuItem.classList.contains('column-menu-section-move-btn')) {
+      this.moveSection(columnId, menuItem.getAttribute('data-direction'));
     } else if (menuItem.classList.contains('column-menu-move-left-btn')) {
       if (currentOrder > 0) {
         this.moveColumn(columnId, currentOrder - 1);
@@ -2442,6 +2511,13 @@ class BoardManager {
       const columnId = scroller.getAttribute('data-column-id');
       this.updateColumnScrollPosition(columnId, scroller.scrollTop);
       this.schedulePersistColumnScrollPositions();
+    } else if (scroller.matches('.columns-container.sections-layout')) {
+      this.boardSectionsScrollTop = scroller.scrollTop;
+      this.boardSectionsScrollLeft = scroller.scrollLeft;
+      // Cards move under a pointer that's dragging one; measure them again.
+      if (this.nativeDragCard || this.boardTouchScrollState?.touchDragState?.active) {
+        this.clearDragMidpointCaches();
+      }
     } else if (scroller.matches('.columns-container')) {
       this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(scroller.scrollLeft);
       this.schedulePersistBoardHorizontalScrollPosition();
@@ -2457,6 +2533,7 @@ class BoardManager {
 
   handleBoardMouseLeave() {
     this.hoveredColumnId = null;
+    this.setHoverColumn(null);
   }
 
   isMobileTouchViewport() {
@@ -2766,6 +2843,7 @@ class BoardManager {
   }
 
   resetBoardTouchScrollingState() {
+    this.setDropTargetColumn(null);
     this.clearMobileCardLongPress(this.boardTouchScrollState);
     this.boardTouchScrollState = null;
   }
@@ -2799,9 +2877,10 @@ class BoardManager {
     const touch = event.touches[0];
     const targetElement = event.target instanceof Element ? event.target : null;
     const touchedColumn = targetElement?.closest('.column');
-    const columnCardsContainer = targetElement?.closest('.column-cards') ||
-      touchedColumn?.querySelector('.column-cards') ||
-      null;
+    // Sections aren't scrolled on their own; the board scrolls up and down.
+    const columnCardsContainer = columnsContainer.classList.contains('sections-layout')
+      ? columnsContainer
+      : (targetElement?.closest('.column-cards') || touchedColumn?.querySelector('.column-cards') || null);
     const touchedCard = targetElement?.closest('.card') || null;
     const shouldTrackCardLongPress = this.canStartMobileCardLongPress(targetElement);
     const touchedCardId = touchedCard ? Number(touchedCard.getAttribute('data-card-id')) : null;
@@ -2916,8 +2995,10 @@ class BoardManager {
     if (state.axis === 'horizontal') {
       event.preventDefault();
       state.columnsContainer.scrollLeft -= deltaX;
-      this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(state.columnsContainer.scrollLeft);
-      this.schedulePersistBoardHorizontalScrollPosition();
+      if (!state.columnsContainer.classList.contains('sections-layout')) {
+        this.boardHorizontalScrollLeft = this.sanitizeBoardHorizontalScroll(state.columnsContainer.scrollLeft);
+        this.schedulePersistBoardHorizontalScrollPosition();
+      }
       this.recordBoardTouchVelocitySample(state, touch.clientX);
       state.lastX = touch.clientX;
       state.lastY = touch.clientY;
@@ -3413,6 +3494,7 @@ class BoardManager {
         window.addEventListener('boardFiltersStateRequest', this.boardFiltersStateRequestHandler);
         window.addEventListener('boardFiltersClearRequest', this.boardFiltersClearRequestHandler);
         window.addEventListener('boardWorkingStyleChanged', this.boardWorkingStyleChangedHandler);
+        window.addEventListener('boardLayoutSet', this.boardLayoutSetHandler);
 
         // Initialize WebSocket for real-time updates
         this.wsManager = new WebSocketManager(this.boardId, this);
@@ -4412,6 +4494,11 @@ class BoardManager {
         this.syncPublicHeaderWorkingStyle();
       }
 
+      this.boardLayout = board.layout === 'sections' ? 'sections' : 'columns';
+      window.dispatchEvent(new CustomEvent('boardLayoutLoaded', {
+        detail: { layout: this.boardLayout }
+      }));
+
       const isBoardPublic = board.is_public === true;
       this.isBoardPublic = isBoardPublic;
       this.boardArchived = board.archived === true;
@@ -4576,6 +4663,11 @@ class BoardManager {
    * @returns {number|null} The order, or null to add at the end of the board
    */
   getColumnInsertOrderNearMouse() {
+    // Sections don't sit in column order, so a new one goes to the end of it
+    // and is placed in the shortest lane.
+    if (this.isSectionsLayout()) {
+      return null;
+    }
     const columns = Array.from(this.container.querySelectorAll('.column[data-column-id]'));
     if (this.lastMouseX === null || columns.length === 0) {
       return null;
@@ -4675,6 +4767,7 @@ class BoardManager {
     window.removeEventListener('boardFiltersStateRequest', this.boardFiltersStateRequestHandler);
     window.removeEventListener('boardFiltersClearRequest', this.boardFiltersClearRequestHandler);
     window.removeEventListener('boardWorkingStyleChanged', this.boardWorkingStyleChangedHandler);
+    window.removeEventListener('boardLayoutSet', this.boardLayoutSetHandler);
     window.removeEventListener('resize', this.viewportMetricsHandler);
     window.removeEventListener('orientationchange', this.viewportMetricsHandler);
 
@@ -4706,6 +4799,15 @@ class BoardManager {
     if (this.viewportMetricsObserver) {
       this.viewportMetricsObserver.disconnect();
       this.viewportMetricsObserver = null;
+    }
+
+    if (this.sectionLayoutObserver) {
+      this.sectionLayoutObserver.disconnect();
+      this.sectionLayoutObserver = null;
+    }
+    if (this.sectionLayoutRafId) {
+      cancelAnimationFrame(this.sectionLayoutRafId);
+      this.sectionLayoutRafId = null;
     }
 
     if (this.container && this.boardTouchScrollingSetup) {
@@ -4953,7 +5055,504 @@ class BoardManager {
     this.restoreSearchInputFocusIfNeeded();
   }
 
+  // ---------------------------------------------------------------------------
+  // Sections layout (#297)
+  //
+  // Columns show as sections, only as tall as their cards, stacked in lanes.
+  // Lanes are as many as fit the board's width. Each column stores its own
+  // section_lane and section_order, separate from its column order. A stored
+  // lane that doesn't fit folds into the last lane shown, keeping its stored
+  // value, so arranging on a narrow screen doesn't undo a wide layout.
+  // Columns with no stored position go to the bottom of the shortest lane.
+  // ---------------------------------------------------------------------------
+
+  isSectionsLayout() {
+    return this.boardLayout === 'sections';
+  }
+
+  /**
+   * What the UI calls a column: a section in the sections layout.
+   *
+   * @param {boolean} [capitalised] - Start with a capital letter.
+   * @param {boolean} [plural] - Plural form.
+   * @returns {string}
+   */
+  columnNoun(capitalised = false, plural = false) {
+    const word = (this.isSectionsLayout() ? 'section' : 'column') + (plural ? 's' : '');
+    return capitalised ? word.charAt(0).toUpperCase() + word.slice(1) : word;
+  }
+
+  async handleBoardLayoutSet(event) {
+    const layout = event?.detail?.layout === 'sections' ? 'sections' : 'columns';
+    if (layout === this.boardLayout) {
+      return;
+    }
+    this.captureBoardHorizontalScrollPosition();
+    this.boardLayout = layout;
+    this.boardSectionsScrollTop = 0;
+    this.boardSectionsScrollLeft = 0;
+    this.renderBoard();
+  }
+
+  /**
+   * Work out how many lanes to show. Lanes don't depend on the window: the
+   * board scrolls sideways when they don't fit. The width only decides how
+   * many lanes unplaced sections spread over. Editors always get an empty
+   * lane on the right to add or drag a section into. Phones show the same
+   * lanes, narrower, and scroll both ways.
+   *
+   * @returns {{laneCount: number, spreadLanes: number}}
+   */
+  getSectionLaneLayout() {
+    const container = this.container?.querySelector('.columns-container.sections-layout');
+    if (!container) {
+      return { laneCount: 1, spreadLanes: 1 };
+    }
+    // Phones use narrower lanes (board.css), so measure one when there is one.
+    const sampleLane = container.querySelector(':scope > .section-lane');
+    const laneWidth = sampleLane?.getBoundingClientRect().width || SECTION_LANE_WIDTH_PX;
+    const laneGap = parseFloat(getComputedStyle(container).columnGap) || SECTION_LANE_GAP_PX;
+    const fit = Math.max(1, Math.floor((container.clientWidth + laneGap) / (laneWidth + laneGap)));
+    // Lanes have no limit. Stored lanes count by rank, so a gap between
+    // lane numbers never shows as empty lanes.
+    const storedLanes = this.getSectionLaneRanks().size;
+    const hasUnplaced = this.columns.some((column) => !this.hasStoredSectionPosition(column));
+    const spreadLanes = Math.max(1, storedLanes, Math.min(fit, this.columns.length));
+    const contentLanes = Math.max(1, storedLanes, hasUnplaced ? spreadLanes : 0);
+    return {
+      laneCount: contentLanes + (this.canEdit ? 1 : 0),
+      spreadLanes,
+    };
+  }
+
+  /**
+   * Map each stored lane number to its position among the lanes in use. The
+   * server saves lanes without gaps; this keeps older or imported values
+   * sensible too.
+   *
+   * @returns {Map<number, number>}
+   */
+  getSectionLaneRanks() {
+    const lanes = new Set();
+    this.columns.forEach((column) => {
+      if (this.hasStoredSectionPosition(column)) {
+        lanes.add(column.section_lane);
+      }
+    });
+    return new Map(Array.from(lanes).sort((a, b) => a - b).map((lane, index) => [lane, index]));
+  }
+
+  canAddSectionColumns() {
+    if (!this.canEdit) {
+      return false;
+    }
+    if (!window.PermissionManager || !PermissionManager.initialized) {
+      return true;
+    }
+    return this.canCallPermissionEndpoint('POST', '/api/boards/:id/columns');
+  }
+
+  hasStoredSectionPosition(column) {
+    return Number.isInteger(column?.section_lane) && Number.isInteger(column?.section_order);
+  }
+
+  /**
+   * Work out which columns show in each lane.
+   *
+   * @param {number} laneCount - Lanes shown.
+   * @param {number} [spreadLanes] - Lanes that unplaced sections may go in.
+   * @returns {number[][]} Column ids per lane, top to bottom.
+   */
+  computeSectionLanes(laneCount, spreadLanes = laneCount) {
+    const lanes = Array.from({ length: laneCount }, () => []);
+    const ranks = this.getSectionLaneRanks();
+    const placed = this.columns
+      .filter((column) => this.hasStoredSectionPosition(column))
+      .sort((a, b) => (a.section_order - b.section_order) || (a.order - b.order));
+    placed.forEach((column) => {
+      lanes[Math.min(ranks.get(column.section_lane), laneCount - 1)].push(column.id);
+    });
+    // Unplaced sections go to the shortest of the lanes they spread over, so
+    // the empty lane on the right stays empty.
+    const spread = lanes.slice(0, Math.max(1, Math.min(spreadLanes, laneCount)));
+    this.columns
+      .filter((column) => !this.hasStoredSectionPosition(column))
+      .forEach((column) => {
+        this.getShortestSectionLane(spread).push(column.id);
+      });
+    return lanes;
+  }
+
+  getShortestSectionLane(lanes) {
+    return lanes.reduce((shortest, lane) => (lane.length < shortest.length ? lane : shortest), lanes[0]);
+  }
+
+  /**
+   * Put the rendered columns into lanes. Moves the existing nodes, so it's
+   * cheap enough to run whenever the lane count changes.
+   */
+  arrangeSections() {
+    const container = this.container?.querySelector('.columns-container.sections-layout');
+    if (!container) {
+      return;
+    }
+
+    const { laneCount, spreadLanes } = this.getSectionLaneLayout();
+    this.sectionLaneCount = laneCount;
+    this.sectionSpreadLanes = spreadLanes;
+    const lanes = this.computeSectionLanes(laneCount, spreadLanes);
+
+    const columnElements = new Map();
+    container.querySelectorAll('.column[data-column-id]').forEach((element) => {
+      columnElements.set(Number(element.getAttribute('data-column-id')), element);
+    });
+    const canAddColumns = this.canAddSectionColumns();
+
+    const laneElements = lanes.map((columnIds, laneIndex) => {
+      const lane = document.createElement('div');
+      lane.className = 'section-lane';
+      lane.dataset.lane = String(laneIndex);
+      columnIds.forEach((columnId) => {
+        const element = columnElements.get(columnId);
+        if (element) {
+          lane.appendChild(element);
+        }
+      });
+      // Each lane can add a section at its bottom, so nobody scrolls to add one.
+      if (canAddColumns) {
+        const addButton = document.createElement('button');
+        addButton.type = 'button';
+        addButton.className = 'column-add-column-btn section-lane-add-column-btn';
+        addButton.dataset.lane = String(laneIndex);
+        addButton.textContent = '+ Add Section';
+        addButton.setAttribute('aria-label', `Add a section at the bottom of lane ${laneIndex + 1}`);
+        lane.appendChild(addButton);
+      }
+      return lane;
+    });
+
+    container.replaceChildren(...laneElements);
+    this.clearDragMidpointCaches();
+    this.updateSectionMoveMenuItems(lanes);
+  }
+
+  queueSectionLayoutUpdate() {
+    if (this.sectionLayoutRafId) {
+      return;
+    }
+    this.sectionLayoutRafId = requestAnimationFrame(() => {
+      this.sectionLayoutRafId = null;
+      if (!this.isSectionsLayout() || this.sectionDrag) {
+        return;
+      }
+      const { laneCount, spreadLanes } = this.getSectionLaneLayout();
+      if (laneCount !== this.sectionLaneCount || spreadLanes !== this.sectionSpreadLanes) {
+        this.arrangeSections();
+      }
+    });
+  }
+
+  /** Read the lanes back from the DOM, as arranged on screen. */
+  readSectionLanesFromDom() {
+    const container = this.container?.querySelector('.columns-container.sections-layout');
+    if (!container) {
+      return [];
+    }
+    return Array.from(container.querySelectorAll(':scope > .section-lane')).map((lane) => (
+      Array.from(lane.querySelectorAll(':scope > .column[data-column-id]'))
+        .map((element) => Number(element.getAttribute('data-column-id')))
+    ));
+  }
+
+  renderSectionMoveMenuItemsHtml(columnId) {
+    const items = [
+      ['up', '▲', 'Move up'],
+      ['down', '▼', 'Move down'],
+      ['left', '◀', 'Move to left lane'],
+      ['right', '▶', 'Move to right lane'],
+    ];
+    return items.map(([direction, icon, label]) => `
+      <button class="column-menu-item column-menu-section-move-btn" data-column-id="${columnId}" data-direction="${direction}">
+        <span>${icon}</span>
+        <span>${label}</span>
+      </button>
+    `).join('');
+  }
+
+  // Hide the move items that would do nothing for a section's position.
+  updateSectionMoveMenuItems(lanes) {
+    const positions = new Map();
+    lanes.forEach((columnIds, laneIndex) => {
+      columnIds.forEach((columnId, index) => {
+        positions.set(columnId, { laneIndex, index, laneLength: columnIds.length });
+      });
+    });
+
+    this.container.querySelectorAll('.column-menu-section-move-btn').forEach((button) => {
+      const position = positions.get(Number(button.getAttribute('data-column-id')));
+      if (!position) {
+        return;
+      }
+      const direction = button.getAttribute('data-direction');
+      const available = (
+        (direction === 'up' && position.index > 0) ||
+        (direction === 'down' && position.index < position.laneLength - 1) ||
+        (direction === 'left' && position.laneIndex > 0) ||
+        (direction === 'right' && position.laneIndex < lanes.length - 1)
+      );
+      button.style.display = available ? '' : 'none';
+    });
+  }
+
+  async moveSection(columnId, direction) {
+    const lanes = this.readSectionLanesFromDom();
+    const laneIndex = lanes.findIndex((lane) => lane.includes(columnId));
+    if (laneIndex < 0) {
+      return;
+    }
+    const lane = lanes[laneIndex];
+    const index = lane.indexOf(columnId);
+
+    if (direction === 'up' || direction === 'down') {
+      const swapIndex = direction === 'up' ? index - 1 : index + 1;
+      if (swapIndex < 0 || swapIndex >= lane.length) {
+        return;
+      }
+      [lane[index], lane[swapIndex]] = [lane[swapIndex], lane[index]];
+    } else {
+      const targetIndex = direction === 'left' ? laneIndex - 1 : laneIndex + 1;
+      if (targetIndex < 0 || targetIndex >= lanes.length) {
+        return;
+      }
+      lane.splice(index, 1);
+      const target = lanes[targetIndex];
+      target.splice(Math.min(index, target.length), 0, columnId);
+    }
+
+    await this.saveSectionLayout(lanes);
+    // Keep focus somewhere sensible for keyboard users.
+    this.container.querySelector(`.column[data-column-id="${columnId}"] .column-menu-btn`)?.focus();
+  }
+
+  /**
+   * Save the lanes as shown and arrange the board to match.
+   *
+   * @param {number[][]} lanes - Column ids per lane shown, top to bottom.
+   */
+  async saveSectionLayout(lanes) {
+    const columnsById = new Map(this.columns.map((column) => [column.id, column]));
+    const lastLane = lanes.length - 1;
+    const ranks = this.getSectionLaneRanks();
+    const sections = [];
+    lanes.forEach((columnIds, laneIndex) => {
+      columnIds.forEach((columnId) => {
+        const column = columnsById.get(columnId);
+        // A section folded into this lane keeps its wider-screen lane.
+        const keepStoredLane = this.hasStoredSectionPosition(column) &&
+          Math.min(ranks.get(column.section_lane), lastLane) === laneIndex;
+        sections.push({ column_id: columnId, lane: keepStoredLane ? ranks.get(column.section_lane) : laneIndex });
+      });
+    });
+
+    const previous = this.columns.map((column) => ({
+      column,
+      section_lane: column.section_lane,
+      section_order: column.section_order,
+    }));
+    sections.forEach((section, index) => {
+      const column = columnsById.get(section.column_id);
+      if (column) {
+        column.section_lane = section.lane;
+        column.section_order = index;
+      }
+    });
+    this.arrangeSections();
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(`/api/boards/${this.boardId}/section-layout`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sections }),
+        signal: controller.signal,
+      });
+      const data = await this.parseResponse(response);
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to save the layout');
+      }
+    } catch (error) {
+      console.error('Error saving section layout:', error);
+      previous.forEach((entry) => {
+        entry.column.section_lane = entry.section_lane;
+        entry.column.section_order = entry.section_order;
+      });
+      this.showErrorToast(error.name === 'AbortError'
+        ? 'Saving the layout timed out. Please check your connection.'
+        : 'Failed to move the section.');
+      // The columns may have changed under us; show the server's layout.
+      this.scheduleBoardReload();
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  handleSectionDragStart(e, header) {
+    const column = header.closest('.column[data-column-id]');
+    const pressed = this.boardPointerDownTarget;
+    if (!column || (pressed && header.contains(pressed) && pressed.closest('button, .column-menu-dropdown'))) {
+      e.preventDefault();
+      return;
+    }
+    if (this.isMobileTouchViewport()) {
+      e.preventDefault();
+      return;
+    }
+
+    e.stopPropagation();
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox only starts a drag that carries data.
+    e.dataTransfer.setData('text/plain', column.querySelector('.column-header h4')?.textContent || '');
+    e.dataTransfer.setDragImage?.(column, Math.min(e.offsetX || 20, column.offsetWidth - 1), 20);
+
+    this.closeColumnMenus();
+    this.sectionDrag = {
+      column,
+      columnId: Number(column.getAttribute('data-column-id')),
+      dropped: false,
+    };
+    // Style the source after the browser has taken its drag image.
+    requestAnimationFrame(() => {
+      if (this.sectionDrag?.column === column) {
+        column.classList.add('section-dragging');
+      }
+    });
+    header.addEventListener('dragend', this.sectionDragEndHandler, { once: true });
+  }
+
+  // Measured each time: lanes move when the board scrolls sideways, and
+  // there are only a few of them.
+  getSectionLaneAtX(clientX) {
+    const lanes = this.container?.querySelectorAll('.columns-container.sections-layout > .section-lane') || [];
+    const bounds = Array.from(lanes, (lane) => {
+      const rect = lane.getBoundingClientRect();
+      return { lane, left: rect.left, right: rect.right };
+    });
+    if (bounds.length === 0) {
+      return null;
+    }
+    let nearest = bounds[0];
+    let nearestDistance = Infinity;
+    for (const entry of bounds) {
+      if (clientX >= entry.left && clientX <= entry.right) {
+        return entry.lane;
+      }
+      const distance = Math.min(Math.abs(clientX - entry.left), Math.abs(clientX - entry.right));
+      if (distance < nearestDistance) {
+        nearest = entry;
+        nearestDistance = distance;
+      }
+    }
+    return nearest.lane;
+  }
+
+  // Move the dragged section to where the pointer is: below the section
+  // under it, or above one whose top it's pointing at.
+  placeDraggedSection(clientX, clientY) {
+    const drag = this.sectionDrag;
+    const lane = this.getSectionLaneAtX(clientX);
+    if (!drag || !lane || !lane.isConnected) {
+      return;
+    }
+
+    const siblings = Array.from(lane.querySelectorAll(':scope > .column[data-column-id]'))
+      .filter((element) => element !== drag.column);
+    let before = null;
+    for (const element of siblings) {
+      const rect = element.getBoundingClientRect();
+      if (clientY < rect.top + Math.min(SECTION_DROP_ABOVE_PX, rect.height / 2)) {
+        before = element;
+        break;
+      }
+    }
+    // Stay above Add Column, which marks the end of its lane.
+    if (!before) {
+      before = lane.querySelector(':scope > .section-lane-add-column-btn');
+    }
+
+    if (drag.column.parentElement === lane && drag.column.nextElementSibling === before) {
+      return;
+    }
+    if (before) {
+      lane.insertBefore(drag.column, before);
+    } else {
+      lane.appendChild(drag.column);
+    }
+  }
+
+  handleSectionDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    this.updateBoardAutoScrollDuringDrag(this.sectionDrag.column, e.clientX, e.clientY, { native: true });
+
+    const { clientX, clientY } = e;
+    if (this.sectionDragoverRafId) {
+      cancelAnimationFrame(this.sectionDragoverRafId);
+    }
+    this.sectionDragoverRafId = requestAnimationFrame(() => {
+      this.sectionDragoverRafId = null;
+      this.placeDraggedSection(clientX, clientY);
+    });
+  }
+
+  async handleSectionDrop(e) {
+    e.preventDefault();
+    const drag = this.sectionDrag;
+    if (!drag) {
+      return;
+    }
+    drag.dropped = true;
+    if (this.sectionDragoverRafId) {
+      cancelAnimationFrame(this.sectionDragoverRafId);
+      this.sectionDragoverRafId = null;
+    }
+    this.stopBoardAutoScroll();
+    if (!drag.column.isConnected) {
+      return;
+    }
+    this.placeDraggedSection(e.clientX, e.clientY);
+
+    const lanes = this.readSectionLanesFromDom();
+    const before = this.computeSectionLanes(lanes.length, this.sectionSpreadLanes);
+    if (JSON.stringify(before) === JSON.stringify(lanes)) {
+      return;
+    }
+    await this.saveSectionLayout(lanes);
+  }
+
+  handleSectionDragEnd() {
+    const drag = this.sectionDrag;
+    this.sectionDrag = null;
+    if (this.sectionDragoverRafId) {
+      cancelAnimationFrame(this.sectionDragoverRafId);
+      this.sectionDragoverRafId = null;
+    }
+    this.stopBoardAutoScroll();
+    if (!drag) {
+      return;
+    }
+    drag.column.classList.remove('section-dragging');
+    // A cancelled drag leaves the section wherever it was last placed.
+    if (!drag.dropped && this.isSectionsLayout()) {
+      this.arrangeSections();
+    }
+  }
+
   renderBoard() {
+    // The columns are rebuilt, so the highlighted nodes go with them.
+    const hoverHighlightColumnId = this.hoverHighlightColumnId;
+    this.dropTargetColumn = null;
+    this.hoverHighlightColumn = null;
     this.stopColumnAutoScroll();
     this.stopBoardAutoScroll();
     // Rebuilding the DOM invalidates any cached drag-midpoint rects and
@@ -4982,9 +5581,9 @@ class BoardManager {
         <div class="empty-board-panel">
           <div class="empty-board">
             <div class="empty-board-icon">📋</div>
-            <h3>No columns yet</h3>
-            <p>Add your first column to start organising tasks!</p>
-            ${this.canEdit ? '<button class="btn btn-primary" id="add-column-empty-btn">+ Add Column</button>' : '<p style="color: var(--secondary-color); margin-top: 10px;">Read-only access - cannot add columns</p>'}
+            <h3>No ${this.columnNoun(false, true)} yet</h3>
+            <p>Add your first ${this.columnNoun()} to start organising tasks!</p>
+            ${this.canEdit ? `<button class="btn btn-primary" id="add-column-empty-btn">+ Add ${this.columnNoun(true)}</button>` : `<p style="color: var(--secondary-color); margin-top: 10px;">Read-only access - cannot add ${this.columnNoun(false, true)}</p>`}
           </div>
         </div>
       `;
@@ -4999,14 +5598,18 @@ class BoardManager {
       const canUpdateColumns = this.canEdit || this.canCallPermissionEndpoint('PATCH', '/api/columns/:id');
       const cardPermissions = this.getCardRenderPermissions();
       const canShowColumnMenu = this.canShowColumnMenu();
+      const sections = this.isSectionsLayout();
+      // Sections are dragged by their header with a mouse. Touch uses the
+      // column menu's move items.
+      const sectionsDraggable = sections && canUpdateColumns;
 
       this.container.innerHTML = `
         ${!this.canEdit ? '<div class="board-readonly-indicator">Read Only</div>' : ''}
         ${this.renderAssigneeFilterBar()}
-        <div class="columns-container">
+        <div class="columns-container${sections ? ' sections-layout' : ''}">
           ${this.columns.map((column, index) => `
             <div class="column" data-column-id="${column.id}" data-board-id="${this.escapeHtml(String(this.boardId))}" data-order="${column.order}">
-              <div class="column-header">
+              <div class="column-header"${sectionsDraggable ? ' draggable="true"' : ''}>
                 <div class="column-title-group">
                   <h4 title="${escapeHtml(column.name)}">${this.escapeHtml(column.name)}</h4>
                   <span class="card-count">(${this.getColumnCardCount(column)})</span>
@@ -5015,7 +5618,7 @@ class BoardManager {
                   ${!this.showArchived && canCreateCardsInCurrentView ? `<button class="column-add-card-btn" data-column-id="${column.id}" title="Add card">+</button>` : ''}
                   ${canShowColumnMenu ? `
                   <div class="column-menu-wrapper">
-                    <button class="column-menu-btn" data-column-id="${column.id}" title="Column menu">⋮</button>
+                    <button class="column-menu-btn" data-column-id="${column.id}" title="${this.columnNoun(true)} menu" aria-label="${this.columnNoun(true)} menu">⋮</button>
                     <div class="column-menu-dropdown" data-column-id="${column.id}">
                       ${!this.showArchived && canCreateCardsInCurrentView ? `
                         <button class="column-menu-item column-menu-add-card-btn" data-column-id="${column.id}">
@@ -5026,8 +5629,11 @@ class BoardManager {
                       ${canUpdateColumns ? `
                         <button class="column-menu-item column-menu-rename-btn" data-column-id="${column.id}" data-column-name="${this.escapeHtml(column.name)}">
                           <span>✎</span>
-                          <span>Rename column</span>
+                          <span>Rename ${this.columnNoun()}</span>
                         </button>
+                      ` : ''}
+                      ${canUpdateColumns && sections ? this.renderSectionMoveMenuItemsHtml(column.id) : ''}
+                      ${canUpdateColumns && !sections ? `
                         <button class="column-menu-item column-menu-move-left-btn" data-column-id="${column.id}" data-order="${column.order}">
                           <span>◀</span>
                           <span>Move left</span>
@@ -5084,7 +5690,7 @@ class BoardManager {
                       </button>
                       <button class="column-menu-item column-delete-btn" data-column-id="${column.id}">
                         <span>×</span>
-                        <span>Delete column</span>
+                        <span>Delete ${this.columnNoun()}</span>
                       </button>
                     </div>
                   </div>` : ''}
@@ -5096,16 +5702,27 @@ class BoardManager {
                 }
                 ${!this.showArchived && canCreateCardsInCurrentView ? `<button class="btn btn-secondary add-card-btn" data-column-id="${column.id}">+ Add Card</button>` : ''}
               </div>
-              ${this.canEdit && index < this.columns.length - 1 ? `<button type="button" class="column-insert-btn" data-order="${this.columns[index + 1].order}" aria-label="Add new column after column ${index + 1}" data-tooltip="Add new column">+</button>` : ''}
+              ${this.canEdit && !sections ? `<button type="button" class="column-add-column-btn" data-order="${index < this.columns.length - 1 ? this.columns[index + 1].order : ''}" aria-label="Add a column after ${this.escapeHtml(column.name)}">+ Add Column</button>` : ''}
+              ${this.canEdit && !sections && index < this.columns.length - 1 ? `<button type="button" class="column-insert-btn" data-order="${this.columns[index + 1].order}" aria-label="Add new column after column ${index + 1}" data-tooltip="Add new column">+</button>` : ''}
             </div>
           `).join('')}
-          ${this.canEdit ? `<div class="add-column-placeholder">
+          ${this.canEdit && !sections ? `<div class="add-column-placeholder">
             <button class="btn btn-primary" id="add-column-inline-btn">+ Add Column</button>
           </div>` : ''}
         </div>
       `;
       
       this.setupAssigneeFilterBarListeners();
+
+      if (sections) {
+        this.arrangeSections();
+      }
+
+      // Only a mouse hover is re-applied: hoveredColumnId is also set by the
+      // mouse events a tap sends.
+      if (hoverHighlightColumnId) {
+        this.setHoverColumn(this.container.querySelector(`.column[data-column-id="${hoverHighlightColumnId}"]`));
+      }
 
       // Initialize card collapse/expand functionality
       // Use requestAnimationFrame to ensure DOM is fully rendered before measuring
@@ -5293,7 +5910,7 @@ class BoardManager {
     
     // Remove "Add Column" buttons if user can't call create-column endpoint.
     if (!canCreateColumn) {
-      document.querySelectorAll('#add-column-empty-btn, #add-column-inline-btn, .column-insert-btn').forEach(btn => btn.remove());
+      document.querySelectorAll('#add-column-empty-btn, #add-column-inline-btn, .column-insert-btn, .column-add-column-btn, .section-lane-add-column-btn').forEach(btn => btn.remove());
     }
     
     // In scheduled view, creating a template through UI requires both card.create and schedule.create.
@@ -5546,6 +6163,31 @@ class BoardManager {
 
   getBoardAutoScrollDirection(scroller, clientX, clientY) {
     const rect = scroller.getBoundingClientRect();
+    if (scroller.classList.contains('sections-layout')) {
+      // Sections scroll both ways: ±2 is sideways, ±1 up and down.
+      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
+        return 0;
+      }
+      const left = Math.max(rect.left, 0);
+      const right = Math.min(rect.right, document.documentElement.clientWidth);
+      if (clientX - left <= BOARD_AUTO_SCROLL_EDGE_THRESHOLD_PX && scroller.scrollLeft > 0) {
+        return -2;
+      }
+      if (right - clientX <= BOARD_AUTO_SCROLL_EDGE_THRESHOLD_PX &&
+          scroller.scrollLeft + scroller.clientWidth < scroller.scrollWidth - 1) {
+        return 2;
+      }
+      const top = Math.max(rect.top, 0);
+      const bottom = Math.min(rect.bottom, document.documentElement.clientHeight);
+      const threshold = BOARD_AUTO_SCROLL_EDGE_THRESHOLD_PX;
+      if (clientY - top <= threshold && scroller.scrollTop > 0) {
+        return -1;
+      }
+      if (bottom - clientY <= threshold && scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 1) {
+        return 1;
+      }
+      return 0;
+    }
     if (clientY < rect.top || clientY > rect.bottom) {
       return 0;
     }
@@ -5632,31 +6274,51 @@ class BoardManager {
 
     const rect = scroller.getBoundingClientRect();
     const threshold = BOARD_AUTO_SCROLL_EDGE_THRESHOLD_PX;
-    const distanceToEdge = state.direction < 0
-      ? Math.max(0, state.pointerX - Math.max(rect.left, 0))
-      : Math.max(0, Math.min(rect.right, document.documentElement.clientWidth) - state.pointerX);
+    const sections = scroller.classList.contains('sections-layout');
+    const vertical = sections && Math.abs(state.direction) === 1;
+    const sign = Math.sign(state.direction);
+    let distanceToEdge;
+    if (vertical) {
+      distanceToEdge = sign < 0
+        ? Math.max(0, state.pointerY - Math.max(rect.top, 0))
+        : Math.max(0, Math.min(rect.bottom, document.documentElement.clientHeight) - state.pointerY);
+    } else {
+      distanceToEdge = sign < 0
+        ? Math.max(0, state.pointerX - Math.max(rect.left, 0))
+        : Math.max(0, Math.min(rect.right, document.documentElement.clientWidth) - state.pointerX);
+    }
     const edgeProximity = Math.max(0, Math.min(1, (threshold - distanceToEdge) / threshold));
     const speedScale = Math.max(
       BOARD_AUTO_SCROLL_MIN_SPEED_SCALE,
-      Math.min(1, scroller.clientWidth / BOARD_AUTO_SCROLL_REFERENCE_WIDTH_PX)
+      Math.min(1, (vertical ? scroller.clientHeight : scroller.clientWidth) / BOARD_AUTO_SCROLL_REFERENCE_WIDTH_PX)
     );
     const scrollStep = Math.max(1, Math.round(
       (BOARD_AUTO_SCROLL_BASE_STEP_PX + edgeProximity * BOARD_AUTO_SCROLL_MAX_EXTRA_STEP_PX) * speedScale
     ));
 
-    const previousScrollLeft = scroller.scrollLeft;
-    scroller.scrollLeft += state.direction * scrollStep;
-    if (scroller.scrollLeft === previousScrollLeft) {
+    const scrollProperty = vertical ? 'scrollTop' : 'scrollLeft';
+    const previousScroll = scroller[scrollProperty];
+    scroller[scrollProperty] += sign * scrollStep;
+    if (scroller[scrollProperty] === previousScroll) {
       this.stopBoardAutoScroll();
       return;
     }
 
-    // Columns have moved under a pointer that may be standing still, and
-    // touch sends no events then, so place the card in whatever column is
-    // under it now. Card midpoints are vertical, so the caches stay valid.
-    const columnContainer = this.resolveColumnCardsContainerFromPoint(state.pointerX, state.pointerY);
-    if (columnContainer) {
-      this.placeDraggedCard(columnContainer, draggedCard, state.pointerY);
+    if (draggedCard.matches('.column')) {
+      // A section being dragged in the sections layout (#297).
+      this.placeDraggedSection(state.pointerX, state.pointerY);
+    } else {
+      // Columns have moved under a pointer that may be standing still, and
+      // touch sends no events then, so place the card in whatever column is
+      // under it now. Sideways, card midpoints don't move, so the caches stay
+      // valid; scrolling sections up and down moves them.
+      if (sections) {
+        this.clearDragMidpointCaches();
+      }
+      const columnContainer = this.resolveColumnCardsContainerFromPoint(state.pointerX, state.pointerY);
+      if (columnContainer) {
+        this.placeDraggedCard(columnContainer, draggedCard, state.pointerY);
+      }
     }
 
     if (this.boardAutoScroll === state) {
@@ -5668,6 +6330,14 @@ class BoardManager {
   // re-renders don't need to re-wire per-card listeners. Drag state lives on
   // the instance rather than in a per-render closure.
   handleBoardDragStart(e) {
+    const sectionHeader = e.target instanceof Element
+      ? e.target.closest('.sections-layout .column-header[draggable="true"]')
+      : null;
+    if (sectionHeader) {
+      this.handleSectionDragStart(e, sectionHeader);
+      return;
+    }
+
     const card = e.target instanceof Element ? e.target.closest('.card[data-card-id]') : null;
     if (!card || !this.canEdit) {
       return;
@@ -5742,6 +6412,7 @@ class BoardManager {
     });
     this.nativeDragCard = null;
     this.nativeDragOriginalPosition = null; // Clear stored position
+    this.setDropTargetColumn(null);
     this.stopColumnAutoScroll();
     this.stopBoardAutoScroll();
     this.clearDragMidpointCaches();
@@ -5759,6 +6430,11 @@ class BoardManager {
   }
 
   handleBoardDragOver(e) {
+    if (this.sectionDrag) {
+      this.handleSectionDragOver(e);
+      return;
+    }
+
     // Checked before the column lookup: the pointer may be over a column
     // header or the gap between columns at the board's edge.
     if (this.nativeDragCard && this.canEdit) {
@@ -5786,6 +6462,11 @@ class BoardManager {
   }
 
   async handleBoardDrop(e) {
+    if (this.sectionDrag) {
+      await this.handleSectionDrop(e);
+      return;
+    }
+
     const columnContainer = this.getDragColumnContainer(e);
     if (!columnContainer) return;
 
@@ -5861,11 +6542,46 @@ class BoardManager {
     }
   }
 
+  // Highlight the column a dragged card will drop into (#414). Only touches
+  // the DOM when the column changes, as this runs on every dragover frame.
+  setDropTargetColumn(column) {
+    const next = column || null;
+    if (this.dropTargetColumn === next) {
+      return;
+    }
+    this.dropTargetColumn?.classList.remove('column-drop-target');
+    next?.classList.add('column-drop-target');
+    this.dropTargetColumn = next;
+  }
+
+  // A subtle highlight on the column under the mouse, which is where the N
+  // and M shortcuts add a card (#414). Mouse only, and not on touch boards,
+  // where hover gets stuck and some browsers report a tap as a mouse first.
+  handleBoardPointerOver(e) {
+    if (e.pointerType !== 'mouse' || this.isMobileTouchViewport()) {
+      return;
+    }
+    const column = e.target instanceof Element ? e.target.closest('.column[data-column-id]') : null;
+    this.setHoverColumn(column);
+  }
+
+  setHoverColumn(column) {
+    const next = column || null;
+    if (this.hoverHighlightColumn === next) {
+      return;
+    }
+    this.hoverHighlightColumn?.classList.remove('column-hovered');
+    next?.classList.add('column-hovered');
+    this.hoverHighlightColumn = next;
+    this.hoverHighlightColumnId = next ? next.getAttribute('data-column-id') : null;
+  }
+
   // Shared by both the native dragover and mobile touchmove hot paths:
   // updates auto-scroll, finds the insertion point, moves draggedCard if
   // its position actually changed, and invalidates the affected caches.
   placeDraggedCard(columnContainer, draggedCard, clientY) {
     this.updateColumnAutoScrollDuringDrag(columnContainer, clientY);
+    this.setDropTargetColumn(columnContainer.closest('.column'));
 
     const afterElement = this.getDragAfterElement(columnContainer, clientY);
     const previousContainer = draggedCard.closest('.column-cards');
@@ -6711,26 +7427,28 @@ class BoardManager {
     setupModalEscapeClose(modal, handleCancel);
   }
 
-  openAddColumnModal(order = null) {
+  openAddColumnModal(order = null, sectionLane = null) {
     // Check database connection
     if (window.header && !window.header.dbConnected) {
-      this.showErrorToast('Cannot add column: Database is not connected. Please wait for the connection to be restored.');
+      this.showErrorToast(`Cannot add ${this.columnNoun()}: Database is not connected. Please wait for the connection to be restored.`);
       return;
     }
     
+    const noun = this.columnNoun(true);
+
     // Create modal HTML
     const modalHtml = `
       <div class="modal" id="add-column-modal">
         <div class="modal-content">
-          <h2>Add New Column</h2>
+          <h2>Add New ${noun}</h2>
           <form id="add-column-form">
             <div class="form-group">
-              <label for="column-name">Column Name:</label>
+              <label for="column-name">${noun} Name:</label>
               <input type="text" id="column-name" name="column-name" required>
             </div>
             <div class="modal-actions">
               <button type="button" class="btn btn-secondary" id="cancel-column-btn">Cancel</button>
-              <button type="submit" class="btn btn-primary">Create Column</button>
+              <button type="submit" class="btn btn-primary">Create ${noun}</button>
             </div>
           </form>
         </div>
@@ -6768,7 +7486,7 @@ class BoardManager {
       const columnName = nameInput.value.trim();
       
       if (columnName) {
-        await this.createColumn(columnName, order);
+        await this.createColumn(columnName, order, sectionLane);
         closeModal();
       }
     });
@@ -7128,10 +7846,10 @@ class BoardManager {
     setupModalEscapeClose(modal, handleCancel);
   }
 
-  async createColumn(name, order = null) {
+  async createColumn(name, order = null, sectionLane = null) {
     // Check database connection before creating column
     if (window.header && !window.header.dbConnected) {
-      this.showErrorToast('Cannot create column: Database is not connected. Please wait for the connection to be restored.');
+      this.showErrorToast(`Cannot create ${this.columnNoun()}: Database is not connected. Please wait for the connection to be restored.`);
       return;
     }
     
@@ -7147,18 +7865,28 @@ class BoardManager {
       const data = await this.parseResponse(response);
 
       if (data.success) {
+        // From a lane's Add Column (#297): put the new section at the bottom
+        // of that lane. The lanes shown plus the new column are every column.
+        const newColumnId = data.column?.id;
+        if (Number.isInteger(sectionLane) && Number.isInteger(newColumnId) && this.isSectionsLayout()) {
+          const lanes = this.readSectionLanesFromDom();
+          if (sectionLane >= 0 && sectionLane < lanes.length) {
+            lanes[sectionLane].push(newColumnId);
+            await this.saveSectionLayout(lanes);
+          }
+        }
         // Reload columns to show the new one
         await this.loadBoard();
       } else {
-        await showAlert('Failed to create column: ' + data.message, 'Error');
+        await showAlert(`Failed to create ${this.columnNoun()}: ` + data.message, 'Error');
       }
     } catch (err) {
-      await showAlert('Error creating column: ' + err.message, 'Error');
+      await showAlert(`Error creating ${this.columnNoun()}: ` + err.message, 'Error');
     }
   }
 
   async deleteColumn(columnId) {
-    if (!await showConfirm('Are you sure you want to delete this column?', 'Confirm Deletion')) {
+    if (!await showConfirm(`Are you sure you want to delete this ${this.columnNoun()}?`, 'Confirm Deletion')) {
       return;
     }
 
@@ -7173,15 +7901,15 @@ class BoardManager {
         // Reload columns to reflect deletion
         await this.loadBoard();
       } else {
-        await showAlert('Failed to delete column: ' + data.message, 'Error');
+        await showAlert(`Failed to delete ${this.columnNoun()}: ` + data.message, 'Error');
       }
     } catch (err) {
-      await showAlert('Error deleting column: ' + err.message, 'Error');
+      await showAlert(`Error deleting ${this.columnNoun()}: ` + err.message, 'Error');
     }
   }
 
   async deleteAllCardsInColumn(columnId) {
-    if (!await showConfirm('Are you sure you want to delete all cards in this column? This action cannot be undone.', 'Confirm Deletion')) {
+    if (!await showConfirm(`Are you sure you want to delete all cards in this ${this.columnNoun()}? This action cannot be undone.`, 'Confirm Deletion')) {
       return;
     }
 
@@ -7209,18 +7937,18 @@ class BoardManager {
   async archiveAllCardsInColumn(columnId) {
     const column = this.columns.find(c => c.id === columnId);
     if (!column || !column.cards) {
-      await showAlert('No cards found in this column', 'Warning');
+      await showAlert(`No cards found in this ${this.columnNoun()}`, 'Warning');
       return;
     }
 
     // Get all unarchived cards
     const unarchivedCards = column.cards.filter(c => !c.archived);
     if (unarchivedCards.length === 0) {
-      await showAlert('No active cards to archive in this column', 'Warning');
+      await showAlert(`No active cards to archive in this ${this.columnNoun()}`, 'Warning');
       return;
     }
 
-    if (!await showConfirm(`Are you sure you want to archive all ${unarchivedCards.length} active card(s) in this column?`, 'Confirm Archive')) {
+    if (!await showConfirm(`Are you sure you want to archive all ${unarchivedCards.length} active card(s) in this ${this.columnNoun()}?`, 'Confirm Archive')) {
       return;
     }
 
@@ -7251,18 +7979,18 @@ class BoardManager {
   async unarchiveAllCardsInColumn(columnId) {
     const column = this.columns.find(c => c.id === columnId);
     if (!column || !column.cards) {
-      await showAlert('No cards found in this column', 'Warning');
+      await showAlert(`No cards found in this ${this.columnNoun()}`, 'Warning');
       return;
     }
 
     // Get all archived cards
     const archivedCards = column.cards.filter(c => c.archived);
     if (archivedCards.length === 0) {
-      await showAlert('No archived cards to unarchive in this column', 'Warning');
+      await showAlert(`No archived cards to unarchive in this ${this.columnNoun()}`, 'Warning');
       return;
     }
 
-    if (!confirm(`Are you sure you want to unarchive all ${archivedCards.length} archived card(s) in this column?`)) {
+    if (!confirm(`Are you sure you want to unarchive all ${archivedCards.length} archived card(s) in this ${this.columnNoun()}?`)) {
       return;
     }
 
@@ -7298,7 +8026,7 @@ class BoardManager {
 
     const sourceColumn = this.columns.find(c => c.id === sourceColumnId);
     if (!sourceColumn || !sourceColumn.cards || sourceColumn.cards.length === 0) {
-      await showAlert('No cards to move in this column', 'Warning');
+      await showAlert(`No cards to move in this ${this.columnNoun()}`, 'Warning');
       return;
     }
 
@@ -7336,8 +8064,8 @@ class BoardManager {
 
     const buildColumnOptions = (columns) =>
       columns.length === 0
-        ? '<option value="">-- No columns available --</option>'
-        : '<option value="">-- Select Column --</option>' +
+        ? `<option value="">-- No ${this.columnNoun(false, true)} available --</option>`
+        : `<option value="">-- Select ${this.columnNoun(true)} --</option>` +
           columns.map(col => `<option value="${col.id}">${this.escapeHtml(col.name)}</option>`).join('');
 
     const modalHtml = `
@@ -7353,7 +8081,7 @@ class BoardManager {
               </select>
             </div>
             <div class="form-group">
-              <label for="target-column-select">Target Column:</label>
+              <label for="target-column-select">Target ${this.columnNoun(true)}:</label>
               <select id="target-column-select" name="target-column" required aria-required="true">
                 ${buildColumnOptions(currentBoardColumns)}
               </select>
@@ -7361,8 +8089,8 @@ class BoardManager {
             <div class="form-group">
               <label for="position-select">Position:</label>
               <select id="position-select" name="position" required aria-required="true">
-                <option value="top">Top of column</option>
-                <option value="bottom">Bottom of column</option>
+                <option value="top">Top of ${this.columnNoun()}</option>
+                <option value="bottom">Bottom of ${this.columnNoun()}</option>
               </select>
             </div>
             <div class="form-group">
@@ -7408,16 +8136,16 @@ class BoardManager {
         if (data.success && data.columns) {
           targetSelect.innerHTML = buildColumnOptions(data.columns);
         } else {
-          targetSelect.innerHTML = '<option value="">-- No columns available --</option>';
-          this.showErrorToast(data.message || 'Failed to load columns');
+          targetSelect.innerHTML = `<option value="">-- No ${this.columnNoun(false, true)} available --</option>`;
+          this.showErrorToast(data.message || `Failed to load ${this.columnNoun(false, true)}`);
         }
       } catch (err) {
-        targetSelect.innerHTML = '<option value="">-- Error loading columns --</option>';
+        targetSelect.innerHTML = `<option value="">-- Error loading ${this.columnNoun(false, true)} --</option>`;
         if (err.name === 'AbortError') {
-          this.showErrorToast('Timed out loading columns');
+          this.showErrorToast(`Timed out loading ${this.columnNoun(false, true)}`);
         } else {
           console.error('Failed to fetch columns:', err);
-          this.showErrorToast('Failed to load columns');
+          this.showErrorToast(`Failed to load ${this.columnNoun(false, true)}`);
         }
       } finally {
         targetSelect.disabled = false;
@@ -7458,7 +8186,7 @@ class BoardManager {
     // Get column and its cards
     const column = this.columns.find(c => c.id === columnId);
     if (!column) {
-      await showAlert('Column not found', 'Error');
+      await showAlert(`${this.columnNoun(true)} not found`, 'Error');
       return;
     }
 
@@ -7651,7 +8379,7 @@ class BoardManager {
     if (!isCrossBoard) {
       const targetColumn = this.columns.find(c => c.id === targetColumnId);
       if (!targetColumn) {
-        await showAlert('Target column not found', 'Error');
+        await showAlert(`Target ${this.columnNoun()} not found`, 'Error');
         return;
       }
     }
@@ -7689,7 +8417,7 @@ class BoardManager {
   openEditColumnModal(columnId, currentName) {
     // Check database connection
     if (window.header && !window.header.dbConnected) {
-      this.showErrorToast('Cannot edit column: Database is not connected. Please wait for the connection to be restored.');
+      this.showErrorToast(`Cannot edit ${this.columnNoun()}: Database is not connected. Please wait for the connection to be restored.`);
       return;
     }
     
@@ -7697,10 +8425,10 @@ class BoardManager {
     const modalHtml = `
       <div class="modal" id="edit-column-modal">
         <div class="modal-content">
-          <h2>Edit Column</h2>
+          <h2>Edit ${this.columnNoun(true)}</h2>
           <form id="edit-column-form">
             <div class="form-group">
-              <label for="edit-column-name">Column Name:</label>
+              <label for="edit-column-name">${this.columnNoun(true)} Name:</label>
               <input type="text" id="edit-column-name" name="edit-column-name" value="${this.escapeHtml(currentName)}" required>
             </div>
             <div class="modal-actions">
@@ -7761,10 +8489,10 @@ class BoardManager {
         // Reload columns to show the updated name
         await this.loadBoard();
       } else {
-        await showAlert('Failed to update column: ' + data.message, 'Error');
+        await showAlert(`Failed to update ${this.columnNoun()}: ` + data.message, 'Error');
       }
     } catch (err) {
-      await showAlert('Error updating column: ' + err.message, 'Error');
+      await showAlert(`Error updating ${this.columnNoun()}: ` + err.message, 'Error');
     }
   }
 
@@ -10704,8 +11432,8 @@ class BoardManager {
 
     const buildColumnOptions = (columns) =>
       columns.length === 0
-        ? '<option value="">-- No columns available --</option>'
-        : '<option value="">-- Select Column --</option>' +
+        ? `<option value="">-- No ${this.columnNoun(false, true)} available --</option>`
+        : `<option value="">-- Select ${this.columnNoun(true)} --</option>` +
           columns.map(col => `<option value="${col.id}">${this.escapeHtml(col.name)}</option>`).join('');
 
     const modalHtml = `
@@ -10721,7 +11449,7 @@ class BoardManager {
               </select>
             </div>
             <div class="form-group">
-              <label for="move-card-target-column">Target Column:</label>
+              <label for="move-card-target-column">Target ${this.columnNoun(true)}:</label>
               <select id="move-card-target-column" name="target-column" required aria-required="true">
                 ${buildColumnOptions(currentBoardColumns)}
               </select>
@@ -10729,8 +11457,8 @@ class BoardManager {
             <div class="form-group">
               <label for="move-card-position">Position:</label>
               <select id="move-card-position" name="position" required aria-required="true">
-                <option value="top">Top of column</option>
-                <option value="bottom">Bottom of column</option>
+                <option value="top">Top of ${this.columnNoun()}</option>
+                <option value="bottom">Bottom of ${this.columnNoun()}</option>
               </select>
             </div>
             <div class="modal-actions">
@@ -10769,16 +11497,16 @@ class BoardManager {
         if (data.success && data.columns) {
           columnSelect.innerHTML = buildColumnOptions(data.columns);
         } else {
-          columnSelect.innerHTML = '<option value="">-- No columns available --</option>';
-          this.showErrorToast(data.message || 'Failed to load columns');
+          columnSelect.innerHTML = `<option value="">-- No ${this.columnNoun(false, true)} available --</option>`;
+          this.showErrorToast(data.message || `Failed to load ${this.columnNoun(false, true)}`);
         }
       } catch (err) {
-        columnSelect.innerHTML = '<option value="">-- Error loading columns --</option>';
+        columnSelect.innerHTML = `<option value="">-- Error loading ${this.columnNoun(false, true)} --</option>`;
         if (err.name === 'AbortError') {
-          this.showErrorToast('Timed out loading columns');
+          this.showErrorToast(`Timed out loading ${this.columnNoun(false, true)}`);
         } else {
           console.error('Failed to fetch columns:', err);
-          this.showErrorToast('Failed to load columns');
+          this.showErrorToast(`Failed to load ${this.columnNoun(false, true)}`);
         }
       } finally {
         columnSelect.disabled = false;

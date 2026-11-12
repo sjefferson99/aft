@@ -16,7 +16,7 @@ Use these keyboard shortcuts on a board to add, archive and reorder cards and ad
 
 To use these shortcuts:
 
-- Move your mouse to where you want the card or column, then press the shortcut key
+- Move your mouse to where you want the card or column, then press the shortcut key. The column under your mouse has a faint outline, so you can see where **N** and **M** will add the card
 - After adding a card, press **N** or **M** again to quickly add another card to the same column, even if your mouse has moved off the board
 - If you press **C** before moving your mouse, the new column is added at the end of the board
 - In the Scheduled View, **N** and **M** add a scheduled card. **A** does nothing there
@@ -76,8 +76,9 @@ Long column names show on two lines. To see the full name, hover over it, or cli
 
 ### Adding Columns
 
-If you can edit a board, there are three ways to add a column:
+If you can edit a board, there are four ways to add a column:
 
+- **Below a column** - Select **+ Add Column** at the bottom of any column. The new column goes straight after it, so you don't need to scroll to the end of a wide board
 - **Between two columns** - Select the small **+** in the gap between two column headers. The new column goes in that gap. The **+** isn't shown in small windows or on phones
 - **With the keyboard** - Press **C** to add a column nearest your mouse (see [Keyboard Shortcuts](#keyboard-shortcuts)). This is also the quickest way to add a column before the first one
 - **At the end of the board** - Scroll to the end of the board and select **+ Add Column**
@@ -100,7 +101,7 @@ Select a card to open it. Changes save as you leave each field, and a small "Sav
 
 - **Enter** saves and closes the card, **Shift+Enter** adds a new line, and **Escape** reverts the field you're editing, then closes the card. On touchscreens, Enter adds a new line in descriptions and comments
 - **New cards** can start with dates, a duration, assignees, a checklist and a schedule, using the same keyboard rules as editing
-- **Move a card** by dragging it to another column or position. On a phone, press and hold the card first. Hold a dragged card near the top or bottom of a column to scroll the column, or near the left or right edge of the board to scroll to columns off screen
+- **Move a card** by dragging it to another column or position. On a phone, press and hold the card first. The column the card will drop into is highlighted while you drag. Hold a dragged card near the top or bottom of a column to scroll the column, or near the left or right edge of the board to scroll to columns off screen
 - **Assignees**: set a primary assignee and optional secondary assignees from the users with access to the board. Cards show the primary assignee's initials in their profile colour
 - **Dates and times** use a picker with minutes in steps of 5. To enter an exact minute, type it into the field
 - **Timestamps**: cards show when they were last updated, and the edit modal shows created and updated times. Checklist items show theirs in a tooltip. Reordering doesn't change a card's timestamp, and adding or editing a comment or checklist item does
@@ -135,6 +136,17 @@ Archive a card to take it off the board and keep its history. Find it in the Arc
 On a busy board, open the board menu in the header and set **Compact cards** to **On** to show only each card's title. Set it to **Off** to bring back descriptions and checklists. On mobile it's in the Board section of the menu.
 
 The setting is remembered for each board in this browser. It doesn't change what other people see.
+
+## Sections Layout
+
+Some boards are a set of lists rather than a flow from left to right. For these, open the board menu and set **Layout** to **Sections**. Each column then becomes a section that is only as tall as its cards. Sections stack in lanes, and the board scrolls up and down. Set **Layout** back to **Columns** to return to the usual board, with the columns in their original order. In this layout the board calls columns sections, for example **Rename section** and **Delete section** in the menu.
+
+- **Arranging sections** - Drag a section by its header to any lane, above or below other sections. You can also use **Move up**, **Move down**, **Move to left lane** and **Move to right lane** in the column menu, which also work on touchscreens and with the keyboard
+- **Lanes** - Sections stay in the lanes you put them in, and there's no limit on how many lanes you use. If you can edit the board, there's always an empty lane on the right for a new lane, and a lane you empty closes up. When the lanes don't fit the window, the board scrolls sideways as well as up and down. Phones show the same lanes, a little narrower
+- **Adding sections** - Each lane has **+ Add Section** at its bottom, which adds the new section there. Use the one in the empty lane on the right to start a new lane. Sections added any other way, such as with the **C** shortcut, go to the bottom of the lane with the fewest sections
+- **Cards** work as they do in columns. Drag them between sections, and hold a dragged card or section near an edge of the board to scroll
+
+The layout and the position of each section are saved for the board, so everyone sees the same arrangement, including on a public board. Changing the layout needs permission to edit the board, and arranging sections needs permission to edit columns. Board exports include the layout.
 
 ## Card Actions
 
