@@ -77,3 +77,33 @@ def test_private_board_has_no_badge_or_copy_item(logged_in_page, api_session, pu
 
     assert not page.locator("#public-board-badge-btn").is_visible()
     assert page.locator("#copy-public-link-menu-item").evaluate("el => el.style.display") == "none"
+
+
+@pytest.mark.ui
+def test_public_board_page_offers_compact_cards(page, public_board):
+    """Compact cards is a viewer's display choice, so signed-out visitors get it too (#682)."""
+    page.goto(f"/public-board.html?slug={public_board['public_slug']}")
+    toggle = page.locator("#toggle-compact-cards-menu-item")
+    page.wait_for_function(
+        "() => window.boardManager?.hasLoadedBoardData"
+        " && document.getElementById('toggle-compact-cards-menu-item')?.style.display === ''",
+        timeout=8000,
+    )
+    page.locator(".settings-dropdown .icon-link").click()
+    toggle.get_by_role("button", name="On").click()
+    assert page.evaluate("document.body.classList.contains('compact-cards')") is True
+    assert toggle.locator('button[aria-pressed="true"]').get_attribute("data-value") == "on"
+
+
+@pytest.mark.ui
+def test_public_board_page_offers_compact_cards_on_mobile(page, public_board):
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.goto(f"/public-board.html?slug={public_board['public_slug']}")
+    page.wait_for_function(
+        "() => window.boardManager?.hasLoadedBoardData"
+        " && document.getElementById('toggle-compact-cards-menu-item')?.style.display === ''",
+        timeout=8000,
+    )
+    page.locator(".settings-dropdown .icon-link").click()
+    page.locator("#toggle-compact-cards-menu-item").get_by_role("button", name="On").click()
+    assert page.evaluate("document.body.classList.contains('compact-cards')") is True

@@ -1006,15 +1006,6 @@ body.board-page:not(.public-board-page) .board-search-control {
   stroke: var(--text-muted);
 }
 
-body:not(.board-page) .compact-cards-toggle {
-  display: none;
-}
-
-.compact-cards-toggle[aria-pressed="true"] {
-  color: var(--primary-color);
-  font-weight: 600;
-}
-
 .views-dropdown-item span {
   flex: 1;
 }
@@ -1365,6 +1356,11 @@ a.views-dropdown-item {
 
   .header-public-board .views-dropdown {
     display: flex !important;
+  }
+
+  /* The drawer is hidden on public pages, so Compact cards stays in the board menu (#682). */
+  .header-public-board .settings-dropdown:has(.settings-dropdown-item:not([style*="display: none"])) {
+    display: block !important;
   }
 
   .header-public-board .boards-dropdown {

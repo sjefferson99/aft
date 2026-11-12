@@ -132,7 +132,7 @@ Archive a card to take it off the board and keep its history. Find it in the Arc
 
 ## Compact Cards
 
-On a busy board, choose **Compact Cards** in the views dropdown to show only each card's title. Choose it again to bring back descriptions and checklists. On mobile it's in the Views section of the menu.
+On a busy board, open the board menu in the header and set **Compact cards** to **On** to show only each card's title. Set it to **Off** to bring back descriptions and checklists. On mobile it's in the Board section of the menu.
 
 The setting is remembered for each board in this browser. It doesn't change what other people see.
 
@@ -245,7 +245,7 @@ The global board appears under its own name in several places:
 
 - At the top of the **Boards** dropdown in the header
 - First on the boards page, marked **Global board**
-- In the views dropdown on board pages, just above Compact Cards
+- At the bottom of the views dropdown on board pages
 - In the menu drawer on a phone
 
 It appears once you have an Agile board or can see a promoted card, so it stays out of the way if you only use Kanban.

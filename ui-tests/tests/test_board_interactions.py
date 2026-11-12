@@ -596,9 +596,17 @@ def _is_archived(api_session, ui_base_url, card_id):
     return api_session.get(f"{ui_base_url}/api/cards/{card_id}").json()["card"]["archived"]
 
 
-def _toggle_compact_cards(page):
-    page.locator("#views-dropdown-btn").click()
-    page.locator("#compact-cards-toggle").click()
+COMPACT_TOGGLE = "#toggle-compact-cards-menu-item"
+
+
+def _set_compact_cards(page, value):
+    """Choose On or Off in the board menu's Compact cards row (#682)."""
+    page.locator(".settings-dropdown .icon-link").click()
+    page.locator(COMPACT_TOGGLE).get_by_role("button", name=value).click()
+
+
+def _compact_cards_pressed(page):
+    return page.locator(f'{COMPACT_TOGGLE} button[aria-pressed="true"]').get_attribute("data-value")
 
 
 @pytest.mark.ui
@@ -613,8 +621,8 @@ def test_compact_cards_show_titles_only_and_persist(logged_in_page, api_session,
     full_height = card.bounding_box()["height"]
     assert card.locator(".card-checklist").is_visible()
 
-    _toggle_compact_cards(page)
-    assert page.locator("#compact-cards-toggle").get_attribute("aria-pressed") == "true"
+    _set_compact_cards(page, "On")
+    assert _compact_cards_pressed(page) == "on"
     assert card.locator(".card-title").is_visible()
     for hidden in (".card-description", ".card-checklist", ".card-expand-btn"):
         assert not card.locator(hidden).is_visible()
@@ -624,11 +632,12 @@ def test_compact_cards_show_titles_only_and_persist(logged_in_page, api_session,
     card.wait_for(state="visible", timeout=8000)
     assert not card.locator(".card-checklist").is_visible()
     page.wait_for_function(
-        "() => document.getElementById('compact-cards-toggle')?.getAttribute('aria-pressed') === 'true'",
+        f"""() => document.querySelector('{COMPACT_TOGGLE} button[data-value="on"]')?.getAttribute('aria-pressed') === 'true'""",
         timeout=8000,
     )
 
-    _toggle_compact_cards(page)
+    _set_compact_cards(page, "Off")
+    assert _compact_cards_pressed(page) == "off"
     assert card.locator(".card-checklist").is_visible()
     # Rendered while compact, so the overflow has to be measured again when it's turned off.
     page.wait_for_function(
@@ -646,7 +655,7 @@ def test_compact_cards_only_applies_to_its_board(logged_in_page, api_session, ui
     other = api_session.post(f"{ui_base_url}/api/boards", json={"name": f"Other {uuid.uuid4().hex[:8]}"}).json()["board"]
     try:
         _open_board_for_patching(page, data["board"]["id"])
-        _toggle_compact_cards(page)
+        _set_compact_cards(page, "On")
         assert page.evaluate("document.body.classList.contains('compact-cards')") is True
 
         page.goto(f"/board.html?id={other['id']}")
@@ -657,41 +666,64 @@ def test_compact_cards_only_applies_to_its_board(logged_in_page, api_session, ui
 
 
 @pytest.mark.ui
-def test_done_view_stays_above_compact_cards_toggle(logged_in_page, api_session, ui_base_url, board_with_cards):
+def test_choosing_the_current_compact_value_changes_nothing(logged_in_page, board_with_cards):
+    page = logged_in_page
+    _open_board_for_patching(page, board_with_cards["board"]["id"])
+    assert _compact_cards_pressed(page) == "off"
+
+    _set_compact_cards(page, "Off")
+    assert page.evaluate("document.body.classList.contains('compact-cards')") is False
+    assert _compact_cards_pressed(page) == "off"
+
+
+@pytest.mark.ui
+def test_compact_cards_is_a_board_option_not_a_view(logged_in_page, api_session, ui_base_url, board_with_cards):
+    """Compact cards moved from the views dropdown to the board menu (#682)."""
     page = logged_in_page
     data = board_with_cards
     _make_agile_with_done_short_card(api_session, ui_base_url, data)
     _open_board_for_patching(page, data["board"]["id"])
 
     page.locator('.views-dropdown-item[data-view="done"]').wait_for(state="attached", timeout=8000)
-    for selector in ("#views-dropdown-menu > :last-child", ".mobile-tree-items:has(#mobile-compact-cards-toggle) > :last-child"):
-        assert "compact-cards-toggle" in page.locator(selector).get_attribute("class")
+    assert page.locator("#views-dropdown-menu .views-dropdown-item:not([data-view]):not(#global-board-view-item)").count() == 0
+    assert page.locator("#mobile-views-section .mobile-view-item:not([data-view])").count() == 0
+
+    ids = page.locator("#settings-dropdown-menu > *").evaluate_all(
+        "items => items.filter(item => item.style.display !== 'none').map(item => item.id)"
+    )
+    assert ids[:2] == ["toggle-board-style-menu-item", "toggle-compact-cards-menu-item"]
 
 
 @pytest.mark.ui
-def test_mobile_done_view_survives_a_cached_header_without_the_toggle(logged_in_page, api_session, ui_base_url, board_with_cards):
-    """header.html has no version value, so new header.js can briefly run against the old markup."""
+def test_mobile_drawer_compact_cards_toggle(logged_in_page, board_with_cards):
     page = logged_in_page
-    data = board_with_cards
-    _make_agile_with_done_short_card(api_session, ui_base_url, data)
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.goto(f"/board.html?id={board_with_cards['board']['id']}")
+    toggle = page.locator("#mobile-toggle-compact-cards-menu-item")
+    page.wait_for_function(
+        "() => window.boardManager?.hasLoadedBoardData"
+        " && document.getElementById('mobile-toggle-compact-cards-menu-item')?.style.display === ''",
+        timeout=8000,
+    )
+    page.locator("#mobile-menu-toggle").click()
+    page.locator("#mobile-board-actions summary").click()
+    toggle.get_by_role("button", name="On").click()
 
-    def strip_toggle(route):
-        response = route.fetch()
-        html = response.text().replace('id="mobile-compact-cards-toggle"', 'id="removed-toggle"')
-        route.fulfill(response=response, body=html)
-
-    page.context.route("**/components/header.html", strip_toggle)
-    page.goto(f"/board.html?id={data['board']['id']}")
-    page.locator('.mobile-view-item[data-view="done"]').wait_for(state="attached", timeout=8000)
+    assert page.evaluate("document.body.classList.contains('compact-cards')") is True
+    assert page.evaluate("document.body.classList.contains('mobile-menu-open')") is False
+    for selector in ("#mobile-toggle-compact-cards-menu-item", COMPACT_TOGGLE):
+        assert page.locator(f'{selector} button[aria-pressed="true"]').get_attribute("data-value") == "on"
 
 
 @pytest.mark.ui
 def test_compact_cards_toggle_is_not_offered_on_boards_page(logged_in_page):
     page = logged_in_page
     page.goto("/index.html")
-    page.locator("#views-dropdown-btn").click()
-    assert page.locator("#compact-cards-toggle").count() == 1
-    assert not page.locator("#compact-cards-toggle").is_visible()
+    page.wait_for_function("() => window.header?.workingStyleLoadPromise", timeout=8000)
+    # The menu rows are set up straight after the working style loads.
+    page.evaluate("async () => { await window.header.workingStyleLoadPromise; await new Promise(r => setTimeout(r, 0)); }")
+    assert page.locator("#toggle-compact-cards-menu-item").evaluate("el => el.style.display") == "none"
+    assert page.locator("#mobile-toggle-compact-cards-menu-item").evaluate("el => el.style.display") == "none"
 
 
 @pytest.mark.ui
