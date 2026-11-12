@@ -281,10 +281,9 @@ def test_view_menu_links_to_global_board(logged_in_page, global_board, epic):
     assert item.get_attribute("href") == f"/global-board.html?id={global_board['id']}"
     assert item.inner_text().strip() == global_board["name"]
     assert item.get_attribute("data-view") is None
-    # Compact Cards stays last.
     assert page.evaluate(
         "document.querySelector('#views-dropdown-menu').lastElementChild.id"
-    ) == "compact-cards-toggle"
+    ) == "global-board-view-item"
 
     page.locator("#views-dropdown-btn").click()
     item.click()

@@ -402,6 +402,9 @@ class Header {
     // Initialize board style toggle in settings menu
     this.initializeBoardStyleToggleMenu();
 
+    // Initialize compact cards toggle in settings menu
+    this.initializeCompactCardsToggleMenu();
+
     // Initialize board visibility toggle in settings menu
     this.initializeBoardVisibilityToggleMenu();
 
@@ -787,10 +790,10 @@ class Header {
       headerEl.classList.toggle('header-public-board', useMinimalPublicChrome);
     }
 
+    // The board menu stays: on a public page its only item is Compact cards (#682).
     const selectorsToHideInMinimalMode = [
       '.boards-dropdown',
       '.notifications-dropdown',
-      '.settings-dropdown',
       '.user-dropdown',
       '.db-status'
     ];
@@ -1043,11 +1046,6 @@ class Header {
         this.setView(view);
         closeMenu();
       });
-    });
-
-    document.getElementById('mobile-compact-cards-toggle')?.addEventListener('click', () => {
-      window.dispatchEvent(new CustomEvent('compactCardsToggleRequested'));
-      closeMenu();
     });
 
     // Hook mobile logout button into existing logout flow
@@ -3262,7 +3260,7 @@ class Header {
         
         dropdownMenu.insertBefore(
           doneItem,
-          document.getElementById('global-board-view-item') || document.getElementById('compact-cards-toggle')
+          document.getElementById('global-board-view-item')
         );
       }
     } else {
@@ -3296,7 +3294,7 @@ class Header {
             }
           });
           mobileViewsSection.querySelector('.mobile-tree-items')
-            ?.insertBefore(doneBtn, document.getElementById('mobile-compact-cards-toggle'));
+            ?.appendChild(doneBtn);
         }
       } else if (mobileDoneItem) {
         mobileDoneItem.remove();
@@ -3382,13 +3380,6 @@ class Header {
 
     if (!dropdownBtn || !dropdownMenu) return;
 
-    document.getElementById('compact-cards-toggle')?.addEventListener('click', () => {
-      window.dispatchEvent(new CustomEvent('compactCardsToggleRequested'));
-      dropdownMenu.classList.remove('show');
-    });
-    window.addEventListener('compactCardsChanged', () => this.syncCompactCardsToggles());
-    this.syncCompactCardsToggles();
-
     // Toggle dropdown on button click
     dropdownBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3419,10 +3410,61 @@ class Header {
     });
   }
 
+  getCompactCardsMenuItems() {
+    return [
+      document.getElementById('toggle-compact-cards-menu-item'),
+      document.getElementById('mobile-toggle-compact-cards-menu-item')
+    ].filter(Boolean);
+  }
+
+  /**
+   * Compact cards (#300, #682) is a per-board display choice for this browser,
+   * so it's offered on every board page, public ones included, whatever the
+   * viewer's permissions. board.js owns the state and reports changes.
+   */
+  initializeCompactCardsToggleMenu() {
+    const menuItems = this.getCompactCardsMenuItems();
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    const onBoard = document.body.classList.contains('board-page');
+    menuItems.forEach((menuItem) => {
+      menuItem.style.display = onBoard ? '' : 'none';
+    });
+    if (!onBoard) {
+      return;
+    }
+
+    menuItems.forEach((menuItem) => {
+      if (!menuItem.dataset.boundCompactToggleHandler) {
+        menuItem.addEventListener('click', (e) => {
+          const option = e.target.closest('button[data-value]');
+          if (!option) {
+            return;
+          }
+          const enabled = document.body.classList.contains('compact-cards');
+          if ((option.dataset.value === 'on') !== enabled) {
+            window.dispatchEvent(new CustomEvent('compactCardsToggleRequested'));
+          }
+          closeAllMenusExcept(null);
+          updateMenuHoverState();
+        });
+        menuItem.dataset.boundCompactToggleHandler = 'true';
+      }
+    });
+
+    if (!this.compactCardsListenerBound) {
+      window.addEventListener('compactCardsChanged', () => this.syncCompactCardsToggles());
+      this.compactCardsListenerBound = true;
+    }
+    this.syncCompactCardsToggles();
+  }
+
   syncCompactCardsToggles() {
-    const enabled = document.body.classList.contains('compact-cards');
-    document.querySelectorAll('.compact-cards-toggle').forEach(toggle => {
-      toggle.setAttribute('aria-pressed', String(enabled));
+    const value = document.body.classList.contains('compact-cards') ? 'on' : 'off';
+    this.getCompactCardsMenuItems().forEach((menuItem) => {
+      this.setBoardMenuToggleValue(menuItem, value);
     });
   }
 
@@ -3802,7 +3844,7 @@ class Header {
    * Add the global board (#663) to the view menu and the mobile drawer.
    *
    * The view menu item navigates, so it has no data-view and doesn't go
-   * through setView. It sits just above Compact Cards, which stays last. The
+   * through setView. It sits last. The
    * server's show_in_menu leaves it out for people who only use kanban boards.
    */
   /**
@@ -3857,7 +3899,7 @@ class Header {
         <span></span>
       `;
       item.querySelector('span').textContent = name;
-      dropdownMenu.insertBefore(item, document.getElementById('compact-cards-toggle'));
+      dropdownMenu.appendChild(item);
     }
 
     // The mobile board page hides the drawer's views section, so the drawer
