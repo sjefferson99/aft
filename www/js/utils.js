@@ -245,7 +245,7 @@ function applyCardActions(cardActions) {
   ['desktop', 'mobile'].forEach((screen) => {
     const chosen = cardActions ? cardActions[screen] : null;
     document.body.classList.toggle(`${screen}-card-actions`, Array.isArray(chosen));
-    ['done', 'archive', 'move', 'top', 'delete'].forEach((action) => {
+    ['done', 'archive', 'move', 'top', 'delete', 'promote'].forEach((action) => {
       document.body.classList.toggle(`${screen}-card-action-${action}`, Array.isArray(chosen) && chosen.includes(action));
     });
     document.body.style.setProperty(`--${screen}-card-action-count`, Array.isArray(chosen) ? chosen.length : 0);
@@ -957,7 +957,7 @@ window.currentUser = null;
 window.userDataReady = false;
 
 // Holding any of these opens Instance Settings, which shows only what each one allows.
-window.INSTANCE_SETTINGS_PERMISSIONS = ['branding.edit', 'admin.database', 'user.manage', 'user.role', 'role.manage'];
+window.INSTANCE_SETTINGS_PERMISSIONS = ['branding.edit', 'admin.database', 'user.manage', 'user.role', 'role.manage', 'global_board.manage'];
 
 /**
  * Check if the current user has a specific permission.

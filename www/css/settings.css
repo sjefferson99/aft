@@ -866,3 +866,36 @@
 .modal-footer .btn-secondary:hover {
   background: var(--background-light);
 }
+
+/* Global board settings (Instance Settings > Global Board) */
+.global-board-settings-form + .global-board-settings-form {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+}
+
+.global-board-done-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.global-board-done-row .global-board-done-mode {
+  width: auto;
+  flex: 1 1 200px;
+  max-width: 260px;
+}
+
+.global-board-done-row .global-board-done-days {
+  width: 110px;
+  cursor: text;
+}
+
+.global-board-done-row [hidden] {
+  display: none;
+}
+
+.global-board-name-input {
+  cursor: text;
+}

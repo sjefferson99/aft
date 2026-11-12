@@ -42,10 +42,12 @@ TEAM = [
 ]
 MOVE_BOARD = "Office Move"
 AGILE_BOARD = "Website Launch"
+SURVEY_BOARD = "Customer Survey"
 SCHEDULE_BOARD = "Building Maintenance"
 
 SHOTS = {}
 BOARD_IDS = {}
+GLOBAL_BOARD_IDS = []
 
 
 def demo_password():
@@ -132,23 +134,50 @@ def seed_move_board(api):
         api.call("PATCH", f"/api/cards/{api.card(done, title)}/archive")
 
 
-def seed_agile_board(api):
-    board_id = api.call("POST", "/api/boards", json={
-        "name": AGILE_BOARD, "description": "Everything for the new website",
-    })["board"]["id"]
+def seed_agile_board(api, name, description, columns):
+    """Adds an agile board. Each card is (title, done, global state or None)."""
+    board_id = api.call("POST", "/api/boards", json={"name": name, "description": description})["board"]["id"]
     api.call("PUT", f"/api/boards/{board_id}/settings/working-style", json={"value": "agile"})
+    global_board_id = api.call("GET", "/api/global-boards")["global_boards"][0]["id"]
 
-    columns = {
-        "Design": [("Choose the colour palette", True), ("Draw the home page", True), ("Draw the pricing page", False)],
-        "Build": [("Set up hosting", True), ("Build the contact form", False), ("Add the blog", False)],
-        "Launch": [("Check every link", False), ("Announce the launch", False)],
-    }
-    for name, cards in columns.items():
-        column_id = api.column(board_id, name)
-        for title, done in cards:
+    assignee_ids = []
+    for column_name, cards in columns.items():
+        column_id = api.column(board_id, column_name)
+        for title, done, global_state in cards:
             card_id = api.card(column_id, title)
+            # Done cards can't be promoted, so promote first.
+            if global_state:
+                if not assignee_ids:
+                    users = api.call("GET", f"/api/cards/{card_id}/assignees")["available_users"]
+                    assignee_ids = [user["id"] for user in users]
+                api.call("PUT", f"/api/cards/{card_id}/assignees", json={
+                    "assigned_to_id": assignee_ids[len(title) % len(assignee_ids)],
+                })
+                api.call("POST", f"/api/global-boards/{global_board_id}/cards", json={
+                    "card_id": card_id, "state": global_state,
+                })
             if done:
                 api.call("PATCH", f"/api/cards/{card_id}/done", json={"done": True})
+
+
+def seed_agile_boards(api):
+    seed_agile_board(api, AGILE_BOARD, "Everything for the new website", {
+        "Design": [
+            ("Choose the colour palette", True, None),
+            ("Draw the home page", True, "in_progress"),
+            ("Draw the pricing page", False, "in_progress"),
+        ],
+        "Build": [
+            ("Set up hosting", True, None),
+            ("Build the contact form", False, "in_progress"),
+            ("Add the blog", False, "new"),
+        ],
+        "Launch": [("Check every link", False, "new"), ("Announce the launch", False, None)],
+    })
+    seed_agile_board(api, SURVEY_BOARD, "Asking customers what they think", {
+        "Questions": [("Write the questions", True, "new"), ("Pick a survey tool", False, "waiting")],
+        "Results": [("Send the survey", False, "new"), ("Share the results", False, None)],
+    })
 
 
 def seed_schedule_board(api):
@@ -222,7 +251,7 @@ def seed_backups(api):
 def seed(api):
     seed_team(api)
     seed_move_board(api)
-    seed_agile_board(api)
+    seed_agile_boards(api)
     seed_schedule_board(api)
     seed_notifications(api)
     seed_backups(api)
@@ -246,6 +275,7 @@ def connect():
         seed(api)
 
     BOARD_IDS.update({item["name"]: item["id"] for item in api.call("GET", "/api/boards")["boards"]})
+    GLOBAL_BOARD_IDS[:] = [item["id"] for item in api.call("GET", "/api/global-boards")["global_boards"]]
 
 
 def open_board(page, name):
@@ -338,6 +368,15 @@ def done_button_and_counts(page):
     open_board(page, AGILE_BOARD)
     page.wait_for_timeout(500)
     save(page, "done_button_and_counts")
+
+
+@shot
+def global_board(page):
+    page.goto(f"/global-board.html?id={GLOBAL_BOARD_IDS[0]}")
+    page.wait_for_function("() => window.globalBoardPage?.hasLoaded")
+    expect(page.locator(".gb-card", has_text="Build the contact form")).to_be_visible()
+    page.wait_for_timeout(500)
+    save(page, "global_board")
 
 
 @shot

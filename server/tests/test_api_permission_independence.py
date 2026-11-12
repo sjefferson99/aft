@@ -119,8 +119,13 @@ def _create_board_context(admin_session, api_base_url, suffix):
     assert theme_resp.status_code == 201, theme_resp.text
     theme_id = theme_resp.json()["id"]
 
+    global_boards_resp = admin_session.get(f"{api_base_url}/api/global-boards", timeout=10)
+    assert global_boards_resp.status_code == 200, global_boards_resp.text
+    global_board_id = global_boards_resp.json()["global_boards"][0]["id"]
+
     return {
         "suffix": suffix,
+        "global_board_id": global_board_id,
         "board_id": board_id,
         "column_id": column_id,
         "second_column_id": second_column_id,
@@ -215,6 +220,7 @@ PERMISSION_CASES = [
     {"permission": "user.manage", "scope": "global", "method": "GET", "path": "/api/users", "json": None, "expected": {200}},
     {"permission": "user.role", "scope": "global", "method": "GET", "path": "/api/roles", "json": None, "expected": {200}},
     {"permission": "role.manage", "scope": "global", "method": "GET", "path": "/api/roles", "json": None, "expected": {200}},
+    {"permission": "global_board.manage", "scope": "global", "method": "PATCH", "path": "/api/global-boards/{global_board_id}", "json": {"done_visible_days": 14}, "expected": {200}},
     {"permission": "board.create", "scope": "global", "method": "POST", "path": "/api/boards", "json": {"name": "Created by board.create {suffix}"}, "expected": {201}},
     {"permission": "board.view", "scope": "board", "method": "GET", "path": "/api/boards", "json": None, "expected": {200}},
     {"permission": "board.edit", "scope": "board", "method": "PATCH", "path": "/api/boards/{board_id}", "json": {"name": "Edited Board {suffix}"}, "expected": {200}},

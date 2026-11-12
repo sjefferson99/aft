@@ -82,6 +82,33 @@ class TestSettingsAPI:
         data = response.json()
         assert data['success'] is False
     
+    def test_default_board_can_be_the_global_board(self, api_client, authenticated_session):
+        """Test default_board accepts "global:<id>" for a global board the user can see (#663)."""
+        boards = authenticated_session.get(f'{api_client}/api/global-boards').json()['global_boards']
+        value = f"global:{boards[0]['id']}"
+        try:
+            response = authenticated_session.put(
+                f'{api_client}/api/settings/default_board', json={'value': value}
+            )
+            assert response.status_code == 200, response.text
+            response = authenticated_session.get(f'{api_client}/api/settings/default_board')
+            assert response.json()['value'] == value
+        finally:
+            authenticated_session.put(f'{api_client}/api/settings/default_board', json={'value': None})
+
+    @pytest.mark.parametrize('value', [
+        'global:999999999', 'global:0', 'global:-1', 'global:', 'global:1x', 'GLOBAL:1',
+        'global: 1', 'global:12345678901', 'board:1', 'global:<script>',
+    ])
+    def test_default_board_rejects_bad_global_values(self, api_client, authenticated_session, value):
+        """Test unknown global boards and malformed values are rejected."""
+        response = authenticated_session.put(
+            f'{api_client}/api/settings/default_board', json={'value': value}
+        )
+        assert response.status_code == 400
+        assert response.json()['success'] is False
+        assert '<script>' not in response.text
+
     def test_get_setting_after_create(self, api_client, authenticated_session, sample_board):
         """Test retrieving a setting after creating it."""
         # Create setting

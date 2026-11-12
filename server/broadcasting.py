@@ -44,9 +44,29 @@ def configure_broadcasting(socketio_instance):
     """Create and return broadcast callables bound to a SocketIO instance.
 
     Returns:
-        (broadcast_event, broadcast_theme_event) — two callables ready to be
-        injected into route blueprints.
+        (broadcast_event, broadcast_theme_event, broadcast_global_board_event)
+        — callables ready to be injected into route blueprints.
     """
+
+    def broadcast_global_board_event(event_name, data, global_board_id, skip_sid=None):
+        """Broadcast a WebSocket event to everyone viewing a global board (#663).
+
+        Global board events carry no card content, because people on the same
+        global board can see different cards. Clients refetch through the
+        scoped API instead.
+        """
+        room_name = f'global_board_{global_board_id}'
+
+        def do_emit():
+            try:
+                socketio_instance.emit(event_name, data, room=room_name, skip_sid=skip_sid, namespace='/')
+                clear_broadcast_failure(room_name, event_name)
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"Error broadcasting {event_name} to {room_name}: {error_msg}")
+                record_broadcast_failure(room_name, event_name, error_msg)
+
+        socketio_instance.start_background_task(do_emit)
 
     def broadcast_event(event_name, data, board_id, skip_sid=None):
         """Broadcast a WebSocket event to all clients in a board room.
@@ -105,4 +125,4 @@ def configure_broadcasting(socketio_instance):
 
         socketio_instance.start_background_task(do_emit)
 
-    return broadcast_event, broadcast_theme_event
+    return broadcast_event, broadcast_theme_event, broadcast_global_board_event
