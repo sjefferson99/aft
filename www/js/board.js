@@ -5627,7 +5627,7 @@ class BoardManager {
                         </button>
                       ` : ''}
                       ${canUpdateColumns ? `
-                        <button class="column-menu-item column-menu-rename-btn" data-column-id="${column.id}" data-column-name="${this.escapeHtml(column.name)}">
+                        <button class="column-menu-item column-menu-rename-btn" data-column-id="${column.id}" data-column-name="${escapeHtml(column.name)}">
                           <span>✎</span>
                           <span>Rename ${this.columnNoun()}</span>
                         </button>
@@ -5702,7 +5702,7 @@ class BoardManager {
                 }
                 ${!this.showArchived && canCreateCardsInCurrentView ? `<button class="btn btn-secondary add-card-btn" data-column-id="${column.id}">+ Add Card</button>` : ''}
               </div>
-              ${this.canEdit && !sections ? `<button type="button" class="column-add-column-btn" data-order="${index < this.columns.length - 1 ? this.columns[index + 1].order : ''}" aria-label="Add a column after ${this.escapeHtml(column.name)}">+ Add Column</button>` : ''}
+              ${this.canEdit && !sections ? `<button type="button" class="column-add-column-btn" data-order="${index < this.columns.length - 1 ? this.columns[index + 1].order : ''}" aria-label="Add a column after ${escapeHtml(column.name)}">+ Add Column</button>` : ''}
               ${this.canEdit && !sections && index < this.columns.length - 1 ? `<button type="button" class="column-insert-btn" data-order="${this.columns[index + 1].order}" aria-label="Add new column after column ${index + 1}" data-tooltip="Add new column">+</button>` : ''}
             </div>
           `).join('')}

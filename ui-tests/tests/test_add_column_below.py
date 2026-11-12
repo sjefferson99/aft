@@ -105,3 +105,21 @@ def test_not_shown_in_sections_layout_or_read_only(
     page.goto(f"/public-board.html?slug={response.json()['board']['public_slug']}")
     page.locator(".columns-container .column").first.wait_for(state="visible", timeout=8000)
     assert page.locator(".column-add-column-btn").count() == 0
+
+
+def test_quotes_in_a_column_name_stay_in_its_attributes(logged_in_page, api_session, ui_base_url, three_column_board):
+    data = three_column_board
+    column_id = data["columns"][0]["id"]
+    name = 'Q" data-injected="yes'
+    response = api_session.patch(f"{ui_base_url}/api/columns/{column_id}", json={"name": name})
+    assert response.status_code == 200, response.text
+
+    page = logged_in_page
+    page.goto(f"/board.html?id={data['board']['id']}")
+    button = page.locator(f'.column[data-column-id="{column_id}"] .column-add-column-btn')
+    button.wait_for(state="visible", timeout=8000)
+
+    assert page.locator("[data-injected]").count() == 0
+    assert button.get_attribute("aria-label") == f"Add a column after {name}"
+    rename = page.locator(f'.column-menu-rename-btn[data-column-id="{column_id}"]')
+    assert rename.get_attribute("data-column-name") == name
