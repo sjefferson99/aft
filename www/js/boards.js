@@ -120,7 +120,13 @@ class BoardsManager {
       if (response.ok) {
         const data = await response.json();
         
-        if (data.success && data.value) {
+        const globalMatch = typeof data.value === 'string' ? /^global:(\d+)$/.exec(data.value) : null;
+        if (data.success && globalMatch) {
+          // The default is the global board (#663).
+          window.location.href = `/global-board.html?id=${globalMatch[1]}`;
+          return true;
+        }
+        if (data.success && Number.isInteger(data.value) && data.value > 0) {
           // Redirect to default board
           window.location.href = `/board.html?id=${data.value}`;
           return true; // Indicate redirect is happening
@@ -381,6 +387,7 @@ class BoardsManager {
     try {
       this.configureHeaderViews();
       const archivedParam = this.showArchivedBoards ? 'true' : 'false';
+      const globalBoardRequest = this.loadGlobalBoard();
       const response = await fetch(`/api/boards?archived=${archivedParam}`);
       let data = null;
 
@@ -417,6 +424,7 @@ class BoardsManager {
       
       if (data.success) {
         this.boards = data.boards;
+        this.globalBoard = await globalBoardRequest;
         this.renderBoardsList();
       } else {
         this.showError('Failed to load boards: ' + this.escapeHtml(data.message || 'Unknown error'));
@@ -424,6 +432,43 @@ class BoardsManager {
     } catch (err) {
       this.showError('Error loading boards: ' + this.escapeHtml(err.message || 'Unknown error'));
     }
+  }
+
+  /**
+   * The global board (#663) for the card at the start of the list, or null.
+   * Same rule as the header's links: only for people with an agile board or
+   * a promoted card they can see.
+   * @returns {Promise<{id: number, name: string}|null>}
+   */
+  async loadGlobalBoard() {
+    if (window.header && typeof window.header.getMenuGlobalBoard === 'function') {
+      return window.header.getMenuGlobalBoard();
+    }
+    return null;
+  }
+
+  // A link rather than a .board-card, so the board click and permission
+  // handlers never treat it as a board.
+  renderGlobalBoardCard(globalBoard) {
+    const card = document.createElement('a');
+    card.className = 'global-board-card';
+    card.id = 'boards-global-board-card';
+    card.href = `/global-board.html?id=${encodeURIComponent(globalBoard.id)}`;
+
+    const label = document.createElement('span');
+    label.className = 'global-board-card-label';
+    label.textContent = 'Global board';
+    card.appendChild(label);
+
+    const title = document.createElement('h4');
+    title.textContent = String(globalBoard.name || 'Global');
+    card.appendChild(title);
+
+    const description = document.createElement('p');
+    description.className = 'board-description';
+    description.textContent = 'Cards promoted from your agile boards, in one place.';
+    card.appendChild(description);
+    return card;
   }
 
   renderBoardsList() {
@@ -464,6 +509,9 @@ class BoardsManager {
 
       // Render board cards using explicit DOM APIs to avoid HTML injection risks.
       listContainer.innerHTML = '';
+      if (this.globalBoard && !this.showArchivedBoards) {
+        listContainer.appendChild(this.renderGlobalBoardCard(this.globalBoard));
+      }
       this.boards.forEach(board => {
         const card = document.createElement('div');
         card.className = 'board-card';

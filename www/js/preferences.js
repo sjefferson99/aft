@@ -108,11 +108,16 @@ class Preferences {
 
   async loadBoards() {
     try {
-      const response = await fetch('/api/boards');
+      const [response, globalBoard] = await Promise.all([
+        fetch('/api/boards'),
+        window.header && typeof window.header.getMenuGlobalBoard === 'function'
+          ? window.header.getMenuGlobalBoard()
+          : null
+      ]);
       const data = await response.json();
 
       if (data.success) {
-        this.renderBoardOptions(data.boards);
+        this.renderBoardOptions(data.boards, globalBoard);
       } else {
         this.showStatus('Failed to load boards: ' + data.message, 'error');
       }
@@ -121,7 +126,7 @@ class Preferences {
     }
   }
 
-  renderBoardOptions(boards) {
+  renderBoardOptions(boards, globalBoard = null) {
     // Clear existing options
     this.defaultBoardSelect.innerHTML = '';
 
@@ -130,6 +135,14 @@ class Preferences {
     noneOption.value = '';
     noneOption.textContent = 'None (Boards page)';
     this.defaultBoardSelect.appendChild(noneOption);
+
+    // The global board (#663) is saved as "global:<id>".
+    if (globalBoard) {
+      const globalOption = document.createElement('option');
+      globalOption.value = `global:${globalBoard.id}`;
+      globalOption.textContent = `${globalBoard.name || 'Global'} (global board)`;
+      this.defaultBoardSelect.appendChild(globalOption);
+    }
 
     // Add board options
     boards.forEach(board => {
@@ -148,7 +161,7 @@ class Preferences {
       if (boardResponse.ok) {
         const data = await boardResponse.json();
         if (data.success) {
-          const defaultBoardId = data.value || '';
+          const defaultBoardId = data.value ? String(data.value) : '';
           this.defaultBoardSelect.value = defaultBoardId;
         }
       } else if (boardResponse.status === 404) {
@@ -325,8 +338,13 @@ class Preferences {
       
       const defaultBoardId = this.defaultBoardSelect.value;
       
-      // Convert empty string to null for JSON
-      const value = defaultBoardId === '' ? null : parseInt(defaultBoardId, 10);
+      // Convert empty string to null for JSON. A global board stays a string.
+      let value = null;
+      if (defaultBoardId.startsWith('global:')) {
+        value = defaultBoardId;
+      } else if (defaultBoardId !== '') {
+        value = parseInt(defaultBoardId, 10);
+      }
 
       const response = await fetch('/api/settings/default_board', {
         method: 'PUT',

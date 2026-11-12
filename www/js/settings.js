@@ -23,6 +23,9 @@ class Settings {
     this.canManageBranding = false;
     this.tabs = Array.from(document.querySelectorAll('.settings-tab'));
     this.instancePanel = document.getElementById('settings-panel-instance');
+    this.globalBoardPanel = document.getElementById('settings-panel-global-board');
+    this.globalBoardList = document.getElementById('global-board-settings-list');
+    this.canManageGlobalBoard = false;
     this.framesPanel = document.getElementById('settings-panel-frames');
     this.tabFrames = new Map();
   }
@@ -51,11 +54,16 @@ class Settings {
       await this.loadBrandingSettings();
       await this.loadAppName();
     }
+    if (this.canManageGlobalBoard) {
+      await this.loadGlobalBoards();
+    }
     this.attachEventListeners();
   }
 
   initializeGlobalSettingsVisibility() {
     this.canManageBranding = typeof hasPermission === 'function' && hasPermission('branding.edit');
+    this.canManageGlobalBoard = typeof hasPermission === 'function'
+      && hasPermission('global_board.manage');
 
     if (!this.globalSettingsPanel) {
       return;
@@ -72,6 +80,10 @@ class Settings {
   initializeTabs() {
     if (!this.canManageBranding) {
       document.getElementById('settings-tab-instance').style.display = 'none';
+    }
+    const globalBoardTab = document.getElementById('settings-tab-global-board');
+    if (globalBoardTab) {
+      globalBoardTab.style.display = this.canManageGlobalBoard ? '' : 'none';
     }
 
     this.getVisibleTabs().forEach((tab) => {
@@ -116,14 +128,18 @@ class Settings {
       tab.tabIndex = selected ? 0 : -1;
     });
 
-    const isInstanceTab = selectedTab.dataset.tab === 'instance';
-    this.instancePanel.hidden = !isInstanceTab;
-    this.framesPanel.hidden = isInstanceTab;
+    // Tabs linking to a #hash are panels on this page; the rest load in a frame.
+    const isPageTab = selectedTab.getAttribute('href').startsWith('#');
+    this.instancePanel.hidden = selectedTab.dataset.tab !== 'instance';
+    if (this.globalBoardPanel) {
+      this.globalBoardPanel.hidden = selectedTab.dataset.tab !== 'global-board';
+    }
+    this.framesPanel.hidden = isPageTab;
 
     this.tabFrames.forEach((frame) => {
       frame.hidden = true;
     });
-    if (!isInstanceTab) {
+    if (!isPageTab) {
       this.framesPanel.setAttribute('aria-labelledby', selectedTab.id);
       this.showTabFrame(selectedTab);
     }
@@ -553,6 +569,193 @@ class Settings {
       this.showStatus('Saved', 'success');
     } catch (error) {
       this.showStatus('Error: ' + error.message, 'error');
+    }
+  }
+
+  async loadGlobalBoards() {
+    if (!this.canManageGlobalBoard || !this.globalBoardList) {
+      return;
+    }
+
+    try {
+      const response = await this.fetchWithTimeout('/api/global-boards', { cache: 'no-store' });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to load global boards');
+      }
+
+      const boards = (Array.isArray(data.global_boards) ? data.global_boards : [])
+        .filter(board => board.can_manage);
+      this.globalBoardList.replaceChildren();
+      if (boards.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'setting-help';
+        empty.textContent = 'There are no global boards you can manage.';
+        this.globalBoardList.appendChild(empty);
+        return;
+      }
+      boards.forEach(board => this.globalBoardList.appendChild(this.buildGlobalBoardForm(board)));
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.error('Error loading global boards:', error);
+      }
+      this.globalBoardList.replaceChildren();
+      const message = document.createElement('p');
+      message.className = 'settings-status error';
+      message.setAttribute('role', 'alert');
+      message.textContent = 'Could not load global board settings. Please reload the page.';
+      this.globalBoardList.appendChild(message);
+    }
+  }
+
+  // One form per global board, built from DOM nodes because the name is user text.
+  buildGlobalBoardForm(board) {
+    const prefix = `global-board-${board.id}`;
+    const form = document.createElement('form');
+    form.className = 'global-board-settings-form';
+    form.dataset.globalBoardId = String(board.id);
+    form.noValidate = true;
+
+    const nameItem = document.createElement('div');
+    nameItem.className = 'setting-item';
+    const nameLabel = document.createElement('label');
+    nameLabel.htmlFor = `${prefix}-name`;
+    nameLabel.textContent = 'Name';
+    const nameHelp = document.createElement('p');
+    nameHelp.className = 'setting-help';
+    nameHelp.id = `${prefix}-name-help`;
+    nameHelp.textContent = 'Shown in the view menu and as the global board page title. Up to 100 characters.';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.id = `${prefix}-name`;
+    nameInput.className = 'setting-select global-board-name-input';
+    nameInput.maxLength = 100;
+    nameInput.required = true;
+    nameInput.value = board.name || '';
+    nameInput.setAttribute('aria-describedby', nameHelp.id);
+    nameItem.append(nameLabel, nameHelp, nameInput);
+
+    const daysItem = document.createElement('div');
+    daysItem.className = 'setting-item';
+    const daysLabel = document.createElement('label');
+    daysLabel.htmlFor = `${prefix}-done-mode`;
+    daysLabel.textContent = 'Show done cards for';
+    const daysHelp = document.createElement('p');
+    daysHelp.className = 'setting-help';
+    daysHelp.id = `${prefix}-done-help`;
+    daysHelp.textContent = 'Done cards older than this are hidden from the global board but stay promoted. '
+      + 'Unticking done on a hidden card brings it back.';
+    const daysRow = document.createElement('div');
+    daysRow.className = 'global-board-done-row';
+    const modeSelect = document.createElement('select');
+    modeSelect.id = `${prefix}-done-mode`;
+    modeSelect.className = 'setting-select global-board-done-mode';
+    modeSelect.setAttribute('aria-describedby', daysHelp.id);
+    [['days', 'A number of days'], ['always', 'None (always show)']].forEach(([value, text]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = text;
+      modeSelect.appendChild(option);
+    });
+    const daysInput = document.createElement('input');
+    daysInput.type = 'number';
+    daysInput.id = `${prefix}-done-days`;
+    daysInput.className = 'setting-select global-board-done-days';
+    daysInput.min = '1';
+    daysInput.max = '3650';
+    daysInput.step = '1';
+    daysInput.inputMode = 'numeric';
+    daysInput.setAttribute('aria-label', 'Days done cards show');
+    const daysSuffix = document.createElement('span');
+    daysSuffix.className = 'global-board-done-suffix';
+    daysSuffix.textContent = 'days';
+    daysRow.append(modeSelect, daysInput, daysSuffix);
+    daysItem.append(daysLabel, daysHelp, daysRow);
+
+    const alwaysShow = board.done_visible_days === null || board.done_visible_days === undefined;
+    modeSelect.value = alwaysShow ? 'always' : 'days';
+    daysInput.value = alwaysShow ? '14' : String(board.done_visible_days);
+    const syncDaysInput = () => {
+      const hidden = modeSelect.value === 'always';
+      daysInput.hidden = hidden;
+      daysSuffix.hidden = hidden;
+    };
+    syncDaysInput();
+    modeSelect.addEventListener('change', syncDaysInput);
+
+    const actions = document.createElement('div');
+    actions.className = 'branding-actions';
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'submit';
+    saveBtn.className = 'btn btn-primary global-board-save-btn';
+    saveBtn.textContent = 'Save';
+    actions.appendChild(saveBtn);
+
+    const status = document.createElement('div');
+    status.className = 'settings-status';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+
+    form.append(nameItem, daysItem, actions, status);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      this.saveGlobalBoard(board.id, { nameInput, modeSelect, daysInput, saveBtn, status });
+    });
+    return form;
+  }
+
+  showGlobalBoardStatus(status, message, type) {
+    status.textContent = message;
+    status.className = `settings-status ${type}`;
+  }
+
+  async saveGlobalBoard(globalBoardId, { nameInput, modeSelect, daysInput, saveBtn, status }) {
+    const name = nameInput.value.trim();
+    if (!name) {
+      this.showGlobalBoardStatus(status, 'Please enter a name.', 'error');
+      nameInput.focus();
+      return;
+    }
+
+    let doneVisibleDays = null;
+    if (modeSelect.value === 'days') {
+      const raw = daysInput.value.trim();
+      doneVisibleDays = Number(raw);
+      if (!/^\d+$/.test(raw) || doneVisibleDays < 1 || doneVisibleDays > 3650) {
+        this.showGlobalBoardStatus(status, 'Enter a whole number of days from 1 to 3650.', 'error');
+        daysInput.focus();
+        return;
+      }
+    }
+
+    saveBtn.disabled = true;
+    this.showGlobalBoardStatus(status, 'Saving...', 'info');
+    try {
+      const response = await this.fetchWithTimeout(`/api/global-boards/${encodeURIComponent(globalBoardId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, done_visible_days: doneVisibleDays })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to save global board settings');
+      }
+
+      nameInput.value = data.global_board.name;
+      this.showGlobalBoardStatus(status, 'Saved', 'success');
+      setTimeout(() => {
+        if (status.classList.contains('success')) {
+          this.showGlobalBoardStatus(status, '', '');
+        }
+      }, 2000);
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        this.showGlobalBoardStatus(status, 'Save timed out. Please try again.', 'error');
+      } else {
+        this.showGlobalBoardStatus(status, `Error saving: ${error.message}`, 'error');
+      }
+    } finally {
+      saveBtn.disabled = false;
     }
   }
 

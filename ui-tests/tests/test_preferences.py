@@ -119,7 +119,8 @@ def test_admin_pages_open_as_tabs(logged_in_page):
     tabs = page.locator(".settings-tab")
     page.locator("#settings-tab-instance[aria-selected='true']").wait_for(timeout=8000)
     assert tabs.all_inner_texts() == [
-        "Instance Settings", "User Management", "Role Management", "Backup & Restore", "Theme Builder",
+        "Instance Settings", "User Management", "Role Management", "Backup & Restore", "Global Board",
+        "Theme Builder",
     ]
     assert page.locator("#settings-dropdown-menu a[href$='.html']").count() == 0
     assert page.locator("#mobile-board-actions a[href$='.html']").count() == 0
@@ -177,9 +178,30 @@ def test_user_with_one_admin_permission_keeps_their_route(browser, api_session, 
         assert page.locator("#settings-tab-instance").is_hidden()
         assert page.locator("#settings-tab-backup").is_hidden()
         assert page.locator("#settings-tab-roles").is_hidden()
+        assert page.locator("#settings-tab-global-board").is_hidden()
 
         page.locator(".user-dropdown .icon-link").click()
         assert page.locator('.user-dropdown-item[href="/settings.html"]').is_visible()
+    finally:
+        context.close()
+
+
+def test_global_board_manager_only_gets_the_global_board_tab(browser, api_session, regular_user):
+    """global_board.manage alone opens Instance Settings on the Global Board tab (#663)."""
+    create_role_user(api_session, regular_user, ["global_board.manage"])
+
+    context = browser.new_context(base_url=UI_BASE_URL)
+    try:
+        page = context.new_page()
+        login(page, regular_user)
+        page.goto("/settings.html")
+        page.locator("#settings-tab-global-board[aria-selected='true']").wait_for(timeout=8000)
+
+        assert page.url.endswith("/settings.html#global-board")
+        page.locator(".global-board-settings-form").first.wait_for(timeout=8000)
+        assert page.locator("#settings-panel-frames").is_hidden()
+        for tab in ("instance", "users", "roles", "backup"):
+            assert page.locator(f"#settings-tab-{tab}").is_hidden()
     finally:
         context.close()
 

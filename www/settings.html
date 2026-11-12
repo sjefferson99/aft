@@ -16,7 +16,7 @@
   <script src="/js/pwa.js"></script>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/header.css">
-  <link rel="stylesheet" href="/css/settings.css?v=20261031b">
+  <link rel="stylesheet" href="/css/settings.css?v=20261105a">
 </head>
 <body>
   <!-- Header component will be loaded here -->
@@ -32,6 +32,7 @@
         <a href="/user-management.html" class="settings-tab" role="tab" id="settings-tab-users" data-tab="users" aria-controls="settings-panel-frames">User Management</a>
         <a href="/role-management.html" class="settings-tab" role="tab" id="settings-tab-roles" data-tab="roles" aria-controls="settings-panel-frames">Role Management</a>
         <a href="/backup-restore.html" class="settings-tab" role="tab" id="settings-tab-backup" data-tab="backup" aria-controls="settings-panel-frames">Backup &amp; Restore</a>
+        <a href="#global-board" class="settings-tab" role="tab" id="settings-tab-global-board" data-tab="global-board" aria-controls="settings-panel-global-board" style="display: none;">Global Board</a>
         <a href="/theme-builder.html" class="settings-tab" role="tab" id="settings-tab-themes" data-tab="themes" aria-controls="settings-panel-frames">Theme Builder</a>
       </div>
 
@@ -114,13 +115,25 @@
         <div id="settings-status" class="settings-status" role="status" aria-live="polite"></div>
       </div>
       </div>
+
+      <div role="tabpanel" id="settings-panel-global-board" aria-labelledby="settings-tab-global-board" hidden>
+        <div class="settings-panels">
+          <section class="settings-section" aria-labelledby="global-board-settings-title">
+            <h3 id="global-board-settings-title">Global Board</h3>
+            <p class="setting-help">The global board collects cards promoted from agile boards. Rename it to suit how your team works, for example "Sprint", and choose how long done cards stay on it.</p>
+            <div id="global-board-settings-list">
+              <p class="setting-help">Loading...</p>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   </main>
 
-  <script src="/js/utils.js?v=20261031b"></script>
+  <script src="/js/utils.js?v=20261110a"></script>
   <script src="/js/notifications.js"></script>
-  <script src="/js/header.js"></script>
-  <script src="/js/settings.js?v=20261031b"></script>
+  <script src="/js/header.js?v=20261110c"></script>
+  <script src="/js/settings.js?v=20261105a"></script>
   <script src="/js/pwa-install.js"></script>
 </body>
 </html>

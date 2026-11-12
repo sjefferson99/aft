@@ -12,6 +12,7 @@ from flask_socketio import emit, join_room, leave_room
 
 from auth import get_authenticated_socket_user
 from database import SessionLocal
+from global_board_utils import get_accessible_global_board
 from models import Setting
 from utils import can_access_board, get_user_scoped_query
 
@@ -119,6 +120,55 @@ def register_websocket_handlers(socketio, reject_connections: bool = False):
         leave_room(room)
         logger.info("Client %s (user_id=%s) left board %s", request.sid, user.id, board_id)
         return {'success': True, 'board_id': board_id}
+
+    # ------------------------------------------------------------------
+    # Global board room join / leave (#663)
+    # ------------------------------------------------------------------
+
+    @socketio.on('join_global_board')
+    def on_join_global_board(data):
+        """Join a global board's room. Its events carry no card content.
+
+        Args:
+            data: Dictionary containing 'global_board_id'
+        """
+        user = get_authenticated_socket_user()
+        if not user:
+            return {'success': False, 'message': 'Authentication required'}
+
+        global_board_id = _extract_positive_int(data, 'global_board_id')
+        if global_board_id is None:
+            return {'success': False, 'message': 'Valid global_board_id is required'}
+
+        if not _can_access_global_board(user.id, global_board_id):
+            logger.warning(
+                "Denied join_global_board: sid=%s user_id=%s global_board_id=%s",
+                request.sid,
+                user.id,
+                global_board_id,
+            )
+            return {'success': False, 'message': 'Access denied to this global board'}
+
+        join_room(f'global_board_{global_board_id}')
+        return {'success': True, 'global_board_id': global_board_id}
+
+    @socketio.on('leave_global_board')
+    def on_leave_global_board(data):
+        """Leave a global board's room.
+
+        Args:
+            data: Dictionary containing 'global_board_id'
+        """
+        user = get_authenticated_socket_user()
+        if not user:
+            return {'success': False, 'message': 'Authentication required'}
+
+        global_board_id = _extract_positive_int(data, 'global_board_id')
+        if global_board_id is None:
+            return {'success': False, 'message': 'Valid global_board_id is required'}
+
+        leave_room(f'global_board_{global_board_id}')
+        return {'success': True, 'global_board_id': global_board_id}
 
     # ------------------------------------------------------------------
     # Client-originated mutation rejection handlers
@@ -241,21 +291,35 @@ def _reject_client_originated_mutation(event_name):
     }
 
 
+def _can_access_global_board(user_id, global_board_id):
+    """Return whether a user may join a global board's room."""
+    db = SessionLocal()
+    try:
+        return get_accessible_global_board(db, user_id, global_board_id) is not None
+    finally:
+        db.close()
+
+
 def _extract_board_id(payload):
     """Safely extract and validate board_id from socket event payload."""
+    return _extract_positive_int(payload, 'board_id')
+
+
+def _extract_positive_int(payload, key):
+    """Safely extract a positive integer id from a socket event payload."""
     if not isinstance(payload, dict):
         return None
 
-    raw_board_id = payload.get('board_id')
-    if raw_board_id is None:
+    raw_value = payload.get(key)
+    if raw_value is None or isinstance(raw_value, bool):
         return None
 
     try:
-        board_id = int(raw_board_id)
+        value = int(raw_value)
     except (TypeError, ValueError):
         return None
 
-    if board_id <= 0:
+    if value <= 0:
         return None
 
-    return board_id
+    return value

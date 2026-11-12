@@ -20,6 +20,7 @@ PERMISSION_DEFINITIONS = {
     'user.manage': 'Manage all users',
     'user.role': 'Assign roles to users',
     'role.manage': 'Manage roles and permissions',
+    'global_board.manage': 'Rename global boards and set how long done cards show',
     
     # Board permissions
     'board.create': 'Create new boards',
@@ -72,6 +73,7 @@ INITIAL_ROLES = {
             'user.manage',
             'user.role',
             'role.manage',
+            'global_board.manage',
             'board.create',
             'board.view',
             'board.edit',

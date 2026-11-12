@@ -397,6 +397,69 @@ class WebAuthnCredential(Base):
         return f"<WebAuthnCredential(id={self.id}, user_id={self.user_id}, name='{self.name}')>"
 
 
+class GlobalBoard(Base):
+    """A board showing cards promoted from agile boards, grouped by state.
+
+    It is not a Board row: cards keep their own column and board, and only gain a
+    GlobalBoardCard entry while promoted.
+    """
+
+    __tablename__ = "global_boards"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String(100), nullable=False)
+    visibility = Column(String(20), nullable=False, default='everyone')
+    owner_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=True, index=True)
+    # Days a done card stays listed; null shows done cards indefinitely.
+    done_visible_days = Column(Integer, nullable=True, default=14)
+    created_at = Column(DateTime, server_default=func.current_timestamp())
+    updated_at = Column(DateTime, nullable=True)
+
+    promoted_cards = relationship(
+        "GlobalBoardCard", back_populates="global_board", passive_deletes=True
+    )
+
+    def __repr__(self):
+        return f"<GlobalBoard(id={self.id}, name='{self.name}')>"
+
+
+class GlobalBoardCard(Base):
+    """A card promoted to a global board, with its state there.
+
+    Done is not a state: a promoted card with Card.done set shows as done, and
+    keeps its stored state so unticking done returns it to where it was.
+    """
+
+    __tablename__ = "global_board_cards"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    global_board_id = Column(
+        Integer, ForeignKey('global_boards.id', ondelete='CASCADE'), nullable=False
+    )
+    card_id = Column(
+        Integer, ForeignKey('cards.id', ondelete='CASCADE'), nullable=False, unique=True
+    )
+    state = Column(String(20), nullable=False, default='new')
+    order = Column(Integer, nullable=False, default=0)
+    promoted_by_id = Column(
+        Integer, ForeignKey('users.id', ondelete='SET NULL'), nullable=True, index=True
+    )
+    promoted_at = Column(DateTime, server_default=func.current_timestamp())
+
+    global_board = relationship("GlobalBoard", back_populates="promoted_cards")
+    card = relationship("Card")
+
+    __table_args__ = (
+        Index('idx_global_board_cards_board_state_order', 'global_board_id', 'state', 'order'),
+    )
+
+    def __repr__(self):
+        return (
+            f"<GlobalBoardCard(card_id={self.card_id}, "
+            f"global_board_id={self.global_board_id}, state='{self.state}')>"
+        )
+
+
 class Role(Base):
     """Role definition model."""
     

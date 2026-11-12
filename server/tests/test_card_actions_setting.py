@@ -19,6 +19,7 @@ class TestCardActionsSetting:
         {'desktop': ['done', 'archive', 'delete'], 'mobile': ['done', 'move']},
         {'desktop': ['move'], 'mobile': []},
         {'desktop': ['top', 'move'], 'mobile': ['top']},
+        {'desktop': ['promote', 'done', 'archive'], 'mobile': ['promote']},
         None,
     ])
     def test_set_and_get(self, api_client, authenticated_session, value):
@@ -38,6 +39,8 @@ class TestCardActionsSetting:
         {'desktop': [], 'mobile': [], 'tablet': []},
         {'desktop': 'done', 'mobile': []},
         {'desktop': ['done', 'archive', 'move', 'delete'], 'mobile': []},
+        {'desktop': ['promote', 'promote'], 'mobile': []},
+        {'desktop': ['demote'], 'mobile': []},
         {'desktop': ['done', 'done'], 'mobile': []},
         {'desktop': ['unarchive'], 'mobile': []},
         {'desktop': [1], 'mobile': []},
