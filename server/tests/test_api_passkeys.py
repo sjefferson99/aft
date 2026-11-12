@@ -254,9 +254,9 @@ class TestPasskeyRegistration:
             json={"password": passkey_user["password"]},
         )
         assert response.status_code == 200, response.text
-        set_cookie = response.headers.get("Set-Cookie", "")
-        binding = [part for part in set_cookie.split(", ") if part.startswith("aft_webauthn_binding=")]
-        assert binding, set_cookie
+        set_cookies = response.raw.headers.getlist("Set-Cookie")
+        binding = [cookie for cookie in set_cookies if cookie.startswith("aft_webauthn_binding=")]
+        assert binding, set_cookies
         attributes = binding[0].lower()
         assert "httponly" in attributes
         assert "path=/api/auth/passkeys" in attributes
