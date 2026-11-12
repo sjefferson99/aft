@@ -16,7 +16,7 @@ import os
 import re
 import secrets
 
-from flask import Blueprint, request, session, g
+from flask import Blueprint, after_this_request, current_app, request, session, g
 from sqlalchemy.sql import func
 from webauthn import (
     generate_registration_options,
@@ -78,6 +78,14 @@ CEREMONY_KEY_PREFIX = 'aft:webauthn:'
 MAX_CLIENT_DATA_LENGTH = 4096
 _CHALLENGE_PATTERN = re.compile(r'[A-Za-z0-9_-]{16,256}')
 
+# Ties ceremony state to the browser that started it. It's a cookie of its own,
+# not a session key: every request saves the whole session, so a request that
+# loaded the session before options ran could write back a copy without it
+# (#685). Only the options endpoints set it.
+BINDING_COOKIE_NAME = 'aft_webauthn_binding'
+BINDING_COOKIE_PATH = '/api/auth/passkeys'
+_BINDING_PATTERN = re.compile(r'[A-Za-z0-9_-]{43}')
+
 _redis_client = None
 
 
@@ -90,16 +98,36 @@ def _get_redis():
     return _redis_client
 
 
+def _request_binding():
+    """Return this browser's ceremony binding from its cookie, or None."""
+    binding = request.cookies.get(BINDING_COOKIE_NAME)
+    if isinstance(binding, str) and _BINDING_PATTERN.fullmatch(binding):
+        return binding
+    return None
+
+
 def _store_ceremony(purpose, challenge, state=None):
-    """Store ceremony state in Redis, keyed by its challenge and bound to this browser session.
+    """Store ceremony state in Redis, keyed by its challenge and bound to this browser.
 
     Keying by challenge lets several ceremonies run at once in one session, such
     as two login tabs, or passkey autofill plus the sign-in button.
     """
-    binding = session.get('webauthn_binding')
-    if not isinstance(binding, str):
-        binding = secrets.token_urlsafe(32)
-        session['webauthn_binding'] = binding
+    binding = _request_binding() or secrets.token_urlsafe(32)
+
+    @after_this_request
+    def _set_binding_cookie(response):
+        # Refreshed on every ceremony, so it outlives the ceremony state.
+        response.set_cookie(
+            BINDING_COOKIE_NAME,
+            binding,
+            max_age=CEREMONY_TTL_SECONDS,
+            path=BINDING_COOKIE_PATH,
+            secure=current_app.config.get('SESSION_COOKIE_SECURE', True),
+            httponly=True,
+            samesite='Strict',
+        )
+        return response
+
     challenge_b64 = bytes_to_base64url(challenge)
     payload = dict(state or {}, challenge=challenge_b64, binding=binding)
     _get_redis().set(
@@ -114,7 +142,7 @@ def _take_ceremony(purpose, credential):
 
     The challenge is read from the credential's clientDataJSON; the signature
     check later proves it was really signed. Returns None if the challenge is
-    unknown, expired, already used, or was issued to another browser session.
+    unknown, expired, already used, or was issued to another browser.
     """
     try:
         client_data_b64 = credential['response']['clientDataJSON']
@@ -130,8 +158,8 @@ def _take_ceremony(purpose, credential):
     if not raw:
         return None
     state = json.loads(raw)
-    binding = session.get('webauthn_binding')
-    if not isinstance(binding, str) or not secrets.compare_digest(state.get('binding', ''), binding):
+    binding = _request_binding()
+    if not binding or not secrets.compare_digest(state.get('binding', ''), binding):
         return None
     return state
 
