@@ -3,7 +3,7 @@
 This document tracks two related sets of work:
 
 1. **Trello-specific features** that have no current AFT equivalent and are dropped or warned on import — to be revisited when those AFT features land.
-2. **Native AFT import/export gaps** — features that exist in AFT today but are not yet covered by the `aft-board` export/import format (currently v1.1). Each of these also has implications for the Trello importer.
+2. **Native AFT import/export gaps** — features that exist in AFT today but are not yet covered by the `aft-board` export/import format (currently v1.2). Each of these also has implications for the Trello importer.
 
 When implementing any item in either section, update `TrelloBoardImportHandler` in `server/board_import_handlers.py` to take advantage of the new capability.
 
@@ -87,6 +87,10 @@ These AFT features exist in the application today but are not fully covered by t
 - **Card `start_date`/`end_date`** are exported and imported. Trello `due`/`start` and CSV dates already used the same import path.
 - **Card `done_datetime`** is restored on import for done cards. Kanban boards don't record one, so it can be empty.
 - **Board `is_public`** is exported for information only. Imports are always private and `public_slug` is never exported, because a carried-over slug could collide or publish a board without anyone choosing to. When the source board was public, `import_meta.warnings` says so. The import modal doesn't show post-import warnings yet.
+
+### Closed in format v1.2 (#297)
+
+- **Column `section_lane`/`section_order`** (the sections layout) are exported and imported. The `board_layout` setting travels with the other board settings. Columns from older exports have no section position and are placed automatically.
 
 ### 1. Primary and secondary assignees — user mapping (#585)
 

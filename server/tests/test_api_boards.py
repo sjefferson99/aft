@@ -755,7 +755,7 @@ class TestBoardsAPI:
         export_response = authenticated_session.get(f'{api_client}/api/boards/{sample_board["id"]}/export')
         assert export_response.status_code == 200
         source_export = export_response.json()
-        assert source_export['export']['format_version'] == '1.1'
+        assert source_export['export']['format_version'] == '1.2'
         source_card = next(c for c in source_export['cards'] if c['id'] == card_id)
         assert source_card['start_date'] is not None
         assert source_card['end_date'] is not None

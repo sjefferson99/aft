@@ -51,6 +51,12 @@ from card_serialization import count_cards_by_column
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
 from security_validators import validate_json_import_payload_size
 from settings_schema import get_user_default_working_style
+from section_layout import (
+    compact_section_lanes,
+    get_board_layout,
+    is_valid_section_position,
+    section_layout_fields,
+)
 from theme_defaults import get_instance_default_theme
 from permissions import has_permission
 
@@ -65,7 +71,7 @@ _APP_VERSION = "unknown"
 MAX_BOARD_IMPORT_FILE_SIZE_MB = 25
 BOARD_EXPORT_FORMAT = "aft-board"
 # Bump the minor version for additive fields; the importer only rejects a different major.
-BOARD_EXPORT_FORMAT_VERSION = "1.1"
+BOARD_EXPORT_FORMAT_VERSION = "1.2"
 PUBLIC_SLUG_LENGTH = 12
 PUBLIC_SLUG_ALPHABET = string.ascii_lowercase + string.digits
 PUBLIC_SLUG_PATTERN = re.compile(rf"^[a-z0-9]{{{PUBLIC_SLUG_LENGTH}}}$")
@@ -1047,6 +1053,7 @@ def export_board(board_id):
                     "board_id": column.board_id,
                     "name": column.name,
                     "order": column.order,
+                    **section_layout_fields(column),
                     "created_at": serialize_datetime(column.created_at),
                     "updated_at": serialize_datetime(column.updated_at),
                 }
@@ -1784,6 +1791,7 @@ def import_board_from_export():
                 )
             )
 
+        placed_section_columns = []
         sorted_columns = sorted(
             import_data["columns"],
             key=lambda col: (int(col.get("order") or 0), int(col.get("id") or 0)),
@@ -1807,15 +1815,33 @@ def import_board_from_export():
                 raw_order = 0
             column_order = raw_order if raw_order >= 0 else 0
 
+            # Exports from before #297 have no section layout; those columns
+            # are placed automatically.
+            section_lane = column.get("section_lane")
+            if not is_valid_section_position(section_lane):
+                section_lane = None
+            section_order = column.get("section_order")
+            if not is_valid_section_position(section_order):
+                section_order = None
+
             new_column = BoardColumn(
                 board_id=new_board.id,
                 name=column_name,
                 order=column_order,
+                section_lane=section_lane,
+                section_order=section_order,
                 updated_at=utc_now(),
             )
             db.add(new_column)
             db.flush()
             old_to_new_column_id[source_column_id] = new_column.id
+            if section_lane is not None:
+                placed_section_columns.append(new_column)
+
+        # Close any gaps between lanes, as saving a layout does.
+        lane_numbers = compact_section_lanes(c.section_lane for c in placed_section_columns)
+        for placed_column in placed_section_columns:
+            placed_column.section_lane = lane_numbers[placed_column.section_lane]
 
         ignored_primary_assignees_count = sum(
             1
@@ -2137,6 +2163,7 @@ def get_board_scheduled_cards(board_id):
             "is_public": bool(board.is_public),
             "public_slug": board.public_slug,
             "archived": bool(board.archived),
+            "layout": get_board_layout(db, board_id),
             "columns": [],
         }
         result.update(_build_board_owner_metadata(board, g.user.id, db, include_candidates=include_owner_candidates))
@@ -2215,6 +2242,7 @@ def get_board_scheduled_cards(board_id):
                 "id": column.id,
                 "name": column.name,
                 "order": column.order,
+                **section_layout_fields(column),
                 "created_at": serialize_datetime(column.created_at),
                 "updated_at": serialize_datetime(column.updated_at),
                 "cards": cards_data,
@@ -2784,6 +2812,7 @@ def get_public_board(slug):
             "working_style": _parse_board_working_style(
                 working_style_setting.value if working_style_setting else None
             ),
+            "layout": get_board_layout(db, board.id),
             "default_theme": None,
             "created_at": serialize_datetime(board.created_at),
             "updated_at": serialize_datetime(board.updated_at),
@@ -2870,6 +2899,7 @@ def get_public_board(slug):
                     "id": column.id,
                     "name": column.name,
                     "order": column.order,
+                    **section_layout_fields(column),
                     "created_at": serialize_datetime(column.created_at),
                     "updated_at": serialize_datetime(column.updated_at),
                     "cards": cards_data,

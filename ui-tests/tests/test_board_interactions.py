@@ -691,7 +691,9 @@ def test_compact_cards_is_a_board_option_not_a_view(logged_in_page, api_session,
     ids = page.locator("#settings-dropdown-menu > *").evaluate_all(
         "items => items.filter(item => item.style.display !== 'none').map(item => item.id)"
     )
-    assert ids[:2] == ["toggle-board-style-menu-item", "toggle-compact-cards-menu-item"]
+    assert ids[:3] == [
+        "toggle-board-style-menu-item", "toggle-board-layout-menu-item", "toggle-compact-cards-menu-item",
+    ]
 
 
 @pytest.mark.ui
