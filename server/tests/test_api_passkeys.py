@@ -6,6 +6,7 @@ WEBAUTHN_ORIGINS=http://localhost). They are skipped when passkeys are off.
 """
 
 import os
+import threading
 import uuid
 from urllib.parse import urlparse
 
@@ -246,6 +247,47 @@ class TestPasskeyRegistration:
             )
             assert response.status_code == 201, response.text
         assert len(session.get(f"{API_BASE_URL}/api/auth/passkeys").json()["passkeys"]) == 2
+
+    def test_binding_cookie_attributes(self, passkey_user):
+        response = passkey_user["session"].post(
+            f"{API_BASE_URL}/api/auth/passkeys/register/options",
+            json={"password": passkey_user["password"]},
+        )
+        assert response.status_code == 200, response.text
+        set_cookies = response.raw.headers.getlist("Set-Cookie")
+        binding = [cookie for cookie in set_cookies if cookie.startswith("aft_webauthn_binding=")]
+        assert binding, set_cookies
+        attributes = binding[0].lower()
+        assert "httponly" in attributes
+        assert "path=/api/auth/passkeys" in attributes
+        assert "samesite=strict" in attributes
+
+    def test_concurrent_requests_do_not_break_registration(self, passkey_user):
+        """Requests running alongside a ceremony save the session too, and used
+        to write back a copy without the binding (#685)."""
+        session = passkey_user["session"]
+        cookies = session.cookies.get_dict()
+        stop = threading.Event()
+        statuses = []
+
+        def background_requests():
+            # A separate client sharing the session cookie, like a page's other requests.
+            client = requests.Session()
+            client.cookies.update(cookies)
+            while not stop.is_set():
+                statuses.append(client.get(f"{API_BASE_URL}/api/auth/me", timeout=10).status_code)
+
+        workers = [threading.Thread(target=background_requests) for _ in range(4)]
+        for worker in workers:
+            worker.start()
+        try:
+            for attempt in range(5):
+                _register_passkey(passkey_user, name=f"Concurrent {attempt}")
+        finally:
+            stop.set()
+            for worker in workers:
+                worker.join()
+        assert statuses and set(statuses) == {200}, set(statuses)
 
     @pytest.mark.parametrize("tamper", [
         {"user_verified": False},
