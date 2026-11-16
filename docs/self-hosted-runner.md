@@ -64,12 +64,21 @@ show a green **Idle** status.
 
 ## 4. Triggering a build
 
-The workflow (`.github/workflows/build-and-push.yml`) triggers when you
-**publish a GitHub Release**:
+The workflow (`.github/workflows/build-and-push.yml`) runs on three triggers:
 
-1. Push your code to `main` as normal
+| Trigger | Tags pushed |
+|---|---|
+| Push to `main` (merging a PR) | `edge`, `sha-…` |
+| Publishing a release `vX.Y.Z` | `X.Y.Z`, `X.Y`, `latest`, `sha-…` |
+| Manual run (Actions tab) on a branch | `dev-<branch>`, `sha-…` |
+| Manual run on `main` | `edge`, `sha-…` |
+
+`latest` only moves when a release is published, so self-hosters on the default
+compose file stay on the newest release. To cut a release:
+
+1. Merge your work to `main` as normal (this updates `edge`)
 2. When ready to cut a release, go to GitHub → **Releases** → **Draft a new release**
-3. Create a tag in semver format (e.g. `v1.2.0`) and publish
+3. Create a tag in the form `vX.Y.Z` (e.g. `v2026.11.1`) and publish
 4. The runner picks up the job, builds both images for `linux/amd64` and
    `linux/arm64`, and pushes a single multi-arch manifest per tag to GHCR.
    `docker pull`/`docker compose pull` automatically grabs the right
@@ -78,11 +87,8 @@ The workflow (`.github/workflows/build-and-push.yml`) triggers when you
    longer than amd64-only builds did.
 
 Images will be available at:
-- `ghcr.io/sjefferson99/aft:latest` (and `ghcr.io/sjefferson99/aft:1.2.0`)
-- `ghcr.io/sjefferson99/aft-web:latest` (and `ghcr.io/sjefferson99/aft-web:1.2.0`)
-
-> To build on every push to `main` instead, uncomment the `push:` block in the
-> workflow file.
+- `ghcr.io/sjefferson99/aft:latest`, `ghcr.io/sjefferson99/aft:2026.11.1` and `ghcr.io/sjefferson99/aft:edge`
+- `ghcr.io/sjefferson99/aft-web:latest`, `ghcr.io/sjefferson99/aft-web:2026.11.1` and `ghcr.io/sjefferson99/aft-web:edge`
 
 ---
 
