@@ -272,7 +272,7 @@ Open a card on an Agile board. Its details include a **Global board** row with a
 
 ### Working on the Global Board
 
-Each card shows its title, its assignee and where it came from, as `Board › Column`.
+Each card shows its title, its assignee and where it came from, as `Board › Column`. Cards are coloured by epic board, with a stripe down the left and a light tint, so you can tell epics apart at a glance. Colours are picked automatically, and every colour is used once before any repeats, so an epic's colour can change when epics come and go.
 
 - **Edit a card**: select the card to open it for editing over the global board, with everything you'd see on its own board. Close it to return to the global board where you left it
 - **Go to the card's board**: select the title to open the card on its own board, or select `Board › Column` to open the board without opening the card
