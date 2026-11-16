@@ -11,13 +11,15 @@ Tests the following endpoints:
 - POST /api/users/:id/roles/:role_id - Assign role to user
 - DELETE /api/users/:id/roles/:role_id - Remove role from user
 """
+import os
+
 import pytest
 import requests
 import time
 import uuid
 
 # API base URL - matching conftest.py
-API_BASE_URL = "http://localhost"
+API_BASE_URL = os.getenv("PYTEST_API_BASE_URL", "http://localhost")
 ADMIN_EMAIL = "test-admin@localhost"
 ADMIN_PASSWORD = "TestAdmin123!"
 

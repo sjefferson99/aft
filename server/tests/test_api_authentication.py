@@ -24,7 +24,7 @@ from flask import Flask
 from flask.sessions import SecureCookieSessionInterface
 
 # API base URL - matching conftest.py
-API_BASE_URL = "http://localhost"
+API_BASE_URL = os.getenv("PYTEST_API_BASE_URL", "http://localhost")
 
 
 def _load_secret_key_for_cookie_signing():

@@ -4,12 +4,13 @@ These rely on the default per-account limit. The per-IP limits are raised in
 compose.yml because the suites share one IP, so they are covered by the unit
 tests in test_auth_rate_limit.py.
 """
+import os
 import uuid
 
 import pytest
 import requests
 
-API_BASE_URL = "http://localhost"
+API_BASE_URL = os.getenv("PYTEST_API_BASE_URL", "http://localhost")
 ACCOUNT_FAILURE_LIMIT = 10
 WRONG_PASSWORD = f"wrong-{uuid.uuid4().hex}"
 NEW_PASSWORD = f"new-{uuid.uuid4().hex}"

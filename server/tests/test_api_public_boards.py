@@ -1,8 +1,13 @@
 """Tests for public board read-only API endpoints."""
 
+import os
+
 import requests
 import pytest
 import time
+
+# HTTPS side of the stack, for checks that need both protocols.
+API_HTTPS_BASE_URL = os.getenv("PYTEST_API_HTTPS_BASE_URL", "https://localhost")
 
 
 @pytest.mark.api
@@ -117,7 +122,7 @@ class TestPublicBoardsAPI:
         assert http_response.headers.get("X-Robots-Tag") == "noindex, nofollow, noarchive"
         assert "no-store" in (http_response.headers.get("Cache-Control") or "")
 
-        https_url = f"https://localhost/api/public/boards/{slug}"
+        https_url = f"{API_HTTPS_BASE_URL}/api/public/boards/{slug}"
         https_response = requests.get(https_url, verify=False)
         assert https_response.status_code == 200
         assert https_response.headers.get("X-Robots-Tag") == "noindex, nofollow, noarchive"
