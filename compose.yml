@@ -26,7 +26,7 @@ services:
       - --max_connections=${MYSQL_MAX_CONNECTIONS:-100}
     env_file: .env
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
       - MYSQL_DATABASE=${MYSQL_DATABASE}
@@ -42,7 +42,7 @@ services:
     container_name: aft-redis
     restart: unless-stopped
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     # Keeps sessions and sign-in rate limit blocks when the container is
     # recreated. Redis 8 images no longer declare /data as a volume.
     volumes:
@@ -62,7 +62,7 @@ services:
     container_name: aft-server
     restart: unless-stopped
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     env_file: .env
     environment:
       # The test suites make all their requests from one IP, so raise the
@@ -92,7 +92,7 @@ services:
     container_name: aft-web
     restart: unless-stopped
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges=true
     env_file: .env
     environment:
       # Keep explicit passthrough so custom compose overrides do not accidentally
