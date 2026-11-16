@@ -40,6 +40,7 @@ These work on boards you can only view too, but not while typing or when a modal
 - **Default board**: choose a board, or the [Global Board](#global-board), to open on startup in your [Preferences](#preferences)
 - **Change the owner**: board owners and administrators can reassign ownership from the board menu. The previous owner stays on the board as an editor unless you untick **Keep ... on the board as an editor**
 - **Share a board**: boards are owned by one user and shared per board, with viewer or editor access. See [Sharing Boards](#sharing-boards)
+- **Search every board**: find a card when you don't know which board or view it's in. See [Searching All Boards](#searching-all-boards)
 
 ### Sharing Boards
 
@@ -133,6 +134,18 @@ Search from the header. It matches card titles, descriptions and checklist items
 - `#123` finds the card with ID 123. Use `"#123"` to search for that text instead
 
 Select the filter icon in the search field to filter by assignee, include unassigned cards, and optionally match secondary assignees. An indicator next to the board name shows when filters are active. **Clear Filters** in the board menu removes them all.
+
+### Searching All Boards
+
+The search in a board's header only looks at the board and view you have open. To find a card anywhere, use the search at the top of the boards page.
+
+- It uses the same rules as the board search above, and needs at least two characters
+- It searches every board you can open, including done and archived cards and scheduled cards
+- Results are grouped by board, then by view: task, done, archived and scheduled
+- Select a result to open that card on its board, in the view it belongs to
+- **Choose boards** limits the search to the boards you tick
+- **Include archived boards** adds archived boards to the search, and to the list of boards you can choose
+- A search shows the 100 most recently updated matches. If there are more, it says how many, so add words to narrow it down
 
 ### Views
 

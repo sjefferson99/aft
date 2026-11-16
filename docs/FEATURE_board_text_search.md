@@ -51,7 +51,7 @@ This document defines:
 
 ## Non-Goals (MVP)
 
-- Search across all boards from a global view.
+- Search across all boards from a global view. (Added later in #593: `GET /api/search/cards` in `server/card_search.py`, with the panel on the boards page.)
 - Journal note/comment search.
 - Full semantic search / vector search / RAG.
 - Perfect stemming/lemmatization/synonyms.

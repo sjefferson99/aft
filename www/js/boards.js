@@ -30,6 +30,7 @@ class BoardsManager {
     window.addEventListener('viewChanged', this.boundHeaderViewChangedHandler);
 
     this.render();
+    this.renderCardSearch();
     this.configureHeaderViews();
     await this.loadBoards();
   }
@@ -88,6 +89,16 @@ class BoardsManager {
 
     window.header.showViewsDropdown(true);
     window.header.setView(this.showArchivedBoards ? 'archived' : 'task');
+  }
+
+  // Search across boards (#593), in the header panel above the boards grid.
+  renderCardSearch() {
+    const mount = this.container.querySelector('.boards-header-panel');
+    if (!mount || typeof window.CardSearchPanel !== 'function') {
+      return;
+    }
+    this.cardSearch = new window.CardSearchPanel(mount, document.getElementById('boards-list'));
+    this.cardSearch.render();
   }
 
   async handleHeaderViewChanged(event) {

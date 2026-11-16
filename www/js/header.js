@@ -4053,6 +4053,11 @@ This permanently deletes the board, its columns and its cards. It can't be undon
         mobileDoneItem.remove();
       }
     }
+
+    // The Done items are built here, so mark them if the page opened in that view.
+    if (this.currentView === 'done') {
+      this.showView('done');
+    }
   }
 
   // Initialize dropdown pin behavior for settings and user menus
@@ -4132,6 +4137,11 @@ This permanently deletes the board, its columns and its cards. It can't be undon
     const dropdownItems = document.querySelectorAll('.views-dropdown-item[data-view]');
 
     if (!dropdownBtn || !dropdownMenu) return;
+
+    // The page may have opened in another view before the header loaded.
+    if (this.currentView !== 'task') {
+      this.showView(this.currentView);
+    }
 
     // Toggle dropdown on button click
     dropdownBtn.addEventListener('click', (e) => {
@@ -4223,6 +4233,15 @@ This permanently deletes the board, its columns and its cards. It can't be undon
 
   // Set the current view
   setView(view) {
+    this.showView(view);
+
+    // Dispatch custom event for board.js to handle
+    window.dispatchEvent(new CustomEvent('viewChanged', { detail: { view } }));
+  }
+
+  // Show a view as the current one without asking the page to load it, for a
+  // page that opened in that view (board.html?view=archived).
+  showView(view) {
     this.currentView = view;
     
     // Update dropdown label
@@ -4252,9 +4271,6 @@ This permanently deletes the board, its columns and its cards. It can't be undon
     document.querySelectorAll('.mobile-view-item').forEach(item => {
       item.classList.toggle('active', item.dataset.view === view);
     });
-
-    // Dispatch custom event for board.js to handle
-    window.dispatchEvent(new CustomEvent('viewChanged', { detail: { view } }));
   }
 
   // Get the current view

@@ -41,6 +41,7 @@ I wrote AFT because I couldn't find self hosted Kanban software that let you sch
 - **[Cards](www/docs/user-guide.md#cards)** - Autosaving edits, dates, assignees, and move to top that works even in a filtered view
 - **[Checklists and comments](www/docs/user-guide.md#checklists-and-comments)** - Break work down and discuss it on the card
 - **[Search and filters](www/docs/user-guide.md#searching-and-filtering)** - Find cards by text, ID or assignee
+- **[Search all boards](www/docs/user-guide.md#searching-all-boards)** - Find a card on any board, in any view, from the boards page
 - **[Archiving](www/docs/user-guide.md#archiving-cards)** - Clear cards off the board and keep their history
 
 ### Share it and bring your data
