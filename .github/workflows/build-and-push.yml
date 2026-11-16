@@ -2,9 +2,16 @@ name: Build and Push to GHCR
 
 # Triggers on:
 # - Published GitHub Releases (e.g. when you create a v1.2.3 tag/release
-#   via the GitHub UI or `gh release create`). Avoids a build on every commit.
-# - Pushes to main branch (e.g., when PRs are merged). Updates :latest tag.
-# - Manual workflow_dispatch runs for testing.
+#   via the GitHub UI or `gh release create`). Updates :latest, :X.Y.Z and :X.Y.
+# - Pushes to main branch (e.g., when PRs are merged). Updates :edge only, so
+#   self-hosters on :latest stay on the newest release (#698).
+# - Manual workflow_dispatch runs for testing (:dev-<branch>, or :edge on main).
+#
+# Tags per trigger:
+#   push to main             -> edge, sha-...
+#   release vX.Y.Z           -> X.Y.Z, X.Y, latest, sha-...
+#   manual run on a branch   -> dev-<branch>, sha-...
+#   manual run on main       -> edge, sha-...
 on:
   release:
     types: [published]
@@ -20,8 +27,8 @@ on:
         options:
           - "true"
           - "false"
-  # Build and push on every push to main (e.g., when PRs are merged)
-  # This ensures :latest tag stays up to date with the main branch
+  # Build and push on every push to main (e.g., when PRs are merged).
+  # This keeps :edge up to date with the main branch; :latest moves on releases.
   push:
     branches: [main]
 
@@ -87,6 +94,10 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/aft
+          # latest=auto adds :latest only when a semver tag is generated, so
+          # only release builds move it, and pre-releases (v2026.12.0-rc1) don't.
+          flavor: |
+            latest=auto
           tags: |
             # Full semver tag from release:  ghcr.io/sjefferson99/aft:1.2.3
             type=semver,pattern={{version}}
@@ -96,8 +107,8 @@ jobs:
             type=ref,event=branch,prefix=dev-,enable=${{ github.ref != 'refs/heads/main' }}
             # Commit tag for traceability:             ghcr.io/sjefferson99/aft:sha-abc1234
             type=sha,prefix=sha-
-            # Only update latest on main/release events
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+            # Current main for testers:      ghcr.io/sjefferson99/aft:edge
+            type=edge
 
       - name: Build and push aft (server)
         uses: docker/build-push-action@v7
@@ -117,12 +128,14 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.OWNER }}/aft-web
+          flavor: |
+            latest=auto
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=ref,event=branch,prefix=dev-,enable=${{ github.ref != 'refs/heads/main' }}
             type=sha,prefix=sha-
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'release' }}
+            type=edge
 
       - name: Build and push aft-web (nginx + UI)
         uses: docker/build-push-action@v7

@@ -6,8 +6,13 @@
 #   docker compose pull
 #   docker compose up -d
 #
-# Images are tagged :latest (tracks the most recent release) and also by semver
-# (e.g. :1.2.0). Pin to a semver tag for fully reproducible deployments.
+# Image tags:
+#   :latest     the most recent release (the default below)
+#   :2026.11.1  one release, for fully reproducible deployments
+#   :2026.11    the latest release in that month's version line
+#   :edge       the current main branch. May be unstable, and may include database
+#               migrations that later releases depend on, so moving from :edge back
+#               to :latest can mean an older image against a newer database.
 #
 # Required .env variables:
 #   MYSQL_ROOT_PASSWORD, MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD

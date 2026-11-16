@@ -36,6 +36,22 @@ Available images, both published for `linux/amd64` and `linux/arm64`, so the sam
 
 The images are public, so pulling needs no login. For a private fork, log in first with `docker login ghcr.io`.
 
+### Image tags
+
+Both images carry the same tags:
+
+| Tag | Moves on | Use it for |
+|---|---|---|
+| `latest` | each published release | the default, and what `compose.example.yml` uses |
+| `2026.11.1` | never: one release only | pinned, reproducible deployments |
+| `2026.11` | each release in that month | following patch releases in one version line |
+| `edge` | every change merged to `main` | testing new work before it's released |
+| `sha-abc1234` | never: one build only | exact rollback or debugging |
+
+To follow `main`, change `:latest` to `:edge` on both `image:` lines in your `compose.yml`, then pull and recreate as above. `edge` can be unstable, and it can include database migrations that later releases depend on.
+
+To go back from `edge` to `latest`, don't just change the tag: the latest release can be older than the database `edge` has already upgraded. Either wait for the next release, which includes everything you were running, or switch to `latest` with an empty data directory and restore a backup taken before you moved to `edge`. Changes made since that backup are lost.
+
 ### Server-only Deployment
 
 Remove or comment out the `nginx` service in `compose.example.yml` before renaming it to `compose.yml` to run the API server without the web UI.
