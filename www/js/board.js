@@ -968,6 +968,12 @@ class WebSocketManager {
     this.socket.on('column_reordered', (data) => {
       this.handleColumnReordered(data);
     });
+    this.socket.on('board_members_changed', () => {
+      // Someone changed who the board is shared with (#285). Assignee lists
+      // depend on it, and the header refreshes its Share Board menu and dialog.
+      this.boardManager.scheduleBoardReload();
+      window.dispatchEvent(new CustomEvent('boardMembersChanged'));
+    });
     this.socket.on('board_layout_changed', () => {
       // Another client switched between columns and sections (#297).
       this.boardManager.scheduleBoardReload();
@@ -4513,6 +4519,7 @@ class BoardManager {
         owner_id: board.owner_id,
         owner: board.owner || null,
         can_reassign_owner: board.can_reassign_owner === true,
+        can_delete: board.can_delete === true,
         available_owner_users: Array.isArray(board.available_owner_users) ? board.available_owner_users : []
       };
       this.assigneeFilterUsers = this.isPublicMode

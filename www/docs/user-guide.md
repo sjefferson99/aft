@@ -35,11 +35,24 @@ These work on boards you can only view too, but not while typing or when a modal
 
 ![The boards list](../images/docs/boards.png)
 
-- **Create as many boards as you need**, and rename or delete them from the boards list
+- **Create as many boards as you need**, and rename or delete them from the boards list. The owner and administrators can also delete a board with **Delete Board** in its board menu
 - **Archive a board** to clear it from the list and keep its data. Switch between Active Boards and Archived Boards in the header view menu to find it and unarchive it
 - **Default board**: choose a board, or the [Global Board](#global-board), to open on startup in your [Preferences](#preferences)
-- **Change the owner**: board owners and administrators can reassign ownership from the board menu
-- **Share a board**: boards are owned by one user and shared per board, with viewer or editor access
+- **Change the owner**: board owners and administrators can reassign ownership from the board menu. The previous owner stays on the board as an editor unless you untick **Keep ... on the board as an editor**
+- **Share a board**: boards are owned by one user and shared per board, with viewer or editor access. See [Sharing Boards](#sharing-boards)
+
+### Sharing Boards
+
+The owner of a board, or an administrator, can share it with other people. Choose **Share Board** in the board menu, pick **Viewer** or **Editor**, then search for a person by name or username and select them. Nothing is chosen when the dialog opens, so if you select a person first it asks you to choose Viewer or Editor. They get a notification with a link to the board, and it appears in their boards list.
+
+- **Viewer**: can see the board and its cards, but can't change anything
+- **Editor**: can change the board, its columns and its cards, but can't delete the board, share it or change its owner
+- **Change access**: switch someone between Viewer and Editor in the same dialog
+- **Remove access**: select **Remove** next to their name. They're also unassigned from the board's cards, because they can no longer see them
+
+Anyone who can see a board can open **Board Members** from the board menu to see who owns it and who it's shared with.
+
+Administrators can also give people custom board roles in User Management. These show in the dialog as **Custom**, and the owner can remove them there.
 
 ### Importing Boards
 

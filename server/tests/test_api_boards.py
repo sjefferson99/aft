@@ -285,7 +285,7 @@ class TestBoardsAPI:
 
         response = second_user_session.put(
             f'{api_client}/api/boards/{board_id}/owner',
-            json={'owner_id': admin_user['id']}
+            json={'owner_id': admin_user['id'], 'keep_previous_owner': False}
         )
         assert response.status_code == 200
 

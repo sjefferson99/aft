@@ -14,7 +14,6 @@ import string
 import threading
 import time
 from sqlalchemy import and_, exists, func, or_
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from database import SessionLocal
 from models import (
@@ -47,6 +46,7 @@ from utils import (
     validate_string_length,
 )
 from board_import_handlers import ImportHandlerFactory, TrelloBoardImportHandler
+from board_sharing import broadcast_members_changed, remove_board_access, set_board_access
 from card_serialization import count_cards_by_column
 from datetime_helpers import parse_iso_datetime, serialize_datetime, utc_now
 from security_validators import validate_json_import_payload_size
@@ -329,34 +329,12 @@ def _build_board_owner_metadata(board, user_id, db, include_candidates=False):
         "owner_id": board.owner_id,
         "owner": _user_summary(board.owner) if board.owner else None,
         "can_reassign_owner": can_reassign,
+        # Owners, admins and custom board roles with board.delete; not editors.
+        "can_delete": has_permission(get_user_permissions(user_id, board.id), "board.delete"),
     }
     if include_candidates:
         metadata["available_owner_users"] = available_users or []
     return metadata
-
-
-def _ensure_board_editor_role_assignment(db, user_id, board_id):
-    board_editor_role = db.query(Role).filter(Role.name == "board_editor").first()
-    if not board_editor_role:
-        raise ValueError("Required role 'board_editor' not found")
-
-    existing_assignment = db.query(UserRole).filter(
-        UserRole.user_id == user_id,
-        UserRole.role_id == board_editor_role.id,
-        UserRole.board_id == board_id,
-    ).first()
-
-    if existing_assignment:
-        return False
-
-    try:
-        with db.begin_nested():
-            db.add(UserRole(user_id=user_id, role_id=board_editor_role.id, board_id=board_id))
-            db.flush()
-        return True
-    except IntegrityError:
-        # Another concurrent request may have assigned this role first.
-        return False
 
 
 def _apply_assignee_card_filters(cards_query, selected_assignee_ids, include_unassigned, include_secondary_assignees):
@@ -3061,6 +3039,10 @@ def reassign_board_owner(board_id):
                       type: integer
                       example: 2
                       description: The new owner user ID
+                  keep_previous_owner:
+                      type: boolean
+                      default: true
+                      description: Keep the previous owner on the board as an editor. When false they lose access unless they are an administrator.
     responses:
         200:
             description: Board reassigned successfully
@@ -3080,6 +3062,10 @@ def reassign_board_owner(board_id):
 
         if not isinstance(new_owner_id, int) or new_owner_id <= 0:
             return create_error_response("owner_id must be a positive integer", 400)
+
+        keep_previous_owner = data.get("keep_previous_owner", True)
+        if not isinstance(keep_previous_owner, bool):
+            return create_error_response("keep_previous_owner must be true or false", 400)
 
         board = db.query(Board).filter(Board.id == board_id).first()
         if not board:
@@ -3104,27 +3090,39 @@ def reassign_board_owner(board_id):
         if not new_owner:
             return create_error_response("Selected owner not found", 404)
 
-        board_editor_assigned = _ensure_board_editor_role_assignment(db, new_owner.id, board.id)
         available_users = [_user_summary(user) for user in _get_board_reassignment_users(db)]
+
+        ownership_changed = previous_owner_id != new_owner.id
+        if ownership_changed:
+            # The new owner has full access, so any share they held is dropped.
+            db.query(UserRole).filter(
+                UserRole.board_id == board.id,
+                UserRole.user_id == new_owner.id,
+            ).delete(synchronize_session=False)
 
         board.owner_id = new_owner.id
         board.updated_at = utc_now()
+
+        if ownership_changed and previous_owner_id:
+            if keep_previous_owner:
+                set_board_access(db, board.id, previous_owner_id, "editor")
+            else:
+                remove_board_access(db, board, previous_owner_id)
+
         db.commit()
         db.refresh(board)
 
         logger.info(
-            "Board %s ownership reassigned from user %s to user %s by user %s",
+            "Board %s ownership reassigned from user %s to user %s by user %s "
+            "(previous owner kept as editor: %s)",
             board.id,
             previous_owner_id,
             new_owner.id,
             g.user.id,
+            keep_previous_owner,
         )
-        if board_editor_assigned:
-            logger.info(
-                "Granted board_editor on board %s to reassigned owner user %s",
-                board.id,
-                new_owner.id,
-            )
+        if ownership_changed:
+            broadcast_members_changed(board.id)
 
         return create_success_response(
             {
