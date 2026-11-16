@@ -3511,6 +3511,7 @@ class BoardManager {
       // Load working style preference
       await this.loadWorkingStyle();
       if (!this.isPublicMode) {
+        this.applyInitialView(urlParams.get('view'));
         this.loadEligibleGlobalBoards();
       }
 
@@ -3624,10 +3625,41 @@ class BoardManager {
     }
   }
 
+  // board.html?view=done|archived|scheduled opens the board in that view, so
+  // cross-board search results (#593) can open cards that aren't in the task
+  // view. The parameter is removed once read, because switching views doesn't
+  // update it and a reload would otherwise jump back.
+  applyInitialView(viewParam) {
+    if (!viewParam) {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('view');
+    window.history.replaceState(window.history.state, '', url);
+
+    let view = viewParam;
+    if (view === 'done' && this.workingStyle !== 'agile') {
+      // Kanban boards keep done cards in the task view.
+      view = 'task';
+    }
+    if (!['done', 'archived', 'scheduled'].includes(view)) {
+      return;
+    }
+
+    this.currentView = view === 'scheduled' ? 'scheduled' : 'task';
+    this.showArchived = view === 'archived';
+    this.showDone = view === 'done';
+    if (window.header && typeof window.header.showView === 'function') {
+      window.header.showView(view);
+    }
+  }
+
   /**
    * Open the edit card modal for the `card` URL parameter, which the global
-   * board links to (#663). Fails quietly if the card is missing, archived or
-   * on another board, then drops the parameter so a reload doesn't reopen it.
+   * board and cross-board search link to (#663, #593). Fails quietly if the
+   * card is missing, on another board, or not in the current view, then drops
+   * the parameter so a reload doesn't reopen it.
    *
    * @param {string|null} cardParam - Raw `card` query parameter.
    * @returns {Promise<void>}
@@ -3657,7 +3689,12 @@ class BoardManager {
       const data = await response.json();
       const card = data.success ? data.card : null;
       const onThisBoard = card && this.columns.some((column) => column.id === card.column_id);
-      if (!onThisBoard || card.archived || card.scheduled) {
+      // Only open cards the current view shows: archived cards in the
+      // archived view and scheduled templates in the scheduled view.
+      const viewShowsCard = this.currentView === 'scheduled'
+        ? !!card.scheduled
+        : !card.scheduled && !!card.archived === !!this.showArchived;
+      if (!onThisBoard || !viewShowsCard) {
         return;
       }
       // The modal won't open until the header's first database check passes,

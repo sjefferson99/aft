@@ -32,6 +32,7 @@ from branding_routes import branding_bp
 from planner_routes import planner_bp
 from global_board_routes import configure_global_board_routes, global_board_bp
 from board_sharing import board_sharing_bp, configure_board_sharing_routes
+from card_search import card_search_bp
 from passkey_routes import passkey_bp, WEBAUTHN_SETTINGS
 from broadcasting import (
     broadcast_failures,
@@ -306,6 +307,7 @@ app.register_blueprint(branding_bp)
 app.register_blueprint(planner_bp)
 app.register_blueprint(global_board_bp)
 app.register_blueprint(board_sharing_bp)
+app.register_blueprint(card_search_bp)
 app.register_blueprint(passkey_bp)
 
 if WEBAUTHN_SETTINGS:
