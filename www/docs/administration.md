@@ -367,7 +367,7 @@ The application includes a multi-user security model with authentication, role-b
 
 ### Permissions and Users
 
-- **Board Ownership and Sharing** - Boards are owned by a user, and access can be shared per board. Board-specific roles enable read-only access (viewer) or read/write collaboration (editor) without granting global access to all boards. Board owners and administrators can reassign ownership from the board menu on the board page.
+- **Board Ownership and Sharing** - Boards are owned by a user, and access can be shared per board. Board owners and administrators share boards from **Share Board** in the board menu, as Viewer (the `board_viewer` role, read only) or Editor (the `board_editor` role), without granting global access to all boards. Editors can't delete a board, share it or change its owner: give a custom board role with `board.delete` in User Management if someone needs to delete a board they don't own. Board owners and administrators can reassign ownership from the board menu on the board page.
 - **Fine-Grained Per-Board Permissions** - Effective permissions are evaluated per board, so actions like editing or deleting are allowed only where the user has board-level rights.
 - **Custom Role Construction** - Role management supports building custom roles from individual permission blocks, then assigning those roles to users within the allowed assignment scope.
 - **Controlled Role Assignment** - Role changes require role-management permissions, with backend checks to prevent unauthorised escalation and invalid global vs board-specific assignments.

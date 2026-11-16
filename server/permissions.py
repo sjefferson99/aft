@@ -128,12 +128,11 @@ INITIAL_ROLES = {
     # === BOARD-SPECIFIC ROLES (assigned with board_id) ===
     # These roles GRANT ACCESS to the specific board
     'board_editor': {
-        'description': '[BOARD-SPECIFIC] Full control of the assigned board - can manage everything on it',
+        'description': '[BOARD-SPECIFIC] Edit the assigned board - everything except deleting it, sharing it or changing its owner',
         'is_system_role': True,
         'permissions': [
             'board.view',
             'board.edit',
-            'board.delete',
             'card.create',
             'card.view',
             'card.edit',
@@ -239,7 +238,7 @@ def get_permission_model_info():
                     'Board access is granted through board-specific role assignments only',
                     'There is NO "global editor" or "global read only"',
                     'Non-owners must be explicitly granted a role on each board',
-                    'Two board-specific roles: board_editor (full control) and board_viewer (read-only)'
+                    'Two board-specific roles: board_editor (edit everything except deleting, sharing or changing the owner) and board_viewer (read-only)'
                 ]
             },
             {
@@ -275,9 +274,9 @@ def get_permission_model_info():
             'board_specific': [
                 {
                     'name': 'board_editor',
-                    'description': 'Full control of the assigned board - can manage everything on it',
+                    'description': 'Edit the assigned board - everything except deleting it, sharing it or changing its owner',
                     'scope': 'board-specific',
-                    'use_case': 'Share full access to a specific board'
+                    'use_case': 'Let someone edit a specific board'
                 },
                 {
                     'name': 'board_viewer',
@@ -301,8 +300,9 @@ def get_permission_model_info():
                 'title': 'Sharing a Board',
                 'scenario': 'Bob owns Board 2 and wants to share it with Alice',
                 'details': [
-                    'Option A: Grant Alice full control → Assign "board_editor" role to Alice on Board 2',
-                    'Option B: Grant Alice read-only access → Assign "board_viewer" role to Alice on Board 2'
+                    'Bob opens Share Board from the board menu and picks Alice',
+                    'Option A: Let Alice edit → Editor (the "board_editor" role on Board 2)',
+                    'Option B: Let Alice only view → Viewer (the "board_viewer" role on Board 2)'
                 ]
             },
             {
@@ -310,14 +310,14 @@ def get_permission_model_info():
                 'scenario': 'Charlie has different roles on different boards',
                 'details': [
                     'Board 3 (owned by David): Assigned "board_viewer" → Can only view Board 3',
-                    'Board 4 (owned by Eve): Assigned "board_editor" → Full control of Board 4'
+                    'Board 4 (owned by Eve): Assigned "board_editor" → Can edit Board 4, but not delete or share it'
                 ]
             }
         ],
         'assignment_rules': [
             'Global roles (administrator, board_creator, theme_user) are assigned without selecting a board',
             'Board-specific roles (board_editor, board_viewer) MUST have a specific board selected',
-            'Board owners can grant any role on their boards',
+            'Board owners can share their boards as Viewer or Editor from the board menu',
             'Users with user.role permission can grant roles they themselves have',
             'Administrators can grant any role'
         ],

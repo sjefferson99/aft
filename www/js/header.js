@@ -215,6 +215,9 @@ class Header {
     this.workingStyleLoadPromise = null;
     this.boardReassignmentOptions = null;
     this.boardOwnerDataListenerBound = false;
+    this.boardMembersChangedHandler = this.handleBoardMembersChanged.bind(this);
+    this.boardMembersChangedListenerBound = false;
+    this.refreshOpenBoardShareModal = null;
     this._prevUnhealthyServices = null; // Track previous scheduler health state for toast deduplication
     this.isPublicBoardPage = (window.location.pathname || '').includes('/public-board.html');
   }
@@ -422,7 +425,11 @@ class Header {
     this.initializeCopyEmbedCodeMenu();
 
     // Initialize board reassignment in settings menu
+    this.initializeBoardDeleteMenu();
     await this.initializeBoardReassignMenu();
+
+    // Initialize board sharing in settings menu (#285)
+    await this.initializeBoardShareMenu();
     
     // Initialize views dropdown
     this.initializeViewsDropdown();
@@ -2798,6 +2805,7 @@ class Header {
       },
       current_owner: detail.owner || null,
       can_reassign: detail.can_reassign_owner === true,
+      can_delete: detail.can_delete === true,
       available_users: Array.isArray(detail.available_owner_users) ? detail.available_owner_users : [],
     };
   }
@@ -2872,6 +2880,7 @@ class Header {
         },
         current_owner: data.current_owner || board.owner || data.owner || null,
         can_reassign: data.can_reassign === true || board.can_reassign_owner === true || data.can_reassign_owner === true,
+        can_delete: data.can_delete === true,
         available_users: Array.isArray(data.available_users)
           ? data.available_users
           : (Array.isArray(board.available_owner_users) ? board.available_owner_users : []),
@@ -2893,10 +2902,76 @@ class Header {
     if (!this.currentBoardId) {
       this.boardReassignmentOptions = null;
       this.updateBoardReassignMenuVisibility(false);
+      this.updateBoardDeleteMenuVisibility(false);
       return;
     }
 
     this.updateBoardReassignMenuVisibility(this.boardReassignmentOptions?.can_reassign === true);
+    this.updateBoardDeleteMenuVisibility(
+      !this.isPublicBoardPage && this.boardReassignmentOptions?.can_delete === true
+    );
+  }
+
+  getBoardDeleteMenuItems() {
+    return [
+      document.getElementById('delete-board-menu-item'),
+      document.getElementById('mobile-delete-board-menu-item')
+    ].filter(Boolean);
+  }
+
+  updateBoardDeleteMenuVisibility(visible) {
+    this.getBoardDeleteMenuItems().forEach((menuItem) => {
+      menuItem.style.display = visible ? '' : 'none';
+    });
+  }
+
+  initializeBoardDeleteMenu() {
+    // Shown to people with board.delete on this board: the owner, administrators
+    // and custom board roles, but not editors. Visibility follows the owner data.
+    this.getBoardDeleteMenuItems().forEach((menuItem) => {
+      if (!menuItem.dataset.boundDeleteHandler) {
+        menuItem.addEventListener('click', async (e) => {
+          e.preventDefault();
+          closeAllMenusExcept(null);
+          updateMenuHoverState();
+          await this.deleteCurrentBoard();
+        });
+        menuItem.dataset.boundDeleteHandler = 'true';
+      }
+    });
+  }
+
+  async deleteCurrentBoard() {
+    if (!this.currentBoardId) {
+      return;
+    }
+
+    const boardName = window.boardManager?.boardName || 'this board';
+    const confirmed = await showConfirm(
+      `Delete ${boardName}?
+
+This permanently deletes the board, its columns and its cards. It can't be undone. To keep the data, archive the board instead.`,
+      'Delete Board'
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/boards/${this.currentBoardId}`, { method: 'DELETE' });
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        data = { success: false, message: `HTTP error ${response.status}` };
+      }
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to delete board');
+      }
+      window.location.href = '/index.html';
+    } catch (error) {
+      this.showBoardPageToast(error.message || 'Failed to delete board.');
+    }
   }
 
   async openBoardReassignModal() {
@@ -2998,7 +3073,28 @@ class Header {
     }
 
     ownerGroup.append(ownerLabel, ownerSelect);
-    modalContent.append(modalHeader, description, currentOwner, ownerGroup);
+
+    // The previous owner stays on as an editor unless this is unticked (#285).
+    const keepGroup = document.createElement('div');
+    keepGroup.className = 'form-group board-owner-keep';
+    const keepLabel = document.createElement('label');
+    keepLabel.className = 'checkbox-label';
+    const keepCheckbox = document.createElement('input');
+    keepCheckbox.type = 'checkbox';
+    keepCheckbox.id = 'board-owner-keep-previous';
+    keepCheckbox.checked = true;
+    keepLabel.append(keepCheckbox, document.createTextNode(` Keep ${currentOwnerName} on the board as an editor`));
+    keepGroup.appendChild(keepLabel);
+
+    // It only matters when the board changes hands.
+    const syncKeepVisibility = () => {
+      const sameOwner = !options.current_owner?.id || ownerSelect.value === String(options.current_owner.id);
+      keepGroup.style.display = sameOwner ? 'none' : '';
+    };
+    ownerSelect.addEventListener('change', syncKeepVisibility);
+    syncKeepVisibility();
+
+    modalContent.append(modalHeader, description, currentOwner, ownerGroup, keepGroup);
     modal.appendChild(modalContent);
     document.body.appendChild(modal);
     document.body.style.overflow = 'hidden';
@@ -3080,7 +3176,7 @@ class Header {
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ owner_id: selectedOwnerId }),
+          body: JSON.stringify({ owner_id: selectedOwnerId, keep_previous_owner: keepCheckbox.checked }),
           signal: controller.signal,
         });
         clearTimeout(timeoutId);
@@ -3126,6 +3222,7 @@ class Header {
             },
             current_owner: data.current_owner || data.owner || null,
             can_reassign: data.can_reassign === true || data.can_reassign_owner === true,
+            can_delete: data.can_delete === true,
             available_users: Array.isArray(data.available_users)
               ? data.available_users
               : (Array.isArray(data.available_owner_users) ? data.available_owner_users : []),
@@ -3135,6 +3232,7 @@ class Header {
         }
         closeModal();
         this.refreshBoardReassignMenuState();
+        this.updateBoardShareMenu(await this.fetchBoardMembers(false));
       } catch (error) {
         clearTimeout(timeoutId);
         if (error.name === 'AbortError') {
@@ -3147,6 +3245,565 @@ class Header {
         saveBtn.textContent = 'Save';
       }
     });
+  }
+
+  getBoardShareMenuItems() {
+    return [
+      document.getElementById('share-board-menu-item'),
+      document.getElementById('mobile-share-board-menu-item')
+    ].filter(Boolean);
+  }
+
+  async initializeBoardShareMenu() {
+    const menuItems = this.getBoardShareMenuItems();
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    if (!this.currentBoardId || this.isPublicBoardPage) {
+      this.updateBoardShareMenu(null);
+      return;
+    }
+
+    menuItems.forEach((menuItem) => {
+      if (!menuItem.dataset.boundShareHandler) {
+        menuItem.addEventListener('click', async (e) => {
+          e.preventDefault();
+          closeAllMenusExcept(null);
+          updateMenuHoverState();
+          await this.openBoardShareModal();
+        });
+        menuItem.dataset.boundShareHandler = 'true';
+      }
+    });
+
+    if (!this.boardMembersChangedListenerBound) {
+      window.addEventListener('boardMembersChanged', this.boardMembersChangedHandler);
+      this.boardMembersChangedListenerBound = true;
+    }
+
+    const data = await this.fetchBoardMembers(false);
+    this.updateBoardShareMenu(data);
+  }
+
+  // board.js raises boardMembersChanged when another client changes who the
+  // board is shared with, or hands it to a new owner.
+  async handleBoardMembersChanged() {
+    const data = await this.fetchBoardMembers(false);
+    this.updateBoardShareMenu(data);
+    if (this.refreshOpenBoardShareModal) {
+      await this.refreshOpenBoardShareModal();
+    }
+  }
+
+  updateBoardShareMenu(data) {
+    // Anyone who can view the board can see who it's shared with; only the
+    // owner and administrators can change it.
+    const label = data?.can_share ? 'Share Board' : 'Board Members';
+    this.getBoardShareMenuItems().forEach((menuItem) => {
+      menuItem.style.display = data ? '' : 'none';
+      menuItem.textContent = label;
+    });
+  }
+
+  async fetchBoardMembers(includeCandidates, showErrors = false) {
+    if (!this.currentBoardId) {
+      return null;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const query = includeCandidates ? '?include_candidates=true' : '';
+
+    try {
+      const response = await fetch(`/api/boards/${this.currentBoardId}/members${query}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        data = { success: false, message: `HTTP error ${response.status}` };
+      }
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to load board members');
+      }
+      return data;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (showErrors) {
+        this.showBoardPageToast(error.name === 'AbortError'
+          ? 'Loading board members timed out. Please try again.'
+          : (error.message || 'Failed to load board members.'));
+      }
+      return null;
+    }
+  }
+
+  formatShareUserName(user) {
+    if (!user) {
+      return 'Unknown user';
+    }
+    return user.display_name && user.username && user.display_name !== user.username
+      ? `${user.display_name} (@${user.username})`
+      : (user.display_name || user.username || `User ${user.id}`);
+  }
+
+  createShareAccessToggle(current, label, onChange) {
+    const group = document.createElement('span');
+    group.className = 'board-menu-segments board-share-access';
+    group.setAttribute('role', 'group');
+    group.setAttribute('aria-label', label);
+
+    [['viewer', 'Viewer'], ['editor', 'Editor']].forEach(([value, text]) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.value = value;
+      button.textContent = text;
+      button.setAttribute('aria-pressed', value === current ? 'true' : 'false');
+      button.addEventListener('click', () => onChange(value, button));
+      group.appendChild(button);
+    });
+    return group;
+  }
+
+  async sendBoardShareChange(userId, access) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const options = access
+      ? {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access }),
+      }
+      : { method: 'DELETE' };
+
+    try {
+      const response = await fetch(`/api/boards/${this.currentBoardId}/members/${userId}`, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      let data;
+      try {
+        data = await response.json();
+      } catch (error) {
+        data = { success: false, message: `HTTP error ${response.status}` };
+      }
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Failed to update sharing');
+      }
+
+      // Assignee lists and filters depend on who can see the board.
+      if (window.boardManager && typeof window.boardManager.scheduleBoardReload === 'function') {
+        window.boardManager.scheduleBoardReload();
+      }
+      return data;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      this.showBoardPageToast(error.name === 'AbortError'
+        ? 'Updating sharing timed out. Please try again.'
+        : (error.message || 'Failed to update sharing.'));
+      return null;
+    }
+  }
+
+  async openBoardShareModal() {
+    const existingModal = document.getElementById('board-share-modal');
+    if (existingModal) {
+      existingModal.remove();
+    }
+
+    let data = await this.fetchBoardMembers(true, true);
+    if (!data) {
+      return;
+    }
+
+    const previousActiveElement = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const previousOverflow = document.body.style.overflow;
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'board-share-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'board-share-modal-title');
+    modal.setAttribute('aria-describedby', 'board-share-modal-description');
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content board-share-modal-content';
+
+    const modalHeader = document.createElement('div');
+    modalHeader.className = 'modal-header';
+
+    const headerActions = document.createElement('div');
+    headerActions.className = 'modal-header-actions';
+
+    const doneBtn = document.createElement('button');
+    doneBtn.type = 'button';
+    doneBtn.className = 'btn btn-primary';
+    doneBtn.id = 'board-share-done-btn';
+    doneBtn.textContent = 'Done';
+    headerActions.appendChild(doneBtn);
+
+    const title = document.createElement('h2');
+    title.id = 'board-share-modal-title';
+    modalHeader.append(headerActions, title);
+
+    const description = document.createElement('p');
+    description.id = 'board-share-modal-description';
+    description.className = 'modal-description';
+
+    const ownerLine = document.createElement('p');
+    ownerLine.className = 'modal-description board-share-owner';
+
+    const membersHeading = document.createElement('h3');
+    membersHeading.className = 'board-share-heading';
+    membersHeading.id = 'board-share-members-heading';
+    membersHeading.textContent = 'Shared with';
+
+    const membersList = document.createElement('ul');
+    membersList.className = 'board-share-list';
+    membersList.id = 'board-share-members';
+    membersList.setAttribute('aria-labelledby', 'board-share-members-heading');
+
+    const addSection = document.createElement('div');
+    addSection.className = 'form-group board-share-add';
+
+    const status = document.createElement('p');
+    status.className = 'visually-hidden';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+
+    modalContent.append(modalHeader, description, ownerLine, membersHeading, membersList, addSection, status);
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+    document.body.style.overflow = 'hidden';
+
+    // No default, so people choose Viewer or Editor on purpose.
+    let addAccess = null;
+    let busy = false;
+
+    const announce = (message) => {
+      status.textContent = message;
+    };
+
+    const runChange = async (userId, access, successMessage) => {
+      if (busy) {
+        return;
+      }
+      busy = true;
+      modal.classList.add('board-share-busy');
+      const result = await this.sendBoardShareChange(userId, access);
+      busy = false;
+      modal.classList.remove('board-share-busy');
+      if (result) {
+        data = result;
+        this.updateBoardShareMenu(result);
+        render();
+        announce(successMessage);
+      }
+    };
+
+    const renderMembers = () => {
+      membersList.replaceChildren();
+      const members = Array.isArray(data.members) ? data.members : [];
+
+      if (members.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'board-share-empty';
+        empty.textContent = 'Not shared with anyone yet.';
+        membersList.appendChild(empty);
+        return;
+      }
+
+      members.forEach((member) => {
+        const name = this.formatShareUserName(member.user);
+        const item = document.createElement('li');
+        item.className = 'board-share-member';
+        item.dataset.userId = String(member.user.id);
+
+        const nameEl = document.createElement('span');
+        nameEl.className = 'board-share-name';
+        nameEl.textContent = name;
+        item.appendChild(nameEl);
+
+        const controls = document.createElement('span');
+        controls.className = 'board-share-controls';
+
+        if (data.can_share && member.access !== 'custom') {
+          controls.appendChild(this.createShareAccessToggle(
+            member.access,
+            `Access for ${name}`,
+            (value) => {
+              if (value !== member.access) {
+                runChange(member.user.id, value, `${name} can now ${value === 'editor' ? 'edit' : 'view'} this board.`);
+              }
+            }
+          ));
+        } else {
+          const accessEl = document.createElement('span');
+          accessEl.className = 'board-share-access-label';
+          accessEl.textContent = member.access === 'custom'
+            ? `Custom: ${(member.roles || []).join(', ')}`
+            : (member.access === 'editor' ? 'Editor' : 'Viewer');
+          controls.appendChild(accessEl);
+        }
+
+        if (data.can_share) {
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.className = 'btn btn-secondary board-share-remove';
+          removeBtn.textContent = 'Remove';
+          removeBtn.title = `Stop sharing with ${name}`;
+          removeBtn.setAttribute('aria-label', `Stop sharing with ${name}`);
+          removeBtn.addEventListener('click', async () => {
+            const confirmed = await showConfirm(
+              `Stop sharing this board with ${name}?\n\nThey will also be unassigned from its cards.`,
+              'Remove Access'
+            );
+            if (confirmed) {
+              await runChange(member.user.id, null, `${name} no longer has access.`);
+            }
+          });
+          controls.appendChild(removeBtn);
+        }
+
+        item.appendChild(controls);
+        membersList.appendChild(item);
+      });
+    };
+
+    const renderAddSection = () => {
+      addSection.replaceChildren();
+      if (!data.can_share) {
+        addSection.style.display = 'none';
+        return;
+      }
+      addSection.style.display = '';
+
+      const addLabelRow = document.createElement('div');
+      addLabelRow.className = 'board-share-add-row';
+
+      const searchLabel = document.createElement('label');
+      searchLabel.setAttribute('for', 'board-share-search');
+      searchLabel.textContent = 'Add people as';
+
+      const accessWrap = document.createElement('span');
+      accessWrap.className = 'board-share-access-wrap';
+
+      const accessHint = document.createElement('span');
+      accessHint.id = 'board-share-access-hint';
+      accessHint.className = 'board-share-access-hint';
+      accessHint.setAttribute('role', 'alert');
+      accessHint.textContent = 'Choose Viewer or Editor first';
+      accessHint.hidden = true;
+
+      const accessToggle = this.createShareAccessToggle(addAccess, 'Access for new people', (value, button) => {
+        addAccess = value;
+        button.parentElement.querySelectorAll('button').forEach((candidate) => {
+          candidate.setAttribute('aria-pressed', candidate === button ? 'true' : 'false');
+        });
+        accessHint.hidden = true;
+        accessToggle.classList.remove('board-share-needs-access');
+      });
+      accessToggle.setAttribute('aria-describedby', 'board-share-access-hint');
+
+      const showAccessHint = () => {
+        accessHint.hidden = false;
+        accessToggle.classList.add('board-share-needs-access');
+        accessToggle.querySelector('button')?.focus();
+      };
+
+      accessWrap.append(accessToggle, accessHint);
+      addLabelRow.append(searchLabel, accessWrap);
+
+      const search = document.createElement('input');
+      search.type = 'search';
+      search.id = 'board-share-search';
+      search.placeholder = 'Search by name or username';
+      search.autocomplete = 'off';
+      search.setAttribute('aria-describedby', 'board-share-search-help');
+      search.setAttribute('aria-controls', 'board-share-results');
+      search.maxLength = 100;
+
+      const help = document.createElement('p');
+      help.id = 'board-share-search-help';
+      help.className = 'board-share-help';
+      help.textContent = 'Choose Viewer or Editor, then select a person to share the board with them.';
+
+      const results = document.createElement('div');
+      results.id = 'board-share-results';
+      results.className = 'board-share-results';
+      results.setAttribute('role', 'group');
+      results.setAttribute('aria-label', 'Matching people');
+
+      const maxResults = 8;
+      const renderResults = () => {
+        results.replaceChildren();
+        const term = search.value.trim().toLowerCase();
+        const users = Array.isArray(data.available_users) ? data.available_users : [];
+        const matches = users.filter((user) => {
+          if (!term) {
+            return true;
+          }
+          return (user.display_name || '').toLowerCase().includes(term)
+            || (user.username || '').toLowerCase().includes(term);
+        });
+
+        if (matches.length === 0) {
+          const empty = document.createElement('p');
+          empty.className = 'board-share-empty';
+          empty.textContent = users.length === 0 ? 'Everyone already has access.' : 'No matching people.';
+          results.appendChild(empty);
+          return;
+        }
+
+        matches.slice(0, maxResults).forEach((user) => {
+          const name = this.formatShareUserName(user);
+          const option = document.createElement('button');
+          option.type = 'button';
+          option.className = 'board-share-result';
+          option.dataset.userId = String(user.id);
+          option.textContent = name;
+          option.setAttribute('aria-label', `Share with ${name}`);
+          option.addEventListener('click', async () => {
+            if (!addAccess) {
+              showAccessHint();
+              return;
+            }
+            const accessText = addAccess === 'editor' ? 'edit' : 'view';
+            await runChange(user.id, addAccess, `Shared with ${name}. They can ${accessText} this board.`);
+            const nextSearch = document.getElementById('board-share-search');
+            if (nextSearch) {
+              nextSearch.focus();
+            }
+          });
+          option.addEventListener('keydown', (event) => {
+            const options = Array.from(results.querySelectorAll('.board-share-result'));
+            const index = options.indexOf(option);
+            if (event.key === 'ArrowDown' && index < options.length - 1) {
+              event.preventDefault();
+              options[index + 1].focus();
+            } else if (event.key === 'ArrowUp') {
+              event.preventDefault();
+              (index > 0 ? options[index - 1] : search).focus();
+            }
+          });
+          results.appendChild(option);
+        });
+
+        if (matches.length > maxResults) {
+          const more = document.createElement('p');
+          more.className = 'board-share-help';
+          more.textContent = `${matches.length - maxResults} more. Type to narrow the list.`;
+          results.appendChild(more);
+        }
+      };
+
+      search.addEventListener('input', renderResults);
+      search.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown' || event.key === 'Enter') {
+          const first = results.querySelector('.board-share-result');
+          if (first) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      });
+
+      addSection.append(addLabelRow, search, help, results);
+      renderResults();
+    };
+
+    const render = () => {
+      const searchValue = document.getElementById('board-share-search')?.value || '';
+      title.textContent = data.can_share ? 'Share Board' : 'Board Members';
+      description.textContent = data.can_share
+        ? 'Viewers can see the board. Editors can also change it, but only the owner or an administrator can delete it or change who it is shared with.'
+        : 'People who can see this board. Only the owner or an administrator can change this.';
+      ownerLine.textContent = `Owner: ${this.formatShareUserName(data.owner)}`;
+      renderMembers();
+      renderAddSection();
+      const search = document.getElementById('board-share-search');
+      if (search && searchValue) {
+        search.value = searchValue;
+        search.dispatchEvent(new Event('input'));
+      }
+    };
+
+    render();
+
+    let mouseDownOnBackground = false;
+
+    const closeModal = () => {
+      this.refreshOpenBoardShareModal = null;
+      modal.remove();
+      document.body.style.overflow = previousOverflow;
+      if (previousActiveElement && document.contains(previousActiveElement)) {
+        previousActiveElement.focus();
+      }
+    };
+
+    this.refreshOpenBoardShareModal = async () => {
+      if (busy || !document.contains(modal)) {
+        return;
+      }
+      const refreshed = await this.fetchBoardMembers(true);
+      if (refreshed) {
+        data = refreshed;
+        render();
+      }
+    };
+
+    modal.addEventListener('mousedown', (event) => {
+      mouseDownOnBackground = event.target === modal;
+    });
+
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal && mouseDownOnBackground) {
+        closeModal();
+      }
+      mouseDownOnBackground = false;
+    });
+
+    modal.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeModal();
+        return;
+      }
+
+      if (event.key !== 'Tab') {
+        return;
+      }
+
+      const focusable = Array.from(modal.querySelectorAll(
+        'button:not([disabled]), select:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ));
+      if (focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+
+    doneBtn.addEventListener('click', closeModal);
+    (document.getElementById('board-share-search') || doneBtn).focus();
   }
 
   initializeBoardFilterToggleMenu() {
@@ -4151,6 +4808,11 @@ class Header {
     if (this.boardOwnerDataListenerBound) {
       window.removeEventListener('boardOwnerDataLoaded', this.boardOwnerDataLoadedHandler);
       this.boardOwnerDataListenerBound = false;
+    }
+
+    if (this.boardMembersChangedListenerBound) {
+      window.removeEventListener('boardMembersChanged', this.boardMembersChangedHandler);
+      this.boardMembersChangedListenerBound = false;
     }
 
     window.removeEventListener('boardFiltersVisibilityChanged', this.boardFiltersVisibilityHandler);

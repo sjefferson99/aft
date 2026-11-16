@@ -894,6 +894,160 @@
   margin-bottom: 12px;
 }
 
+/* Share Board dialog (#285) */
+.modal-content.board-share-modal-content {
+  max-width: 540px;
+}
+
+.board-share-owner {
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.board-share-heading {
+  margin: 16px 0 8px;
+  font-size: 1rem;
+}
+
+.board-share-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.board-share-member {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.board-share-member:last-child {
+  border-bottom: none;
+}
+
+.board-share-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.board-share-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The segments come from the board menu; in a dialog they use its colours. */
+.board-share-access button:not([aria-pressed="true"]) {
+  color: var(--text-color);
+}
+
+.board-share-access button:not([aria-pressed="true"]):hover {
+  background-color: var(--background-light);
+}
+
+.board-share-access-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.board-share-access.board-share-needs-access {
+  border-color: var(--warning-color);
+  box-shadow: 0 0 0 2px var(--warning-color);
+}
+
+/* Tooltip shown when someone picks a person before Viewer or Editor. */
+.board-share-access-hint {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 1;
+  padding: 6px 10px;
+  border: 2px solid var(--warning-color);
+  border-radius: 5px;
+  background: var(--card-bg-color);
+  color: var(--text-color);
+  font-size: 0.85em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.board-share-access-hint::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 16px;
+  border: 7px solid transparent;
+  border-top-color: var(--warning-color);
+}
+
+.board-share-access-label {
+  color: var(--text-muted);
+}
+
+.board-share-add {
+  margin-top: 20px;
+}
+
+.board-share-add-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.board-share-add-row label {
+  margin: 0;
+}
+
+.board-share-help,
+.board-share-empty {
+  margin: 6px 0 0;
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
+.board-share-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.board-share-result {
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  background: var(--card-bg-color);
+  color: var(--text-color);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.board-share-result:hover,
+.board-share-result:focus-visible {
+  border-color: var(--primary-color);
+}
+
+.board-share-busy .board-share-result,
+.board-share-busy .board-share-remove,
+.board-share-busy .board-share-access button {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.board-owner-keep {
+  margin-top: 12px;
+}
+
 .assignee-modal-section {
   margin-top: 16px;
 }

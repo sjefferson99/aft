@@ -31,6 +31,7 @@ from schedule_routes import schedule_bp, configure_schedule_routes
 from branding_routes import branding_bp
 from planner_routes import planner_bp
 from global_board_routes import configure_global_board_routes, global_board_bp
+from board_sharing import board_sharing_bp, configure_board_sharing_routes
 from passkey_routes import passkey_bp, WEBAUTHN_SETTINGS
 from broadcasting import (
     broadcast_failures,
@@ -204,6 +205,7 @@ configure_card_routes(broadcast_event)
 configure_schedule_routes(broadcast_event)
 configure_theme_routes(broadcast_theme_event)
 configure_global_board_routes(broadcast_event, broadcast_global_board_event)
+configure_board_sharing_routes(broadcast_event)
 
 # Register Socket.IO event handlers
 register_websocket_handlers(socketio, reject_connections=REJECT_SOCKETIO_CONNECTIONS)
@@ -303,6 +305,7 @@ app.register_blueprint(schedule_bp)
 app.register_blueprint(branding_bp)
 app.register_blueprint(planner_bp)
 app.register_blueprint(global_board_bp)
+app.register_blueprint(board_sharing_bp)
 app.register_blueprint(passkey_bp)
 
 if WEBAUTHN_SETTINGS:
