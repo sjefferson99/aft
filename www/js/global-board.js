@@ -25,6 +25,20 @@ const GLOBAL_BOARD_REQUEST_TIMEOUT_MS = 5000;
 const GLOBAL_BOARD_REFRESH_DEBOUNCE_MS = 250;
 const GLOBAL_BOARD_MOBILE_BREAKPOINT = 900;
 const GLOBAL_BOARD_DEFAULT_AVATAR_COLOUR = '#90A4AE';
+// Epic colours (#681): mid tones that read as a stripe and a light tint on
+// both light and dark themes.
+const GLOBAL_BOARD_EPIC_COLOURS = [
+  '#4E79A7',
+  '#F28E2B',
+  '#59A14F',
+  '#E15759',
+  '#B07AA1',
+  '#76B7B2',
+  '#EDC948',
+  '#FF9DA7',
+  '#9C755F',
+  '#8CD17D',
+];
 // How long to wait for a card's board to load and open its modal.
 const GLOBAL_BOARD_CARD_OPEN_TIMEOUT_MS = 15000;
 // A closed card's frame lingers hidden, so a save it started can finish.
@@ -44,6 +58,36 @@ const GLOBAL_BOARD_SOURCE_EVENTS = [
   'column_deleted',
 ];
 
+/**
+ * Give each epic a palette index. Each epic starts at its id modulo the
+ * palette size, so colours mostly stay put between loads, and steps on to the
+ * next free index on a clash. Every colour is used once before any repeats.
+ *
+ * @param {number[]} epicIds
+ * @param {number} paletteSize
+ * @returns {Map<number, number>} epic id to palette index
+ */
+function assignEpicColourIndexes(epicIds, paletteSize) {
+  const indexes = new Map();
+  if (!(paletteSize > 0)) {
+    return indexes;
+  }
+  const ids = [...new Set(epicIds)].sort((a, b) => a - b);
+  let used = new Set();
+  ids.forEach((id) => {
+    if (used.size >= paletteSize) {
+      used = new Set();
+    }
+    let index = ((id % paletteSize) + paletteSize) % paletteSize;
+    while (used.has(index)) {
+      index = (index + 1) % paletteSize;
+    }
+    used.add(index);
+    indexes.set(id, index);
+  });
+  return indexes;
+}
+
 class GlobalBoardPage {
   constructor(container) {
     this.container = container;
@@ -51,6 +95,7 @@ class GlobalBoardPage {
     this.globalBoard = null;
     this.states = {};
     this.epics = [];
+    this.epicColours = new Map();
     this.assignees = [];
     this.knownCardIds = new Set();
     this.filters = { assigneeIds: new Set(), unassigned: false, epicId: null };
@@ -176,6 +221,7 @@ class GlobalBoardPage {
       this.globalBoard = data.global_board || this.globalBoard;
       this.states = data.states || {};
       this.epics = Array.isArray(data.epics) ? data.epics : [];
+      this.assignEpicColours();
       this.collectAssignees();
       this.pruneFilters();
       this.hasLoaded = true;
@@ -193,6 +239,15 @@ class GlobalBoardPage {
         this.load();
       }
     }
+  }
+
+  assignEpicColours() {
+    const indexes = assignEpicColourIndexes(
+      this.epics.map((epic) => epic.id).filter(Number.isInteger),
+      GLOBAL_BOARD_EPIC_COLOURS.length
+    );
+    this.epicColours = new Map();
+    indexes.forEach((index, id) => this.epicColours.set(id, GLOBAL_BOARD_EPIC_COLOURS[index]));
   }
 
   scheduleRefresh() {
@@ -591,6 +646,11 @@ class GlobalBoardPage {
         draggable: String(draggable),
       },
     });
+    const epicColour = this.epicColours.get(card.board_id);
+    if (epicColour) {
+      element.classList.add('gb-card--epic');
+      element.style.setProperty('--gb-epic-colour', epicColour);
+    }
 
     const link = this.el('a', {
       className: 'gb-card-title',

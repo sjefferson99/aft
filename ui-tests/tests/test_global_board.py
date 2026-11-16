@@ -869,3 +869,59 @@ def test_card_frame_without_a_database_check_says_so(logged_in_page, global_boar
     _card(page, stories["first"]).dispatch_event("click")
     page.get_by_text("Couldn't open the card. Check your connection").wait_for(timeout=15000)
     _wait_overlay_closed(page)
+
+
+@pytest.mark.ui
+def test_epic_colours_use_whole_palette_before_repeating(logged_in_page, global_board):
+    page = logged_in_page
+    _open(page, global_board)
+    size = page.evaluate("GLOBAL_BOARD_EPIC_COLOURS.length")
+
+    def assign(ids):
+        return page.evaluate(
+            "([ids, size]) => Object.fromEntries(assignEpicColourIndexes(ids, size))", [ids, size]
+        )
+
+    # Each epic starts at its id modulo the palette, stepping on past a clash.
+    clashing = [1, 1 + size, 1 + 2 * size]
+    assert assign(clashing) == {str(clashing[0]): 1, str(clashing[1]): 2, str(clashing[2]): 3}
+
+    # Every colour is used once before any repeats, even when all ids clash.
+    same_start = [size * n for n in range(1, size + 2)]
+    indexes = list(assign(same_start).values())
+    assert sorted(indexes[:size]) == list(range(size))
+    assert indexes[size] in range(size)
+
+
+@pytest.mark.ui
+def test_cards_are_coloured_by_epic(logged_in_page, api_session, ui_base_url, global_board, epic, stories):
+    page = logged_in_page
+    other = api_session.post(
+        f"{ui_base_url}/api/boards", json={"name": "Colour Epic", "description": "Created by ui-tests"}
+    )
+    assert other.status_code == 201, other.text
+    other_board = other.json()["board"]
+    try:
+        styled = api_session.put(
+            f"{ui_base_url}/api/boards/{other_board['id']}/settings/working-style", json={"value": "agile"}
+        )
+        assert styled.status_code == 200, styled.text
+        column = api_session.post(
+            f"{ui_base_url}/api/boards/{other_board['id']}/columns", json={"name": "Feature C"}
+        )
+        assert column.status_code == 201, column.text
+        third = _make_card(api_session, ui_base_url, column.json()["column"]["id"], "Third story")
+        _promote(api_session, ui_base_url, global_board, third)
+
+        _open(page, global_board)
+
+        def colour(card_id):
+            card = _card(page, card_id)
+            assert "gb-card--epic" in card.get_attribute("class")
+            return card.evaluate("el => getComputedStyle(el).borderLeftColor")
+
+        first, second, other_colour = colour(stories["first"]), colour(stories["second"]), colour(third)
+        assert first == second
+        assert other_colour != first
+    finally:
+        api_session.delete(f"{ui_base_url}/api/boards/{other_board['id']}")

@@ -252,6 +252,13 @@ body.global-board-page .canvas {
   transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
+/* Epic colour (#681): a stripe plus a light tint, mixed with the theme's card
+   background so text stays readable on every theme. */
+.gb-card--epic {
+  border-left: 5px solid var(--gb-epic-colour);
+  background: color-mix(in srgb, var(--gb-epic-colour) 12%, var(--card-bg-color));
+}
+
 .gb-card[draggable="true"] {
   cursor: grab;
 }
