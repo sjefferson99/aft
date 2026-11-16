@@ -3625,14 +3625,6 @@ class BoardManager {
     }
   }
 
-  /**
-   * Open the edit card modal for the `card` URL parameter, which the global
-   * board links to (#663). Fails quietly if the card is missing, archived or
-   * on another board, then drops the parameter so a reload doesn't reopen it.
-   *
-   * @param {string|null} cardParam - Raw `card` query parameter.
-   * @returns {Promise<void>}
-   */
   // board.html?view=done|archived|scheduled opens the board in that view, so
   // cross-board search results (#593) can open cards that aren't in the task
   // view. The parameter is removed once read, because switching views doesn't
@@ -3663,6 +3655,15 @@ class BoardManager {
     }
   }
 
+  /**
+   * Open the edit card modal for the `card` URL parameter, which the global
+   * board and cross-board search link to (#663, #593). Fails quietly if the
+   * card is missing, on another board, or not in the current view, then drops
+   * the parameter so a reload doesn't reopen it.
+   *
+   * @param {string|null} cardParam - Raw `card` query parameter.
+   * @returns {Promise<void>}
+   */
   async openDeepLinkedCard(cardParam) {
     if (!cardParam) {
       return;
