@@ -1,4 +1,4 @@
-# Python 3.14 slim base image
+# Python 3.15 slim base image
 FROM python:3.15-slim
 
 # Set working directory
