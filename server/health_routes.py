@@ -584,7 +584,7 @@ def get_permissions_mapping():
             'POST /api/themes/:id/demote-global': {'permission': 'branding.edit', 'description': 'Demote theme from global visibility'},
             'GET /api/settings/default-theme': {'mode': 'authenticated', 'description': 'Get instance default theme'},
             'PUT /api/settings/default-theme': {'permission': 'branding.edit', 'description': 'Set instance default theme'},
-            'GET /api/stats': {'permission': 'board.view', 'description': 'View statistics'},
+            'GET /api/stats': {'mode': 'authenticated', 'description': 'View statistics for boards the user can access'},
             'GET /api/scheduler/health': {'permission': 'setting.view', 'description': 'View scheduler health'},
             'GET /api/broadcast-status': {'permission': 'monitoring.system', 'description': 'View broadcast status'},
         }
@@ -775,9 +775,13 @@ def test_db():
 
 
 @health_bp.route("/api/stats")
-@require_permission('board.view')
+@require_authentication
 def get_stats():
     """Get board and card statistics scoped to the current user.
+
+    Counts only cover boards the user owns or holds a role on (all boards for
+    administrators), so any signed-in user may call it, including users whose
+    only roles are on particular boards.
     ---
     tags:
       - Health
@@ -786,8 +790,8 @@ def get_stats():
     responses:
       200:
         description: Board, column, card and checklist item counts
-      403:
-        description: Insufficient permissions
+      401:
+        description: Authentication required
       500:
         description: Server error
     """
@@ -817,6 +821,6 @@ def get_stats():
         )
     except Exception as e:
         logger.error(f"Error getting stats: {str(e)}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        return jsonify({"success": False, "message": "Failed to get statistics"}), 500
     finally:
         db.close()

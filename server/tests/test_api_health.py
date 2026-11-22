@@ -163,6 +163,55 @@ class TestHealthEndpoints:
         assert data["cards_count"] == 2
         assert data["cards_archived_count"] == 1
 
+    def test_stats_for_user_with_only_board_role(
+        self, api_client, authenticated_session, second_user_session, isolated_test, sample_board
+    ):
+        """A user whose only board access is a board role gets stats for that board (#705)."""
+        me_response = second_user_session.get(f"{api_client}/api/auth/me")
+        assert me_response.status_code == 200
+        second_user_id = me_response.json()["user"]["id"]
+
+        shared_response = authenticated_session.post(
+            f"{api_client}/api/boards",
+            json={"name": "Shared Stats Board", "description": "Shared with a board editor"},
+        )
+        assert shared_response.status_code == 201
+        shared_board_id = shared_response.json()["board"]["id"]
+
+        col_response = authenticated_session.post(
+            f"{api_client}/api/boards/{shared_board_id}/columns",
+            json={"name": "Shared Column"},
+        )
+        assert col_response.status_code == 201
+        shared_column_id = col_response.json()["column"]["id"]
+
+        card_response = authenticated_session.post(
+            f"{api_client}/api/columns/{shared_column_id}/cards",
+            json={"title": "Shared Card", "description": "Test"},
+        )
+        assert card_response.status_code == 201
+
+        role_response = authenticated_session.post(
+            f"{api_client}/api/users/{second_user_id}/roles",
+            json={"role_name": "board_editor", "board_id": shared_board_id},
+        )
+        assert role_response.status_code in (200, 201), role_response.text
+
+        response = second_user_session.get(f"{api_client}/api/stats")
+        assert response.status_code == 200, response.text
+
+        data = response.json()
+        assert data["success"] is True
+        # Only the shared board counts; the admin's sample_board is not visible.
+        assert data["boards_count"] == 1
+        assert data["columns_count"] == 1
+        assert data["cards_count"] == 1
+
+    def test_stats_requires_authentication(self, api_client):
+        """Stats are only available to signed-in users."""
+        response = requests.get(f"{api_client}/api/stats", timeout=5)
+        assert response.status_code == 401
+
 
 @pytest.mark.api
 class TestSchedulerHealthEndpoint:
