@@ -2386,12 +2386,13 @@ def update_board(board_id):
                 description:
                   type: string
                   example: "Updated board description"
+                  x-nullable: true
                 is_public:
                     type: boolean
                     example: true
                 public_slug:
                     type: string
-                    nullable: true
+                    x-nullable: true
                     example: "a1b2c3d4e5f6"
             message:
               type: string

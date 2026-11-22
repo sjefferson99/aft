@@ -356,6 +356,7 @@ def get_backup_config():
                   type: integer
                 last_run:
                   type: string
+                  x-nullable: true
       500:
         description: Server error
     """

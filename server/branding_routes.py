@@ -46,7 +46,7 @@ def get_branding_logo():
           properties:
             filename:
               type: string
-              nullable: true
+              x-nullable: true
       500:
         description: Server error
     """

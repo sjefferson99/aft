@@ -399,6 +399,7 @@ def login():
                   type: string
                 display_name:
                   type: string
+                  x-nullable: true
                 email_verified:
                   type: boolean
       400:
@@ -668,10 +669,12 @@ def get_current_user():
                   type: string
                 display_name:
                   type: string
+                  x-nullable: true
                 email_verified:
                   type: boolean
                 oauth_provider:
                   type: string
+                  x-nullable: true
                 roles:
                   type: array
                   items:
@@ -683,6 +686,7 @@ def get_current_user():
                         type: string
                       description:
                         type: string
+                        x-nullable: true
                 permissions:
                   type: array
                   items:
@@ -927,6 +931,7 @@ def register():
                   type: string
                 display_name:
                   type: string
+                  x-nullable: true
                 requires_approval:
                   type: boolean
       400:
@@ -1202,6 +1207,7 @@ def check_auth():
                   type: string
                 display_name:
                   type: string
+                  x-nullable: true
       401:
         description: Not authenticated
         schema:
@@ -1320,6 +1326,7 @@ def setup_admin():
                   type: string
                 display_name:
                   type: string
+                  x-nullable: true
       400:
         description: Validation error
       403:

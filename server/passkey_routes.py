@@ -653,6 +653,7 @@ def list_own_passkeys():
                     type: string
                   last_used_at:
                     type: string
+                    x-nullable: true
       401:
         description: Not logged in
     """
