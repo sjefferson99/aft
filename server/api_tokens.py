@@ -90,59 +90,74 @@ def authenticate_token(db, token):
     return user, api_token
 
 
+class TokenRequestError(Exception):
+    """A create request was refused. message is always one of the fixed texts
+    below, never built from the request."""
+
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+NAME_REQUIRED = "name is required"
+NAME_EMPTY = "name cannot be empty"
+NAME_TOO_LONG = f"name exceeds maximum length of {MAX_TOKEN_NAME_LENGTH} characters"
+NAME_CONTROL_CHARS = "name contains control characters"
+BODY_NOT_OBJECT = "Request body must be a JSON object"
+READ_ONLY_INVALID = "read_only must be true or false"
+EXPIRY_INVALID = f"expires_in_days must be a whole number from 1 to {MAX_EXPIRY_DAYS}"
+TOO_MANY_TOKENS = f"An account can have at most {MAX_TOKENS_PER_USER} API tokens"
+
+
 def validate_token_name(raw_name):
-    """Return (name, error_message) for a user-supplied token name."""
+    """Return the cleaned token name, or raise TokenRequestError."""
     if not isinstance(raw_name, str):
-        return None, "name is required"
+        raise TokenRequestError(NAME_REQUIRED)
     name = raw_name.strip()
     if not name:
-        return None, "name cannot be empty"
+        raise TokenRequestError(NAME_EMPTY)
     if len(name) > MAX_TOKEN_NAME_LENGTH:
-        return None, f"name exceeds maximum length of {MAX_TOKEN_NAME_LENGTH} characters"
+        raise TokenRequestError(NAME_TOO_LONG)
     if any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
-        return None, "name contains control characters"
-    return name, None
+        raise TokenRequestError(NAME_CONTROL_CHARS)
+    return name
 
 
 def parse_token_options(data):
-    """Validate a create request body.
+    """Validate a create request body, or raise TokenRequestError.
 
-    Returns (options, error_message). options holds name, read_only and
-    expires_at (None for no expiry).
+    Returns a dict of name, read_only and expires_at (None for no expiry).
     """
     if not isinstance(data, dict):
-        return None, "Request body must be a JSON object"
+        raise TokenRequestError(BODY_NOT_OBJECT)
 
-    name, error = validate_token_name(data.get('name'))
-    if error:
-        return None, error
+    name = validate_token_name(data.get('name'))
 
     read_only = data.get('read_only', False)
     if not isinstance(read_only, bool):
-        return None, "read_only must be true or false"
+        raise TokenRequestError(READ_ONLY_INVALID)
 
     expires_in_days = data.get('expires_in_days')
     expires_at = None
     if expires_in_days is not None:
         if (isinstance(expires_in_days, bool) or not isinstance(expires_in_days, int)
                 or not 1 <= expires_in_days <= MAX_EXPIRY_DAYS):
-            return None, f"expires_in_days must be a whole number from 1 to {MAX_EXPIRY_DAYS}"
+            raise TokenRequestError(EXPIRY_INVALID)
         expires_at = utc_now() + timedelta(days=expires_in_days)
 
-    return {'name': name, 'read_only': read_only, 'expires_at': expires_at}, None
+    return {'name': name, 'read_only': read_only, 'expires_at': expires_at}
 
 
-def create_token(db, user_id, options):
-    """Create a token for a user and commit it.
+def create_token(db, user_id, options, token):
+    """Store a token made by generate_token() for a user, or raise TokenRequestError.
 
-    Returns (api_token, token, error_message). The token string is only
-    available here; it is not stored.
+    Only its hash is kept, so the caller must hand the token back now.
+    Returns the new token's id.
     """
     count = db.query(ApiToken.id).filter(ApiToken.user_id == user_id).count()
     if count >= MAX_TOKENS_PER_USER:
-        return None, None, f"An account can have at most {MAX_TOKENS_PER_USER} API tokens"
+        raise TokenRequestError(TOO_MANY_TOKENS)
 
-    token = generate_token()
     api_token = ApiToken(
         user_id=user_id,
         name=options['name'],
@@ -153,8 +168,7 @@ def create_token(db, user_id, options):
     )
     db.add(api_token)
     db.commit()
-    db.refresh(api_token)
-    return api_token, token, None
+    return api_token.id
 
 
 def serialize_token(api_token):

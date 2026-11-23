@@ -68,6 +68,7 @@ class UserManagement {
     this.canManageUsers = false;
     this.canAssignRoles = false;
     this.canResetPasswords = false;
+    this.canCreateApiTokens = false;
     this.canViewTestUserGuidance = false;
     this.canRemoveTestUser = false;
     this.testUserDetected = false;
@@ -94,6 +95,9 @@ class UserManagement {
     this.canManageUsers = hasUserManage;
     this.canAssignRoles = hasUserRole;
     this.canResetPasswords = hasUserManage && hasAdministratorRole;
+    // Same rule as password resets: user.manage alone can make any account API
+    // only, so minting its tokens needs the administrator role too (#714).
+    this.canCreateApiTokens = hasUserManage && hasAdministratorRole;
     this.canViewTestUserGuidance = hasUserManage || hasUserRole;
     this.canRemoveTestUser = hasUserManage;
     
@@ -524,7 +528,7 @@ class UserManagement {
           ? `<button class="btn btn-secondary btn-sm" data-action="revoke-passkeys" data-user-id="${safeUserId}">Revoke Passkeys</button>`
           : ''
         }
-        ${user.api_only && user.is_active
+        ${user.api_only && user.is_active && this.canCreateApiTokens
           ? `<button class="btn btn-secondary btn-sm" data-action="create-api-token" data-user-id="${safeUserId}">Create API Token</button>`
           : ''
         }

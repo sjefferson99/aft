@@ -433,4 +433,4 @@ Give each integration its own account and make it API only, so its credentials c
 
 In **User Management**, choose **Make API Only** on the account. It can then use the API but can't sign in with its password or a passkey, and any web session it already has ends at its next request. The account shows an **API only** badge in the user list. Choose **Allow Web Sign-in** to undo it. You can't make your own account API only.
 
-An API-only account can't open its Profile page, so an administrator makes its tokens: choose **Create API Token** on the account in **User Management**. Administrators can only do this for API-only accounts. HTTP Basic auth with the account's password also still works.
+An API-only account can't open its Profile page, so an administrator makes its tokens: choose **Create API Token** on the account in **User Management**. This needs the **administrator** role, like resetting a password, and only works for API-only accounts. HTTP Basic auth with the account's password also still works.

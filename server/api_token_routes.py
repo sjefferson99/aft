@@ -2,8 +2,10 @@
 Personal API token endpoints (#714).
 
 People manage their own tokens under /api/auth/tokens. Holders of user.manage
-can list and revoke anyone's tokens, and create tokens for API-only accounts,
-which can't sign in to the web app to make their own.
+can list and revoke anyone's tokens. Creating a token for an API-only account,
+which can't sign in to make its own, also needs the global administrator role,
+like resetting another user's password: user.manage alone can make any account
+API-only, so it would otherwise be a way to act as an administrator.
 
 A request made with an API token can't create tokens, so a leaked token can't
 be used to make others that outlive it.
@@ -14,7 +16,10 @@ import logging
 from flask import Blueprint, g, request
 
 from api_tokens import (
+    TokenRequestError,
     create_token,
+    generate_token,
+    hash_token,
     parse_token_options,
     serialize_token,
 )
@@ -26,7 +31,7 @@ from auth_rate_limit import (
     too_many_attempts_response,
 )
 from database import SessionLocal
-from models import ApiToken, User
+from models import ApiToken, Role, User, UserRole
 from utils import (
     create_error_response,
     create_success_response,
@@ -41,6 +46,14 @@ api_token_bp = Blueprint('api_tokens', __name__, url_prefix='/api')
 TOKEN_AUTH_CANNOT_CREATE = "API tokens can't be used to create API tokens"
 
 
+def _is_global_administrator(db, user_id):
+    return db.query(UserRole.id).join(Role).filter(
+        UserRole.user_id == user_id,
+        UserRole.board_id.is_(None),
+        Role.name == 'administrator'
+    ).first() is not None
+
+
 def _list_tokens(db, user_id):
     tokens = db.query(ApiToken).filter(
         ApiToken.user_id == user_id
@@ -48,7 +61,9 @@ def _list_tokens(db, user_id):
     return [serialize_token(t) for t in tokens]
 
 
-def _created_response(api_token, token):
+def _created_response(db, token):
+    # Read back from the database, so the response shows what was stored.
+    api_token = db.query(ApiToken).filter(ApiToken.token_hash == hash_token(token)).one()
     data = {'token': token, 'api_token': serialize_token(api_token)}
     return create_success_response(
         data=data, message="API token created. Copy it now: it won't be shown again.",
@@ -182,9 +197,10 @@ def create_own_token():
         return create_error_response(TOKEN_AUTH_CANNOT_CREATE, 403)
 
     data = request.get_json(silent=True)
-    options, error = parse_token_options(data)
-    if error:
-        return create_error_response(error, 400)
+    try:
+        options = parse_token_options(data)
+    except TokenRequestError as exc:
+        return create_error_response(exc.message, 400)
 
     db = SessionLocal()
     try:
@@ -206,11 +222,13 @@ def create_own_token():
                 record_password_failure(account)
                 return create_error_response("Current password is incorrect", 400)
 
-        api_token, token, error = create_token(db, user.id, options)
-        if error:
-            return create_error_response(error, 400)
-        logger.info(f"API token created by user_id={user.id} (token_id={api_token.id})")
-        return _created_response(api_token, token)
+        try:
+            token = generate_token()
+            token_id = create_token(db, user.id, options, token)
+        except TokenRequestError as exc:
+            return create_error_response(exc.message, 400)
+        logger.info(f"API token created by user_id={user.id} (token_id={token_id})")
+        return _created_response(db, token)
     finally:
         db.close()
 
@@ -310,9 +328,11 @@ def admin_create_user_token(user_id):
     security:
       - session: []
     description: >
-      API-only accounts can't sign in to the web app, so an admin makes their
-      tokens. Other accounts make their own on the Profile page. The token is
-      returned once. Requests made with an API token can't create tokens.
+      API-only accounts can't sign in to the web app, so an administrator makes
+      their tokens. Other accounts make their own on the Profile page. Needs
+      the global administrator role as well as user.manage, like resetting a
+      password. The token is returned once. Requests made with an API token
+      can't create tokens.
     parameters:
       - name: user_id
         in: path
@@ -352,19 +372,26 @@ def admin_create_user_token(user_id):
       400:
         description: Invalid fields, the account isn't API-only, or token limit reached
       403:
-        description: Forbidden - requires user.manage, or the request was made with an API token
+        description: >
+          Forbidden - requires user.manage and the administrator role, or the
+          request was made with an API token
       404:
         description: User not found
     """
     if g.get('auth_method') == 'token':
         return create_error_response(TOKEN_AUTH_CANNOT_CREATE, 403)
 
-    options, error = parse_token_options(request.get_json(silent=True))
-    if error:
-        return create_error_response(error, 400)
+    try:
+        options = parse_token_options(request.get_json(silent=True))
+    except TokenRequestError as exc:
+        return create_error_response(exc.message, 400)
 
     db = SessionLocal()
     try:
+        if not _is_global_administrator(db, g.user.id):
+            return create_error_response(
+                "Administrator role required to create API tokens for another account", 403
+            )
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return create_error_response("User not found", 404)
@@ -373,14 +400,15 @@ def admin_create_user_token(user_id):
                 "Admins can only create tokens for API-only accounts. "
                 "Other people create their own on their Profile page.", 400
             )
-        api_token, token, error = create_token(db, user.id, options)
-        if error:
-            return create_error_response(error, 400)
+        try:
+            token = generate_token()
+            token_id = create_token(db, user.id, options, token)
+        except TokenRequestError as exc:
+            return create_error_response(exc.message, 400)
         logger.info(
-            f"API token created for user_id={user.id} by admin {g.user.id} "
-            f"(token_id={api_token.id})"
+            f"API token created for user_id={user.id} by admin {g.user.id} (token_id={token_id})"
         )
-        return _created_response(api_token, token)
+        return _created_response(db, token)
     finally:
         db.close()
 

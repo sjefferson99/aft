@@ -364,6 +364,42 @@ class TestAdminTokens:
             # Don't leave an extra administrator for tests that notify all admins.
             test_admin_session.post(f"{API_BASE_URL}/api/users/{admin['id']}/deactivate")
 
+    def test_user_manage_alone_cannot_create_tokens(self, token_user, test_admin_session):
+        """user.manage can make any account API-only, so without the administrator
+        role it could otherwise mint a token for an administrator and act as them."""
+        manager = _new_user(test_admin_session, prefix="token-manager")
+        role_name = f"token_user_manage_{uuid.uuid4().hex[:8]}"
+        role = test_admin_session.post(f"{API_BASE_URL}/api/roles", json={
+            "name": role_name, "description": "user.manage only", "permissions": ["user.manage"],
+        })
+        assert role.status_code == 201, role.text
+        assign = test_admin_session.post(
+            f"{API_BASE_URL}/api/users/{manager['id']}/roles", json={"role_name": role_name}
+        )
+        assert assign.status_code == 200, assign.text
+        victim = _new_user(test_admin_session, prefix="token-victim")
+        assign = test_admin_session.post(
+            f"{API_BASE_URL}/api/users/{victim['id']}/roles", json={"role_name": "administrator"}
+        )
+        assert assign.status_code == 200, assign.text
+        try:
+            response = manager["session"].put(
+                f"{API_BASE_URL}/api/users/{victim['id']}/api-only", json={"api_only": True}
+            )
+            assert response.status_code == 200, response.text
+            response = manager["session"].post(
+                f"{API_BASE_URL}/api/users/{victim['id']}/tokens", json={"name": "escalate"}
+            )
+            assert response.status_code == 403
+            assert "token" not in response.json()
+            # Listing and revoking only need user.manage.
+            listed = manager["session"].get(f"{API_BASE_URL}/api/users/{victim['id']}/tokens")
+            assert listed.status_code == 200
+            assert listed.json()["tokens"] == []
+        finally:
+            test_admin_session.post(f"{API_BASE_URL}/api/users/{victim['id']}/deactivate")
+            test_admin_session.post(f"{API_BASE_URL}/api/users/{manager['id']}/deactivate")
+
     def test_non_admin_refused(self, token_user, test_admin_session):
         other = _new_user(test_admin_session)
         base = f"{API_BASE_URL}/api/users/{other['id']}/tokens"
