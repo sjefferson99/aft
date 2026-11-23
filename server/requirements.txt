@@ -10,7 +10,7 @@ alembic==1.20.1
 pymysql==1.2.4
 cryptography==50.0.2
 gunicorn==27.0.1
-flask-swagger-ui==5.34.1
+flask-swagger-ui==5.35.0
 flasgger==0.9.7.1
 psutil==7.2.2
 requests==2.34.2
