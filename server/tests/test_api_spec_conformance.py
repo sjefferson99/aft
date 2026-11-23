@@ -37,8 +37,10 @@ def spec(api_client):
 
 def _assert_matches_spec(spec, path, method, response, status=200):
     assert response.status_code == status, response.text
-    schema = spec["paths"][path][method]["responses"][str(status)]["schema"]
-    validator = jsonschema.Draft7Validator(_to_json_schema(copy.deepcopy(schema)))
+    schema = copy.deepcopy(spec["paths"][path][method]["responses"][str(status)]["schema"])
+    # Shared models are $refs to #/definitions, so carry those along.
+    schema["definitions"] = copy.deepcopy(spec.get("definitions", {}))
+    validator = jsonschema.Draft7Validator(_to_json_schema(schema))
     errors = sorted(
         f"{'/'.join(map(str, error.absolute_path))}: {error.message}"
         for error in validator.iter_errors(response.json())
@@ -127,3 +129,31 @@ class TestSpecConformance:
     def test_backup_config_matches_spec(self, api_client, authenticated_session, spec):
         config = authenticated_session.get(f"{api_client}/api/settings/backup/config")
         _assert_matches_spec(spec, "/api/settings/backup/config", "get", config)
+
+    def test_api_tokens_match_spec(self, api_client, authenticated_session, spec):
+        """A new token has no expiry and has never been used, so both dates are null."""
+        suffix = uuid.uuid4().hex[:8]
+        email = f"spec-token-{suffix}@localhost"
+        password = f"SpecToken-{suffix}-Aa1!"
+        register = requests.post(f"{api_client}/api/auth/register", json={
+            "email": email,
+            "username": f"spec-token-{suffix}",
+            "password": password,
+        })
+        assert register.status_code == 201
+        pending = authenticated_session.get(f"{api_client}/api/users/pending")
+        user_id = next(u["id"] for u in pending.json()["users"] if u["email"] == email)
+        approve = authenticated_session.post(f"{api_client}/api/users/{user_id}/approve")
+        assert approve.status_code == 200, approve.text
+        auth = (email, password)
+
+        created = requests.post(f"{api_client}/api/auth/tokens", json={"name": "Spec"}, auth=auth)
+        _assert_matches_spec(spec, "/api/auth/tokens", "post", created, status=201)
+        assert created.json()["api_token"]["expires_at"] is None
+
+        listed = requests.get(f"{api_client}/api/auth/tokens", auth=auth)
+        _assert_matches_spec(spec, "/api/auth/tokens", "get", listed)
+        assert listed.json()["tokens"][0]["last_used_at"] is None
+
+        admin_listed = authenticated_session.get(f"{api_client}/api/users/{user_id}/tokens")
+        _assert_matches_spec(spec, "/api/users/{user_id}/tokens", "get", admin_listed)

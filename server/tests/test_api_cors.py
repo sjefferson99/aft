@@ -2,6 +2,7 @@
 
 import pytest
 import requests
+import uuid
 import json
 
 
@@ -121,13 +122,33 @@ class TestCORSValidation:
         assert response_patch.json()['success'] is True
 
     def test_cors_with_authorization_header(self, api_client, authenticated_session):
-        """Test CORS validation works with Authorization header."""
+        """Test CORS validation works with Authorization header.
+
+        A Bearer header is the only credential used when sent (#714), so this
+        uses a real API token, made for a fresh user over Basic auth.
+        """
+        suffix = uuid.uuid4().hex[:8]
+        email = f'cors-token-{suffix}@localhost'
+        password = f'CorsToken-{suffix}-Aa1!'
+        register = requests.post(f'{api_client}/api/auth/register', json={
+            'email': email, 'username': f'cors-token-{suffix}', 'password': password,
+        })
+        assert register.status_code == 201, register.text
+        pending = authenticated_session.get(f'{api_client}/api/users/pending')
+        user_id = next(u['id'] for u in pending.json()['users'] if u['email'] == email)
+        approve = authenticated_session.post(f'{api_client}/api/users/{user_id}/approve')
+        assert approve.status_code == 200, approve.text
+        created = requests.post(
+            f'{api_client}/api/auth/tokens', json={'name': 'CORS'}, auth=(email, password)
+        )
+        assert created.status_code == 201, created.text
+
         headers = {
             'Origin': 'http://localhost',
-            'Authorization': 'Bearer token123',
+            'Authorization': f"Bearer {created.json()['token']}",
             'Content-Type': 'application/json'
         }
-        response = authenticated_session.get(
+        response = requests.get(
             f'{api_client}/api/boards',
             headers=headers
         )

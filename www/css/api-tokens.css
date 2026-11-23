@@ -1,0 +1,133 @@
+/* Personal API token dialogs (#714), shared by the Profile and User Management pages. */
+.api-token-dialog .modal-header h2 {
+  color: var(--text-bold);
+}
+
+.api-token-field {
+  margin-bottom: 16px;
+}
+
+.api-token-field label {
+  display: block;
+  font-weight: 600;
+  color: var(--text-bold);
+  margin-bottom: 4px;
+}
+
+.api-token-help {
+  font-size: 14px;
+  color: var(--text-color);
+  margin: 0 0 6px 0;
+}
+
+.api-token-dialog .modal-body .api-token-help {
+  margin: 0 0 6px 0;
+}
+
+.api-token-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  font-size: 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--card-bg-color);
+  color: var(--text-color);
+}
+
+.api-token-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 45%, transparent);
+}
+
+.api-token-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+}
+
+.api-token-error {
+  display: none;
+  margin-bottom: 16px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  background: var(--error-bg, #f8d7da);
+  color: var(--error-text, #721c24);
+  border: 1px solid var(--error-border, #f5c6cb);
+}
+
+.api-token-error.show {
+  display: block;
+}
+
+.api-token-status {
+  min-height: 1.4em;
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--text-color);
+}
+
+/* Manage API tokens (admin) */
+.api-token-manage-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.api-token-manage-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.api-token-manage-item:last-child {
+  border-bottom: none;
+}
+
+.api-token-manage-name {
+  font-weight: 600;
+  color: var(--text-bold);
+  overflow-wrap: anywhere;
+}
+
+.api-token-manage-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.api-token-manage-prefix {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.api-token-manage-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  /* Outlined so the text keeps AA contrast on the panel background. */
+  background: transparent;
+  border: 1px solid var(--primary-color);
+  color: var(--text-bold);
+}
+
+.api-token-manage-item .btn {
+  flex-shrink: 0;
+}
+
+.api-token-manage-dialog .modal-actions .btn[hidden] {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .api-token-manage-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

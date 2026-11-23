@@ -187,13 +187,15 @@
   display: none;
 }
 
-.passkey-list {
+.passkey-list,
+.api-token-list {
   list-style: none;
   margin: 16px 0 0 0;
   padding: 0;
 }
 
-.passkey-item {
+.passkey-item,
+.api-token-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -202,23 +204,27 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-.passkey-item:last-child {
+.passkey-item:last-child,
+.api-token-item:last-child {
   border-bottom: none;
 }
 
-.passkey-name {
+.passkey-name,
+.api-token-name {
   font-weight: 600;
   color: var(--text-bold);
   overflow-wrap: anywhere;
 }
 
-.passkey-meta {
+.passkey-meta,
+.api-token-meta {
   font-size: 13px;
   color: var(--text-muted);
   margin-top: 4px;
 }
 
-.passkey-badge {
+.passkey-badge,
+.api-token-badge {
   display: inline-block;
   margin-left: 8px;
   padding: 1px 8px;
@@ -231,10 +237,19 @@
   color: var(--text-bold);
 }
 
-.passkey-actions {
+.passkey-actions,
+.api-token-actions {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.api-token-prefix {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.api-token-item.api-token-expired .api-token-name {
+  color: var(--text-muted);
 }
 
 /* Modals */
@@ -359,7 +374,8 @@
     order: -1; /* Show above button on mobile */
   }
 
-  .passkey-item {
+  .passkey-item,
+  .api-token-item {
     flex-direction: column;
     align-items: flex-start;
   }

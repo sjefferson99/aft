@@ -335,7 +335,7 @@ Your own settings are on your **Profile** page, under **Preferences**.
 - **Touchscreen Mode**: for large touchscreens and kiosks. Scroll boards with a finger, press and hold a card to drag it, and use larger buttons, with menus that open by tap
 - **Card Actions**: see [Card Actions](#card-actions)
 
-Your Profile page is also where you change your password, choose your profile colour, and add passkeys if your administrator has turned them on.
+Your Profile page is also where you change your password, choose your profile colour, add passkeys if your administrator has turned them on, and create API tokens for your own scripts and agents (see [API tokens](administration.md#api-tokens)).
 
 ## Themes
 

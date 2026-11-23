@@ -578,9 +578,149 @@ class ProfilePasskeys {
   }
 }
 
+// API tokens section (#714): list, create and revoke the user's tokens.
+class ProfileApiTokens {
+  constructor() {
+    this.list = document.getElementById('api-token-list');
+    this.empty = document.getElementById('api-token-empty');
+    this.createButton = document.getElementById('create-api-token-btn');
+    this.statusEl = document.getElementById('api-token-status');
+  }
+
+  async init() {
+    this.createButton.addEventListener('click', () => {
+      window.ApiTokens.openCreateDialog({
+        url: '/api/auth/tokens',
+        title: 'Create API token',
+        askPassword: true,
+        onCreated: () => {
+          this.showStatus('API token created', 'success');
+          this.loadTokens();
+        }
+      });
+    });
+    await this.loadTokens();
+  }
+
+  async loadTokens() {
+    try {
+      const response = await fetch('/api/auth/tokens');
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Request failed. Please try again.');
+      }
+      this.render(data.tokens || []);
+    } catch (error) {
+      console.error('Error loading API tokens:', error);
+      this.showStatus(`Could not load API tokens: ${error.message}`, 'error');
+    }
+  }
+
+  formatDate(value) {
+    return value ? new Date(value).toLocaleDateString() : null;
+  }
+
+  render(tokens) {
+    this.list.replaceChildren();
+    this.empty.hidden = tokens.length > 0;
+
+    tokens.forEach((token) => {
+      const item = document.createElement('li');
+      item.className = 'api-token-item';
+      item.dataset.tokenId = token.id;
+      if (token.expired) {
+        item.classList.add('api-token-expired');
+      }
+
+      const info = document.createElement('div');
+      const name = document.createElement('div');
+      name.className = 'api-token-name';
+      name.textContent = token.name;
+      const badgeText = [];
+      if (token.read_only) {
+        badgeText.push('Read only');
+      }
+      if (token.expired) {
+        badgeText.push('Expired');
+      }
+      badgeText.forEach((text) => {
+        const badge = document.createElement('span');
+        badge.className = 'api-token-badge';
+        badge.textContent = text;
+        name.appendChild(badge);
+      });
+
+      const meta = document.createElement('div');
+      meta.className = 'api-token-meta';
+      const prefix = document.createElement('span');
+      prefix.className = 'api-token-prefix';
+      prefix.textContent = `${token.prefix}…`;
+      const created = this.formatDate(token.created_at) || 'Unknown';
+      const used = this.formatDate(token.last_used_at) || 'Never';
+      const expires = token.expires_at
+        ? `${token.expired ? 'Expired' : 'Expires'} ${this.formatDate(token.expires_at)}`
+        : 'Never expires';
+      meta.append(prefix, ` · Created ${created} · Last used ${used} · ${expires}`);
+      info.append(name, meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'api-token-actions';
+      const revokeBtn = document.createElement('button');
+      revokeBtn.type = 'button';
+      revokeBtn.className = 'btn btn-danger btn-sm';
+      revokeBtn.textContent = 'Revoke';
+      revokeBtn.setAttribute('aria-label', `Revoke API token ${token.name}`);
+      revokeBtn.addEventListener('click', () => this.handleRevoke(token, revokeBtn));
+      actions.appendChild(revokeBtn);
+
+      item.append(info, actions);
+      this.list.appendChild(item);
+    });
+  }
+
+  async handleRevoke(token, trigger) {
+    const confirmed = await showConfirm(
+      `Revoke "${token.name}"? Anything using it will stop working straight away.`,
+      'Revoke API token'
+    );
+    if (!confirmed) {
+      trigger.focus();
+      return;
+    }
+    trigger.disabled = true;
+    try {
+      const response = await fetch(`/api/auth/tokens/${encodeURIComponent(token.id)}`, {
+        method: 'DELETE'
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Request failed. Please try again.');
+      }
+      this.showStatus('API token revoked', 'success');
+      await this.loadTokens();
+      this.createButton.focus();
+    } catch (error) {
+      console.error('Error revoking API token:', error);
+      trigger.disabled = false;
+      this.showStatus(`Could not revoke the token: ${error.message}`, 'error');
+    }
+  }
+
+  showStatus(message, type) {
+    this.statusEl.textContent = message;
+    this.statusEl.className = `status-message ${type} show`;
+    if (type === 'success') {
+      setTimeout(() => {
+        this.statusEl.classList.remove('show');
+      }, 5000);
+    }
+  }
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', async () => {
   const profileManager = new ProfileManager();
   await profileManager.init();
+  await new ProfileApiTokens().init();
   await new ProfilePasskeys().init();
 });
