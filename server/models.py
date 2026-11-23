@@ -3,7 +3,7 @@ from sqlalchemy import (
     Column, Integer, BigInteger, String, Text, ForeignKey, Boolean, DateTime, Index
 )
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
+from sqlalchemy.sql import false, func
 from database import Base
 from datetime_helpers import serialize_datetime
 import json
@@ -341,7 +341,9 @@ class User(Base):
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     is_approved = Column(Boolean, nullable=False, default=False, index=True)  # Admin must approve new users
     email_verified = Column(Boolean, nullable=False, default=False)
-    
+    # API-only accounts (#715) can't sign in to the web UI or hold a session.
+    api_only = Column(Boolean, nullable=False, default=False, server_default=false())
+
     # Profile
     profile_colour = Column(String(7), nullable=False, server_default='#90A4AE')
 

@@ -461,6 +461,16 @@ class TestPasskeyLogin:
         assert response.status_code == 403
         assert not _is_logged_in(session)
 
+    def test_api_only_user_cannot_login(self, passkey_user, test_admin_session):
+        authenticator, _ = _register_passkey(passkey_user)
+        flag = test_admin_session.put(
+            f"{API_BASE_URL}/api/users/{passkey_user['id']}/api-only", json={"api_only": True}
+        )
+        assert flag.status_code == 200, flag.text
+        session, response = _passkey_login(authenticator)
+        assert response.status_code == 403
+        assert not _is_logged_in(session)
+
     def test_password_login_still_works(self, passkey_user):
         _register_passkey(passkey_user)
         response = requests.post(f"{API_BASE_URL}/api/auth/login", json={

@@ -389,6 +389,7 @@ The application includes a multi-user security model with authentication, role-b
 - **Controlled Role Assignment** - Role changes require role-management permissions, with backend checks to prevent unauthorised escalation and invalid global vs board-specific assignments.
 - **Registration and Approval Workflow** - New user registrations are created in a pending state and must be approved by an administrator before login access is granted.
 - **First Admin Initial Setup** - A dedicated setup flow creates the first administrator account, auto-approves it, and completes initial bootstrap for the instance.
+- **API-Only Accounts** - Accounts for scripts and agents can be limited to the API. See [API-only accounts](#api-only-accounts).
 - **User Profile Colours** - Each user is assigned a default avatar/profile colour (RGB hex) on account creation and can update it from the Profile page.
 
 For implementation details and extension guidance:
@@ -401,3 +402,9 @@ For implementation details and extension guidance:
 Everything in AFT is available through the REST API, for integrations and automation. Open **API Docs** in the user menu for the interactive Swagger page, or go to `/api/docs` on your instance.
 
 ![API documentation](../images/docs/api_docs.png)
+
+### API-only accounts
+
+Scripts and agents authenticate to the API with HTTP Basic auth, using an account's email or username and password. Give each integration its own account and make it API only, so a leaked password can't be used to sign in to the web app.
+
+In **User Management**, choose **Make API Only** on the account. It can then use the API but can't sign in with its password or a passkey, and any web session it already has ends at its next request. The account shows an **API only** badge in the user list. Choose **Allow Web Sign-in** to undo it. You can't make your own account API only.
