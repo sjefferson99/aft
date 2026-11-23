@@ -11,7 +11,7 @@ This module provides admin-only endpoints for:
 from flask import Blueprint, jsonify, request, g
 from database import SessionLocal
 from datetime_helpers import serialize_datetime
-from models import User, Role, UserRole, WebAuthnCredential
+from models import ApiToken, User, Role, UserRole, WebAuthnCredential
 from sqlalchemy.sql import func
 from auth import ensure_global_role
 from utils import (
@@ -83,6 +83,9 @@ def list_users():
                   passkey_count:
                     type: integer
                     description: Number of passkeys the user has registered
+                  api_token_count:
+                    type: integer
+                    description: Number of personal API tokens the user has
                   api_only:
                     type: boolean
                     description: The account can use the API but can't sign in to the web app
@@ -111,6 +114,11 @@ def list_users():
             .group_by(WebAuthnCredential.user_id)
             .all()
         )
+        token_counts = dict(
+            db.query(ApiToken.user_id, func.count(ApiToken.id))
+            .group_by(ApiToken.user_id)
+            .all()
+        )
         
         users_data = []
         for user in users:
@@ -132,6 +140,7 @@ def list_users():
                 'created_at': serialize_datetime(user.created_at),
                 'last_login_at': serialize_datetime(user.last_login_at),
                 'passkey_count': passkey_counts.get(user.id, 0),
+                'api_token_count': token_counts.get(user.id, 0),
                 'api_only': user.api_only,
                 'roles': [{'id': r.id, 'name': r.name} for r in roles]
             })

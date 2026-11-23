@@ -34,6 +34,8 @@ from global_board_routes import configure_global_board_routes, global_board_bp
 from board_sharing import board_sharing_bp, configure_board_sharing_routes
 from card_search import card_search_bp
 from passkey_routes import passkey_bp, WEBAUTHN_SETTINGS
+from api_token_routes import api_token_bp
+from api_tokens import READ_ONLY_METHODS
 from broadcasting import (
     broadcast_failures,
     broadcast_failures_lock,
@@ -237,7 +239,9 @@ swagger_template = {
         "description": """
 API documentation for AFT application
 
-**Authentication:** This API uses session-based authentication. To test authenticated endpoints in Swagger UI:
+**Authentication:** This API uses session-based authentication. Scripts and agents should use a
+personal API token, created on the Profile page or with `POST /api/auth/tokens`, sent as
+`Authorization: Bearer <token>`. To test authenticated endpoints in Swagger UI:
 
 ### Recommended Workflow
 1. **First, validate your credentials**: Call `/api/auth/validate` (POST) with your credentials to verify they work
@@ -276,11 +280,18 @@ Always use `/api/auth/validate` first to verify your credentials are correct.
         "BasicAuth": {
             "type": "basic",
             "description": "⚠️ Basic Auth for testing. Modal accepts any input - credentials are validated when calling endpoints. Use /api/auth/validate to test credentials first."
+        },
+        "BearerAuth": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "Personal API token. Enter `Bearer <token>`. When sent, it is the only credential used."
         }
     },
     "security": [
         {"SessionAuth": []},
-        {"BasicAuth": []}
+        {"BasicAuth": []},
+        {"BearerAuth": []}
     ]
 }
 
@@ -309,6 +320,7 @@ app.register_blueprint(global_board_bp)
 app.register_blueprint(board_sharing_bp)
 app.register_blueprint(card_search_bp)
 app.register_blueprint(passkey_bp)
+app.register_blueprint(api_token_bp)
 
 if WEBAUTHN_SETTINGS:
     logger.info(
@@ -387,6 +399,17 @@ def before_request():
             }), 503
     
     load_user_from_session()
+
+@app.before_request
+def enforce_read_only_api_token():
+    """Refuse changes made with a read-only API token (#714).
+
+    Registered after before_request, which loads the user and token.
+    """
+    api_token = g.get('api_token')
+    if api_token is not None and api_token.read_only and request.method not in READ_ONLY_METHODS:
+        return create_error_response("This API token is read-only", 403)
+
 
 # Close database session after each request if it was opened
 @app.teardown_request

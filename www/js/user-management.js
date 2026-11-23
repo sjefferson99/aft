@@ -501,6 +501,7 @@ class UserManagement {
     const lastLogin = user.last_login_at ? new Date(user.last_login_at).toLocaleDateString() : 'Never';
     const safeUserId = this.escapeHtml(String(user.id));
     const passkeyCount = Number.isInteger(user.passkey_count) ? user.passkey_count : 0;
+    const apiTokenCount = Number.isInteger(user.api_token_count) ? user.api_token_count : 0;
 
     const statusBadge = user.is_active
       ? '<span class="status-badge status-active">Active</span>'
@@ -521,6 +522,14 @@ class UserManagement {
         }
         ${passkeyCount > 0
           ? `<button class="btn btn-secondary btn-sm" data-action="revoke-passkeys" data-user-id="${safeUserId}">Revoke Passkeys</button>`
+          : ''
+        }
+        ${user.api_only && user.is_active
+          ? `<button class="btn btn-secondary btn-sm" data-action="create-api-token" data-user-id="${safeUserId}">Create API Token</button>`
+          : ''
+        }
+        ${apiTokenCount > 0
+          ? `<button class="btn btn-secondary btn-sm" data-action="manage-api-tokens" data-user-id="${safeUserId}">Manage API Tokens</button>`
           : ''
         }
         ${isCurrentUser
@@ -549,6 +558,7 @@ class UserManagement {
           ${user.username ? `<div class="user-meta">Username: ${this.escapeHtml(user.username)}</div>` : ''}
           ${this.canManageUsers ? `<div class="user-meta">Registered: ${createdDate} • Last login: ${lastLogin}</div>` : ''}
           ${passkeyCount > 0 ? `<div class="user-meta">Passkeys: ${passkeyCount}</div>` : ''}
+          ${apiTokenCount > 0 ? `<div class="user-meta">API tokens: ${apiTokenCount}</div>` : ''}
           <div class="user-roles"></div>
         </div>
       </div>
@@ -577,6 +587,16 @@ class UserManagement {
     const revokePasskeysBtn = card.querySelector('[data-action="revoke-passkeys"]');
     if (revokePasskeysBtn) {
       revokePasskeysBtn.addEventListener('click', () => this.handleRevokePasskeys(user));
+    }
+
+    const createTokenBtn = card.querySelector('[data-action="create-api-token"]');
+    if (createTokenBtn) {
+      createTokenBtn.addEventListener('click', () => this.handleCreateApiToken(user));
+    }
+
+    const manageTokensBtn = card.querySelector('[data-action="manage-api-tokens"]');
+    if (manageTokensBtn) {
+      manageTokensBtn.addEventListener('click', () => this.handleManageApiTokens(user));
     }
 
     const apiOnlyBtn = card.querySelector('[data-action="toggle-api-only"]');
@@ -830,6 +850,42 @@ class UserManagement {
         }
       }
     );
+  }
+
+  // API-only accounts can't sign in to make their own tokens (#714).
+  handleCreateApiToken(user) {
+    const displayName = user.display_name || user.username || user.email;
+    window.ApiTokens.openCreateDialog({
+      url: `/api/users/${encodeURIComponent(user.id)}/tokens`,
+      title: 'Create API Token',
+      description: `The token acts as ${displayName}, with their roles.`,
+      onCreated: () => {
+        this.showStatus(`Created an API token for ${displayName}`, 'success');
+        this.loadActiveUsers();
+      }
+    });
+  }
+
+  // Lists one account's tokens so they can be revoked one at a time (#714).
+  handleManageApiTokens(user) {
+    const displayName = user.display_name || user.username || user.email;
+    window.ApiTokens.openManageDialog({
+      userId: user.id,
+      displayName,
+      onClose: async (changed) => {
+        if (!changed) {
+          return;
+        }
+        await this.loadActiveUsers();
+        // The row was rebuilt, so put focus back on its new token button.
+        const row = document.querySelector(`.active-user-card[data-user-id="${CSS.escape(String(user.id))}"]`);
+        const target = row && (row.querySelector('[data-action="manage-api-tokens"]') ||
+          row.querySelector('[data-action="create-api-token"]'));
+        if (target) {
+          target.focus();
+        }
+      }
+    });
   }
 
   handleToggleApiOnly(user) {

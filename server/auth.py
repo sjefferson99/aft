@@ -31,6 +31,7 @@ from flask import Blueprint, request, jsonify, session, g
 from sqlalchemy.sql import func
 from database import SessionLocal
 from models import User, Role, UserRole, WebAuthnCredential
+from api_tokens import authenticate_token, bearer_token_from_header
 from permissions import INITIAL_ROLES
 from restore_progress import setup_restore_running
 from auth_rate_limit import (
@@ -291,8 +292,12 @@ def load_user_from_session():
     Call this in app.before_request.
     
     Supports:
-    1. Session-based authentication (primary method)
-    2. HTTP Basic Authentication (for Swagger UI testing)
+    1. Personal API tokens (`Authorization: Bearer <token>`), used alone when sent
+    2. Session-based authentication (primary method)
+    3. HTTP Basic Authentication (for scripts and Swagger UI testing)
+
+    Sets g.auth_method to 'token', 'session', 'basic' or None, and g.api_token
+    to the ApiToken for token requests.
     """
     from flask import request
     
@@ -303,10 +308,36 @@ def load_user_from_session():
         request.path.startswith('/api/database/backups/restore/')
     )
 
+    g.auth_method = None
+    g.api_token = None
+
+    # A Bearer token (#714) is the only credential used when present, so a
+    # stray session cookie can't widen a read-only token, and a bad token is
+    # refused rather than falling back to the session.
+    bearer_token = bearer_token_from_header(request.headers.get('Authorization'))
+    if bearer_token is not None:
+        g.user = None
+        g.db = None
+        db = SessionLocal()
+        try:
+            user, api_token = authenticate_token(db, bearer_token)
+        except Exception as e:
+            logger.error(f"Error loading user from API token: {e}")
+            user, api_token = None, None
+        if user:
+            g.user = user
+            g.db = db
+            g.auth_method = 'token'
+            g.api_token = api_token
+        else:
+            db.close()
+        return
+
     user, db = _resolve_session_user(skip_email_hash_validation=is_restore_endpoint)
     if user and db:
         g.user = user
         g.db = db  # Make db available for the request
+        g.auth_method = 'session'
         return
     
     g.user = None
@@ -336,6 +367,7 @@ def load_user_from_session():
                     if verify_password(auth.password, user.password_hash):
                         g.user = user
                         g.db = db
+                        g.auth_method = 'basic'
                         return
                 record_password_failure(account)
 

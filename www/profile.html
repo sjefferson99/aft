@@ -17,7 +17,8 @@
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/header.css">
   <link rel="stylesheet" href="/css/settings.css">
-  <link rel="stylesheet" href="/css/profile.css">
+  <link rel="stylesheet" href="/css/profile.css?v=20261123a">
+  <link rel="stylesheet" href="/css/api-tokens.css?v=20261123b">
 </head>
 <body>
   <!-- Header component will be loaded here -->
@@ -124,6 +125,21 @@
         <div class="form-actions">
           <button type="button" class="btn btn-primary" id="add-passkey-btn">Add a passkey</button>
           <div id="passkey-status" class="status-message" role="status" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="profile-section" id="api-tokens-section" aria-labelledby="api-tokens-heading">
+        <h3 id="api-tokens-heading">API Tokens</h3>
+        <p class="field-help">
+          Let scripts and agents use AFT as you, without your password. Send a token in the
+          <code>Authorization</code> header as <code>Bearer &lt;token&gt;</code>. A token has your
+          roles, so give it only to things you trust, and revoke it if it might have leaked.
+        </p>
+        <ul id="api-token-list" class="api-token-list" aria-label="Your API tokens"></ul>
+        <p id="api-token-empty" class="field-help" hidden>You don't have any API tokens.</p>
+        <div class="form-actions">
+          <button type="button" class="btn btn-primary" id="create-api-token-btn">Create API token</button>
+          <div id="api-token-status" class="status-message" role="status" aria-live="polite"></div>
         </div>
       </section>
 
@@ -334,7 +350,8 @@
   <script src="/js/notifications.js"></script>
   <script src="/js/header.js?v=20261116c"></script>
   <script src="/js/passkeys.js"></script>
-  <script src="/js/profile.js"></script>
+  <script src="/js/api-tokens.js?v=20261123b"></script>
+  <script src="/js/profile.js?v=20261123a"></script>
   <script src="/js/preferences.js?v=20261110c"></script>
   <script src="/js/pwa-install.js"></script>
 </body>

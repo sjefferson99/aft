@@ -362,6 +362,7 @@ class User(Base):
     webauthn_credentials = relationship(
         "WebAuthnCredential", back_populates="user", cascade="all, delete-orphan"
     )
+    api_tokens = relationship("ApiToken", back_populates="user", cascade="all, delete-orphan")
     owned_boards = relationship("Board", back_populates="owner", foreign_keys="Board.owner_id")
     
     __table_args__ = (
@@ -401,6 +402,33 @@ class WebAuthnCredential(Base):
 
     def __repr__(self):
         return f"<WebAuthnCredential(id={self.id}, user_id={self.user_id}, name='{self.name}')>"
+
+
+class ApiToken(Base):
+    """A personal API token, sent as `Authorization: Bearer <token>` (#714).
+
+    Only the SHA-256 of the token is stored. The token is shown once, when it
+    is created.
+    """
+
+    __tablename__ = "api_tokens"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    # Hex SHA-256 of the full token. ascii_bin keeps lookups exact.
+    token_hash = Column(String(64, collation='ascii_bin'), nullable=False, unique=True)
+    # The start of the token, so people can tell their tokens apart.
+    token_prefix = Column(String(16), nullable=False)
+    read_only = Column(Boolean, nullable=False, default=False, server_default=false())
+    created_at = Column(DateTime, server_default=func.current_timestamp())
+    expires_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="api_tokens")
+
+    def __repr__(self):
+        return f"<ApiToken(id={self.id}, user_id={self.user_id}, name='{self.name}')>"
 
 
 class GlobalBoard(Base):

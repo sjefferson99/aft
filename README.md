@@ -60,7 +60,7 @@ I wrote AFT because I couldn't find self hosted Kanban software that let you sch
 - **Self hosted** - A simple docker deployment that runs happily on a Raspberry Pi
 - **[Backups](www/docs/administration.md#backups)** - Scheduled database backups with retention, and restores from the app
 - **[Secure by default](www/docs/administration.md#security-and-access-control)** - HTTPS, passkey sign-in, sign-in rate limits and regular patching. Security reviews are in the [docs folder](docs)
-- **[API](www/docs/administration.md#api)** - The server exposes all functionality via API and the UI is a separate container on top of it, so you can work with AFT programmatically or replace the UI altogether
+- **[API](www/docs/administration.md#api)** - The server exposes all functionality via API and the UI is a separate container on top of it, so you can work with AFT programmatically or replace the UI altogether. Scripts and agents sign in with personal [API tokens](www/docs/administration.md#api-tokens)
 
 AFT should be easy to use without reading manuals. If it isn't, [log an issue](https://github.com/sjefferson99/aft/issues) and we'll fix it up.
 

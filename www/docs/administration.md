@@ -389,6 +389,7 @@ The application includes a multi-user security model with authentication, role-b
 - **Controlled Role Assignment** - Role changes require role-management permissions, with backend checks to prevent unauthorised escalation and invalid global vs board-specific assignments.
 - **Registration and Approval Workflow** - New user registrations are created in a pending state and must be approved by an administrator before login access is granted.
 - **First Admin Initial Setup** - A dedicated setup flow creates the first administrator account, auto-approves it, and completes initial bootstrap for the instance.
+- **API Tokens** - Scripts and agents use personal API tokens, which can be read only and can expire, instead of a password. See [API tokens](#api-tokens).
 - **API-Only Accounts** - Accounts for scripts and agents can be limited to the API. See [API-only accounts](#api-only-accounts).
 - **User Profile Colours** - Each user is assigned a default avatar/profile colour (RGB hex) on account creation and can update it from the Profile page.
 
@@ -403,8 +404,33 @@ Everything in AFT is available through the REST API, for integrations and automa
 
 ![API documentation](../images/docs/api_docs.png)
 
+### API tokens
+
+Scripts and agents should authenticate with a personal API token rather than a password. Send it in every request as:
+
+```
+Authorization: Bearer <token>
+```
+
+A token acts as the account that made it, with the same roles. When a request sends a token, AFT uses only the token, even if the client also has a signed-in session.
+
+People create tokens on their **Profile** page under **API Tokens**. Creating one asks for the current password. Each token has:
+- a **name**, to tell it apart
+- **access**: read and write, or read only. A read-only token can make `GET` requests but nothing that changes data
+- an **expiry** of 30 days, 90 days, a year, or never
+
+The token is shown once, when it's created. AFT stores only a hash of it, so it can't be shown again: if it's lost, revoke it and create another. The Profile page lists each token's first characters, when it was created and when it was last used, so unused or unexpected tokens stand out. **Revoke** stops a token at once.
+
+Tokens keep working when the account's password changes, and stop when the account is deactivated. An account can have up to 20 tokens. A request made with a token can't create more tokens.
+
+Scripts can also create a token with `POST /api/auth/tokens`, using HTTP Basic auth with the account's email or username and password. See `/api/docs` for the fields.
+
+Administrators can see how many tokens each account has in **User Management**. **Manage API Tokens** on the account lists its tokens, with the same details as the Profile page, and revokes them one at a time or all together, for example after a leak. Revoking takes a second click on the same button to confirm.
+
 ### API-only accounts
 
-Scripts and agents authenticate to the API with HTTP Basic auth, using an account's email or username and password. Give each integration its own account and make it API only, so a leaked password can't be used to sign in to the web app.
+Give each integration its own account and make it API only, so its credentials can't be used to sign in to the web app.
 
 In **User Management**, choose **Make API Only** on the account. It can then use the API but can't sign in with its password or a passkey, and any web session it already has ends at its next request. The account shows an **API only** badge in the user list. Choose **Allow Web Sign-in** to undo it. You can't make your own account API only.
+
+An API-only account can't open its Profile page, so an administrator makes its tokens: choose **Create API Token** on the account in **User Management**. Administrators can only do this for API-only accounts. HTTP Basic auth with the account's password also still works.
