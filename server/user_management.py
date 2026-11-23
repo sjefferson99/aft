@@ -63,6 +63,7 @@ def list_users():
                     type: string
                   display_name:
                     type: string
+                    x-nullable: true
                   is_active:
                     type: boolean
                   is_approved:
@@ -71,12 +72,14 @@ def list_users():
                     type: boolean
                   oauth_provider:
                     type: string
+                    x-nullable: true
                   created_at:
                     type: string
                     format: date-time
                   last_login_at:
                     type: string
                     format: date-time
+                    x-nullable: true
                   passkey_count:
                     type: integer
                     description: Number of passkeys the user has registered
@@ -163,6 +166,7 @@ def list_assignable_users():
                     type: string
                   display_name:
                     type: string
+                    x-nullable: true
       401:
         description: Not authenticated
     """

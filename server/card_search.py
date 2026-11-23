@@ -245,6 +245,7 @@ def search_cards():
                                 type: boolean
                               updated_at:
                                 type: string
+                                x-nullable: true
       400:
         description: Missing or invalid query parameters
       401:

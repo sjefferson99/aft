@@ -189,6 +189,7 @@ def get_column_cards(column_id):
                   description:
                     type: string
                     example: "Task description"
+                    x-nullable: true
                   order:
                     type: integer
                     example: 0
@@ -367,6 +368,7 @@ def get_board_cards(board_id):
                             description:
                               type: string
                               example: "Task description"
+                              x-nullable: true
                             order:
                               type: integer
                               example: 0
@@ -597,6 +599,7 @@ def create_card(column_id):
                 description:
                   type: string
                   example: "Task details"
+                  x-nullable: true
                 order:
                   type: integer
                   example: 0
@@ -1090,6 +1093,7 @@ def get_card(card_id):
                   type: string
                 description:
                   type: string
+                  x-nullable: true
                 column_id:
                   type: integer
                 order:
@@ -1098,10 +1102,12 @@ def get_card(card_id):
                   type: string
                   format: date-time
                   example: "2026-06-20T09:00:00Z"
+                  x-nullable: true
                 end_date:
                   type: string
                   format: date-time
                   example: "2026-06-21T17:00:00Z"
+                  x-nullable: true
                 checklist_items:
                   type: array
                   items:
@@ -1254,6 +1260,7 @@ def update_card(card_id):
                 description:
                   type: string
                   example: "Updated task description"
+                  x-nullable: true
                 order:
                   type: integer
                   example: 0
@@ -1261,10 +1268,12 @@ def update_card(card_id):
                   type: string
                   format: date-time
                   example: "2026-06-20T09:00:00Z"
+                  x-nullable: true
                 end_date:
                   type: string
                   format: date-time
                   example: "2026-06-21T17:00:00Z"
+                  x-nullable: true
       400:
         description: Invalid date format or end_date before start_date
         schema:
@@ -1731,7 +1740,7 @@ def update_card_assignees(card_id):
           properties:
             assigned_to_id:
               type: integer
-              nullable: true
+              x-nullable: true
               description: User ID of the primary assignee, or null to clear
             secondary_assignee_ids:
               type: array

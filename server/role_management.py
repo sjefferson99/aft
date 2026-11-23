@@ -56,6 +56,7 @@ def get_all_roles():
                     type: string
                   description:
                     type: string
+                    x-nullable: true
                   is_system_role:
                     type: boolean
                   permissions:
@@ -229,10 +230,10 @@ def get_user_roles():
                           type: string
                         board_id:
                           type: integer
-                          nullable: true
+                          x-nullable: true
                         board_name:
                           type: string
-                          nullable: true
+                          x-nullable: true
                         assigned_at:
                           type: string
       403:
@@ -617,6 +618,7 @@ def get_my_roles():
                     type: string
                   description:
                     type: string
+                    x-nullable: true
             can_assign_all:
               type: boolean
               description: Whether user has role.manage (can assign any role)
@@ -737,6 +739,7 @@ def create_role():
                   type: string
                 description:
                   type: string
+                  x-nullable: true
                 permissions:
                   type: array
                   items:
