@@ -39,7 +39,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from auth import build_login_user_data, start_user_session, verify_password
+from auth import API_ONLY_LOGIN_MESSAGE, build_login_user_data, start_user_session, verify_password
 from auth_rate_limit import (
     account_key,
     passkey_start_block_seconds,
@@ -536,7 +536,7 @@ def passkey_login_verify():
       401:
         description: Passkey not recognised or verification failed
       403:
-        description: Account disabled or pending approval
+        description: Account disabled, pending approval or API only
       404:
         description: Passkeys are not enabled
       413:
@@ -600,6 +600,8 @@ def passkey_login_verify():
                 "Your account is pending administrator approval. You will be notified when approved.",
                 403
             )
+        if user.api_only:
+            return create_error_response(API_ONLY_LOGIN_MESSAGE, 403)
 
         stored.sign_count = verification.new_sign_count
         stored.backed_up = verification.credential_backed_up

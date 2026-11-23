@@ -330,6 +330,28 @@
   color: white;
 }
 
+.user-api-only-badge {
+  background: var(--secondary-hover);
+  color: white;
+}
+
+/* The shared tooltip is one line wide and centred. This one is longer and
+   sits on a button at the card's right edge, so wrap it and align it right. */
+.user-api-only-btn[data-tooltip] {
+  cursor: pointer;
+}
+
+.user-api-only-btn[data-tooltip]::after {
+  left: auto;
+  right: 0;
+  transform: none;
+  width: max-content;
+  max-width: min(280px, 80vw);
+  white-space: normal;
+  text-align: left;
+  line-height: 1.4;
+}
+
 .filter-bar-action {
   margin-left: auto;
 }

@@ -83,6 +83,9 @@ def list_users():
                   passkey_count:
                     type: integer
                     description: Number of passkeys the user has registered
+                  api_only:
+                    type: boolean
+                    description: The account can use the API but can't sign in to the web app
                   roles:
                     type: array
                     items:
@@ -129,6 +132,7 @@ def list_users():
                 'created_at': serialize_datetime(user.created_at),
                 'last_login_at': serialize_datetime(user.last_login_at),
                 'passkey_count': passkey_counts.get(user.id, 0),
+                'api_only': user.api_only,
                 'roles': [{'id': r.id, 'name': r.name} for r in roles]
             })
         
@@ -496,6 +500,85 @@ def activate_user(user_id):
           }
         )
         
+    finally:
+        db.close()
+
+
+@user_mgmt_bp.route('/<int:user_id>/api-only', methods=['PUT'])
+@require_permission('user.manage')
+def set_api_only(user_id):
+    """
+    Make a user API only, or let them sign in to the web app again.
+    An API-only account can use API authentication but can't sign in to the
+    web app, and any web session it has ends.
+    ---
+    tags:
+      - User Management
+    parameters:
+      - name: user_id
+        in: path
+        type: integer
+        required: true
+        description: ID of the user
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - api_only
+          properties:
+            api_only:
+              type: boolean
+    responses:
+      200:
+        description: Setting saved
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            message:
+              type: string
+            user:
+              type: object
+              properties:
+                id:
+                  type: integer
+                api_only:
+                  type: boolean
+      400:
+        description: Invalid body, or the user is the current user
+      403:
+        description: Forbidden - requires user.manage permission
+      404:
+        description: User not found
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get('api_only'), bool):
+        return create_error_response("api_only must be true or false", 400)
+    api_only = data['api_only']
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return create_error_response("User not found", 404)
+
+        if user.id == g.user.id:
+            return create_error_response("Cannot make your own account API only", 400)
+
+        user.api_only = api_only
+        db.commit()
+
+        logger.info(
+            f"User {user.id} api_only set to {api_only} by admin {g.user.id}"
+        )
+        state = "API only" if api_only else "allowed to sign in to the web app"
+        return create_success_response(
+            message=f"User {user.username} is now {state}",
+            data={'user': {'id': user.id, 'api_only': user.api_only}}
+        )
     finally:
         db.close()
 

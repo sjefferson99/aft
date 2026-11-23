@@ -154,6 +154,9 @@ def _password_session_fingerprint(password_hash: str) -> str:
     return hashlib.sha256(password_hash.encode('utf-8')).hexdigest()[:16]
 
 
+API_ONLY_LOGIN_MESSAGE = "This account can only use the API. It can't sign in to the web app."
+
+
 def start_user_session(user, remember_me=False, passkey_id=None):
     """Start a fresh login session for a user.
 
@@ -219,7 +222,9 @@ def _resolve_session_user(skip_email_hash_validation=False):
             User.is_approved == True
         ).first()
 
-        if not user:
+        # API-only accounts (#715) never hold a session, so one made before
+        # the flag was set ends here.
+        if not user or user.api_only:
             session.clear()
             db.close()
             return None, None
@@ -407,7 +412,7 @@ def login():
       401:
         description: Invalid credentials
       403:
-        description: Account disabled or pending approval
+        description: Account disabled, pending approval or API only
       429:
         description: Too many failed attempts. See the Retry-After header.
     """
@@ -471,8 +476,12 @@ def login():
                     "Your account is pending administrator approval. You will be notified when approved.",
                     403
                 )
-            
+
             clear_password_failures(account)
+
+            if user.api_only:
+                return create_error_response(API_ONLY_LOGIN_MESSAGE, 403)
+
             start_user_session(user, remember_me)
 
             # Update last login

@@ -132,6 +132,7 @@ def test_own_row_cannot_change_roles(logged_in_page):
     assert row.locator(".user-role-chip-remove").count() == 0
     assert row.locator('[data-action="reset-password"]').count() == 0
     assert row.locator('[data-action="deactivate"]').is_disabled()
+    assert row.locator('[data-action="toggle-api-only"]').count() == 0
 
 
 def test_deactivated_user_keeps_read_only_roles(logged_in_page, api_session, managed_user):
@@ -187,6 +188,45 @@ def test_admin_can_reset_password_from_the_user_list(logged_in_page, managed_use
 
     assert login_status(managed_user, new_password) == 200
     assert login_status(managed_user, managed_user["password"]) != 200
+
+
+def test_admin_can_make_a_user_api_only(logged_in_page, managed_user):
+    """API-only accounts (#715) show a badge and can't sign in to the web app."""
+    page = logged_in_page
+    page.goto("/user-management.html")
+    row = user_row(page, managed_user)
+    button = row.locator('[data-action="toggle-api-only"]')
+    assert button.get_attribute("aria-pressed") == "false"
+    assert row.locator(".user-api-only-badge").count() == 0
+
+    # Hover explains what it does, after the shared tooltip delay, and the
+    # same text is the button's description for screen readers.
+    help_text = button.get_attribute("data-tooltip")
+    assert "scripts and agents" in help_text
+    help_id = button.get_attribute("aria-describedby")
+    assert page.locator(f"#{help_id}").inner_text() == help_text
+    tooltip_opacity = "el => getComputedStyle(el, '::after').opacity"
+    button.hover()
+    assert button.evaluate(tooltip_opacity) == "0"
+    page.wait_for_timeout(900)
+    assert button.evaluate(tooltip_opacity) == "1"
+    page.mouse.move(0, 0)
+
+    button.click()
+    page.locator("#confirm-modal").wait_for(state="visible", timeout=5000)
+    page.click("#confirm-ok-btn")
+
+    row.locator(".user-api-only-badge").wait_for(timeout=5000)
+    button = user_row(page, managed_user).locator('[data-action="toggle-api-only"]')
+    assert button.get_attribute("aria-pressed") == "true"
+    assert button.inner_text() == "Allow Web Sign-in"
+    assert login_status(managed_user, managed_user["password"]) == 403
+
+    button.click()
+    page.locator("#confirm-modal").wait_for(state="visible", timeout=5000)
+    page.click("#confirm-ok-btn")
+    user_row(page, managed_user).locator(".user-api-only-badge").wait_for(state="detached", timeout=5000)
+    assert login_status(managed_user, managed_user["password"]) == 200
 
 
 def test_role_only_user_gets_role_editing_without_account_actions(

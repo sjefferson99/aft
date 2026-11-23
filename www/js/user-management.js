@@ -506,6 +506,10 @@ class UserManagement {
       ? '<span class="status-badge status-active">Active</span>'
       : '<span class="status-badge status-inactive">Inactive</span>';
 
+    const apiOnlyHelp = user.api_only
+      ? 'Let this account sign in to the web app again, as well as use the API.'
+      : 'For accounts used by scripts and agents. The account can still use the API, but it can’t sign in to the web app, and any web session it has ends. A leaked password then can’t be used to sign in to the web app.';
+
     const accountActions = this.canManageUsers ? `
         ${user.is_active
           ? `<button class="btn btn-secondary btn-sm" data-action="deactivate" data-user-id="${safeUserId}" ${isCurrentUser ? 'disabled title="You cannot deactivate your own account"' : ''}>Deactivate</button>`
@@ -518,6 +522,11 @@ class UserManagement {
         ${passkeyCount > 0
           ? `<button class="btn btn-secondary btn-sm" data-action="revoke-passkeys" data-user-id="${safeUserId}">Revoke Passkeys</button>`
           : ''
+        }
+        ${isCurrentUser
+          ? ''
+          : `<button class="btn btn-secondary btn-sm user-api-only-btn" data-action="toggle-api-only" data-user-id="${safeUserId}" aria-pressed="${user.api_only ? 'true' : 'false'}" aria-describedby="api-only-help-${safeUserId}" data-tooltip="${apiOnlyHelp}">${user.api_only ? 'Allow Web Sign-in' : 'Make API Only'}</button>
+            <span class="visually-hidden" id="api-only-help-${safeUserId}">${apiOnlyHelp}</span>`
         }
     ` : '';
 
@@ -533,6 +542,7 @@ class UserManagement {
           <div class="user-name">
             ${this.escapeHtml(displayName)}
             ${statusBadge}
+            ${user.api_only ? '<span class="status-badge user-api-only-badge" tabindex="0" data-tooltip="Can use the API but not sign in to the web app">API only</span>' : ''}
             ${isCurrentUser ? '<span class="status-badge user-you-badge">You</span>' : ''}
           </div>
           <div class="user-email">${this.escapeHtml(user.email)}</div>
@@ -567,6 +577,11 @@ class UserManagement {
     const revokePasskeysBtn = card.querySelector('[data-action="revoke-passkeys"]');
     if (revokePasskeysBtn) {
       revokePasskeysBtn.addEventListener('click', () => this.handleRevokePasskeys(user));
+    }
+
+    const apiOnlyBtn = card.querySelector('[data-action="toggle-api-only"]');
+    if (apiOnlyBtn) {
+      apiOnlyBtn.addEventListener('click', () => this.handleToggleApiOnly(user));
     }
 
     return card;
@@ -815,6 +830,36 @@ class UserManagement {
         }
       }
     );
+  }
+
+  handleToggleApiOnly(user) {
+    const displayName = user.display_name || user.username || user.email;
+    const makeApiOnly = !user.api_only;
+    const title = makeApiOnly ? 'Make API Only' : 'Allow Web Sign-in';
+    const message = makeApiOnly
+      ? `Make ${displayName} API only? They will be able to use the API but not sign in to the web app, and any web session they have will end.`
+      : `Let ${displayName} sign in to the web app again?`;
+
+    this.showConfirmModal(title, message, async () => {
+      try {
+        const response = await fetch(`/api/users/${user.id}/api-only`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_only: makeApiOnly })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          this.showStatus(data.message || 'User updated', 'success');
+          await this.loadActiveUsers();
+        } else {
+          throw new Error(data.message || 'Failed to update user');
+        }
+      } catch (error) {
+        console.error('Error updating API-only setting:', error);
+        this.showStatus('Error updating user: ' + error.message, 'error');
+      }
+    });
   }
 
   async handleActivate(user) {
