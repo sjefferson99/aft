@@ -112,24 +112,89 @@ class TestChecklistItemsAPI:
         assert data['success'] is True
         assert data['checklist_item']['checked'] is True
     
+    def _create_items(self, api_client, session, card_id, names):
+        ids = []
+        for name in names:
+            response = session.post(
+                f'{api_client}/api/cards/{card_id}/checklist-items',
+                json={'name': name}
+            )
+            assert response.status_code == 201
+            ids.append(response.json()['checklist_item']['id'])
+        return ids
+
+    def _items_in_order(self, api_client, session, card_id):
+        response = session.get(f'{api_client}/api/cards/{card_id}')
+        assert response.status_code == 200
+        items = sorted(response.json()['card']['checklist_items'], key=lambda x: x['order'])
+        return [item['name'] for item in items], [item['order'] for item in items]
+
     def test_update_checklist_item_order(self, api_client, authenticated_session, sample_card):
-        """Test updating a checklist item's order."""
-        # Create item first
-        create_response = authenticated_session.post(
-            f'{api_client}/api/cards/{sample_card["id"]}/checklist-items',
-            json={'name': 'Test item'}
-        )
-        item_id = create_response.json()['checklist_item']['id']
-        
-        # Update order
+        """Moving an item up shifts the others, leaving unique positions (#704)."""
+        card_id = sample_card['id']
+        ids = self._create_items(api_client, authenticated_session, card_id, ['A', 'B', 'C'])
+
         response = authenticated_session.patch(
-            f'{api_client}/api/checklist-items/{item_id}',
-            json={'order': 5}
+            f'{api_client}/api/checklist-items/{ids[2]}',
+            json={'order': 0}
         )
         assert response.status_code == 200
         data = response.json()
         assert data['success'] is True
-        assert data['checklist_item']['order'] == 5
+        assert data['checklist_item']['order'] == 0
+
+        names, orders = self._items_in_order(api_client, authenticated_session, card_id)
+        assert names == ['C', 'A', 'B']
+        assert orders == [0, 1, 2]
+
+    def test_update_checklist_item_order_moving_down(self, api_client, authenticated_session, sample_card):
+        """Moving an item down shifts the items it passes up by one."""
+        card_id = sample_card['id']
+        ids = self._create_items(api_client, authenticated_session, card_id, ['A', 'B', 'C', 'D'])
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/checklist-items/{ids[0]}',
+            json={'order': 2}
+        )
+        assert response.status_code == 200
+        assert response.json()['checklist_item']['order'] == 2
+
+        names, orders = self._items_in_order(api_client, authenticated_session, card_id)
+        assert names == ['B', 'C', 'A', 'D']
+        assert orders == [0, 1, 2, 3]
+
+    def test_update_checklist_item_order_past_end_moves_last(self, api_client, authenticated_session, sample_card):
+        """An order past the last position puts the item last, without a gap."""
+        card_id = sample_card['id']
+        ids = self._create_items(api_client, authenticated_session, card_id, ['A', 'B', 'C'])
+
+        response = authenticated_session.patch(
+            f'{api_client}/api/checklist-items/{ids[0]}',
+            json={'order': 50}
+        )
+        assert response.status_code == 200
+        assert response.json()['checklist_item']['order'] == 2
+
+        names, orders = self._items_in_order(api_client, authenticated_session, card_id)
+        assert names == ['B', 'C', 'A']
+        assert orders == [0, 1, 2]
+
+    def test_update_checklist_item_order_full_renumber(self, api_client, authenticated_session, sample_card):
+        """The UI saves a drag by setting every item's order in turn; that still gives the dragged order."""
+        card_id = sample_card['id']
+        ids = self._create_items(api_client, authenticated_session, card_id, ['A', 'B', 'C', 'D'])
+        new_order = [ids[3], ids[1], ids[0], ids[2]]
+
+        for position, item_id in enumerate(new_order):
+            response = authenticated_session.patch(
+                f'{api_client}/api/checklist-items/{item_id}',
+                json={'order': position}
+            )
+            assert response.status_code == 200
+
+        names, orders = self._items_in_order(api_client, authenticated_session, card_id)
+        assert names == ['D', 'B', 'A', 'C']
+        assert orders == [0, 1, 2, 3]
     
     def test_update_checklist_item_not_found(self, api_client, authenticated_session):
         """Test updating non-existent checklist item fails."""

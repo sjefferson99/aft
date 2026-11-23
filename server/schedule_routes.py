@@ -932,6 +932,27 @@ def create_checklist_item(card_id):
         db.close()
 
 
+def _move_checklist_item(db, checklist_item, new_order):
+    """Move a checklist item to new_order and renumber the card's items 0..n-1.
+
+    Items are locked for the transaction so concurrent moves on the same card
+    can't interleave. Renumbering every item also repairs duplicate or gapped
+    orders left by older versions.
+    """
+    items = (
+        db.query(ChecklistItem)
+        .filter(ChecklistItem.card_id == checklist_item.card_id)
+        .order_by(ChecklistItem.order, ChecklistItem.id)
+        .with_for_update()
+        .all()
+    )
+    others = [item for item in items if item.id != checklist_item.id]
+    others.insert(min(new_order, len(others)), checklist_item)
+    for position, item in enumerate(others):
+        if item.order != position:
+            item.order = position
+
+
 @schedule_bp.route("/api/checklist-items/<int:item_id>", methods=["PATCH"])
 @require_permission('card.update')
 def update_checklist_item(item_id):
@@ -960,6 +981,10 @@ def update_checklist_item(item_id):
             order:
               type: integer
               example: 1
+              description: >-
+                New zero-based position on the card. The card's other items
+                shift to make room and the card's items are renumbered 0..n-1,
+                so positions stay unique. Values past the end move the item last.
     responses:
       200:
         description: Checklist item updated successfully
@@ -1020,7 +1045,7 @@ def update_checklist_item(item_id):
             is_valid, error = validate_integer(order, "Order", allow_none=False, min_value=0)
             if not is_valid:
                 return create_error_response(error, 400)
-            checklist_item.order = order
+            _move_checklist_item(db, checklist_item, order)
 
         # Set updated_at timestamp for checklist item only if content changed (not just reordering)
         if content_changed:
@@ -1066,7 +1091,7 @@ def update_checklist_item(item_id):
         db.rollback()
         import logging
         logging.getLogger(__name__).error(f"Error updating checklist item {item_id}: {str(e)}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        return jsonify({"success": False, "message": "Failed to update checklist item"}), 500
     finally:
         db.close()
 
