@@ -32,6 +32,7 @@ from sqlalchemy.sql import func
 from database import SessionLocal
 from models import User, Role, UserRole, WebAuthnCredential
 from api_tokens import authenticate_token, bearer_token_from_header
+from basic_auth_policy import basic_auth_allowed_for, get_basic_auth_mode
 from permissions import INITIAL_ROLES
 from restore_progress import setup_restore_running
 from auth_rate_limit import (
@@ -359,6 +360,12 @@ def load_user_from_session():
                     func.lower(User.username) == auth.username.lower()
                 ).first()
             
+            # The instance may limit or turn off Basic auth (#716). A refused
+            # account gets the usual 401 without its password being checked.
+            if not basic_auth_allowed_for(get_basic_auth_mode(db), user):
+                db.close()
+                return
+
             # A blocked attempt is treated like invalid credentials, so the
             # password isn't checked and the route returns its usual 401.
             account = account_key(user, auth.username)
@@ -638,7 +645,12 @@ def validate_credentials():
                 user = db.query(User).filter(
                     func.lower(User.username) == email_or_username.lower()
                 ).first()
-            
+
+            # This route only exists to test Basic auth credentials, so it
+            # follows the instance's Basic auth policy (#716).
+            if not basic_auth_allowed_for(get_basic_auth_mode(db), user):
+                return create_error_response("Invalid email/username or password", 401)
+
             account = account_key(user, email_or_username)
             retry_after = int(password_block_seconds(account))
             if retry_after:

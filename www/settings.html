@@ -109,6 +109,26 @@
             <div id="app-name-status" class="settings-status" role="status" aria-live="polite"></div>
           </div>
         </section>
+
+        <section class="settings-section" id="security-settings-panel" hidden aria-labelledby="security-settings-title">
+          <h3 id="security-settings-title">Security</h3>
+
+          <div class="setting-item" id="basic-auth-section">
+            <label for="basic-auth-mode">HTTP Basic Auth</label>
+            <p class="setting-help" id="basic-auth-help">Scripts can send an email and password with every API request. That skips the sign-in page, so it also skips anything that only protects sign-in. Limit it to API-only accounts, or turn it off and use API tokens instead. Signing in to the web app and API tokens are not affected.</p>
+
+            <div class="theme-selector-with-submit">
+              <select id="basic-auth-mode" class="setting-select" aria-describedby="basic-auth-help">
+                <option value="all">All accounts</option>
+                <option value="api_only_users">API-only accounts</option>
+                <option value="off">Off</option>
+              </select>
+              <button id="basic-auth-save-btn" class="btn btn-primary" type="button">Save</button>
+            </div>
+
+            <div id="basic-auth-status" class="settings-status" role="status" aria-live="polite"></div>
+          </div>
+        </section>
       </div>
 
       <div class="settings-actions">
@@ -133,7 +153,7 @@
   <script src="/js/utils.js?v=20261110a"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/header.js?v=20261116c"></script>
-  <script src="/js/settings.js?v=20261105a"></script>
+  <script src="/js/settings.js?v=20261123a"></script>
   <script src="/js/pwa-install.js"></script>
 </body>
 </html>
