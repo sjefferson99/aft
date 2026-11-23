@@ -26,7 +26,7 @@ class Settings {
     this.basicAuthSaveBtn = document.getElementById('basic-auth-save-btn');
     this.basicAuthStatus = document.getElementById('basic-auth-status');
     this.canManageSecurity = false;
-    this.tabs =Array.from(document.querySelectorAll('.settings-tab'));
+    this.tabs = Array.from(document.querySelectorAll('.settings-tab'));
     this.instancePanel = document.getElementById('settings-panel-instance');
     this.globalBoardPanel = document.getElementById('settings-panel-global-board');
     this.globalBoardList = document.getElementById('global-board-settings-list');
