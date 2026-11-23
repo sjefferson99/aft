@@ -279,7 +279,7 @@ Always use `/api/auth/validate` first to verify your credentials are correct.
         },
         "BasicAuth": {
             "type": "basic",
-            "description": "⚠️ Basic Auth for testing. Modal accepts any input - credentials are validated when calling endpoints. Use /api/auth/validate to test credentials first."
+            "description": "⚠️ Basic Auth for testing. Modal accepts any input - credentials are validated when calling endpoints. Use /api/auth/validate to test credentials first. Administrators can limit Basic auth to API-only accounts or turn it off, in which case use a Bearer token."
         },
         "BearerAuth": {
             "type": "apiKey",

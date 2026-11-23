@@ -60,7 +60,7 @@ Remove or comment out the `nginx` service in `compose.example.yml` before renami
 
 **Instance Settings** in the user menu holds the settings for the whole instance, in tabs. You only see the tabs your permissions allow.
 
-- **Instance Settings**: the default theme, and promoting or demoting global themes
+- **Instance Settings**: the default theme, promoting or demoting global themes, branding, and who can use [HTTP Basic auth](#http-basic-auth)
 - **User Management**: one list for accounts and roles, including adding users and approving new registrations
 - **Role Management**: build custom roles from individual permissions
 - **Backup & Restore**: see [Backups](#backups)
@@ -391,6 +391,7 @@ The application includes a multi-user security model with authentication, role-b
 - **First Admin Initial Setup** - A dedicated setup flow creates the first administrator account, auto-approves it, and completes initial bootstrap for the instance.
 - **API Tokens** - Scripts and agents use personal API tokens, which can be read only and can expire, instead of a password. See [API tokens](#api-tokens).
 - **API-Only Accounts** - Accounts for scripts and agents can be limited to the API. See [API-only accounts](#api-only-accounts).
+- **HTTP Basic Auth Control** - Administrators can limit password-per-request API access to API-only accounts, or turn it off. See [HTTP Basic auth](#http-basic-auth).
 - **User Profile Colours** - Each user is assigned a default avatar/profile colour (RGB hex) on account creation and can update it from the Profile page.
 
 For implementation details and extension guidance:
@@ -434,6 +435,17 @@ Give each integration its own account and make it API only, so its credentials c
 In **User Management**, choose **Make API Only** on the account. It can then use the API but can't sign in with its password or a passkey, and any web session it already has ends at its next request. The account shows an **API only** badge in the user list. Choose **Allow Web Sign-in** to undo it. You can't make your own account API only.
 
 An API-only account can't open its Profile page, so an administrator makes its tokens: choose **Create API Token** on the account in **User Management**. This needs the **administrator** role, like resetting a password, and only works for API-only accounts. HTTP Basic auth with the account's password also still works, but a token is safer: it can be read only, can expire, and can be revoked without changing the password.
+
+### HTTP Basic auth
+
+Scripts can also send an email or username and password with every request (HTTP Basic auth). That skips the sign-in page, so it gives anyone guessing passwords a second way in, and it would get around any protection that only applies to sign-in.
+
+Administrators choose who can use it under **Security** on the **Instance Settings** tab:
+- **All accounts** (the default): every account can use it
+- **API-only accounts**: only [API-only accounts](#api-only-accounts), so integrations keep working while people sign in through the web app
+- **Off**: no account can use it, so scripts need an [API token](#api-tokens)
+
+Refused requests get `401` without the password being checked. The setting also applies to `POST /api/auth/validate`, which Swagger uses to test Basic auth details. Signing in to the web app and API tokens aren't affected. With Basic auth off, a script creates its first token through a signed-in session, or an administrator creates one for an API-only account.
 
 ### AI agents (MCP)
 

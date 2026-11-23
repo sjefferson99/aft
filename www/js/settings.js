@@ -21,6 +21,11 @@ class Settings {
     this.appNameResetBtn = document.getElementById('app-name-reset-btn');
     this.appNameStatus = document.getElementById('app-name-status');
     this.canManageBranding = false;
+    this.securitySettingsPanel = document.getElementById('security-settings-panel');
+    this.basicAuthSelect = document.getElementById('basic-auth-mode');
+    this.basicAuthSaveBtn = document.getElementById('basic-auth-save-btn');
+    this.basicAuthStatus = document.getElementById('basic-auth-status');
+    this.canManageSecurity = false;
     this.tabs = Array.from(document.querySelectorAll('.settings-tab'));
     this.instancePanel = document.getElementById('settings-panel-instance');
     this.globalBoardPanel = document.getElementById('settings-panel-global-board');
@@ -54,6 +59,9 @@ class Settings {
       await this.loadBrandingSettings();
       await this.loadAppName();
     }
+    if (this.canManageSecurity) {
+      await this.loadBasicAuthMode();
+    }
     if (this.canManageGlobalBoard) {
       await this.loadGlobalBoards();
     }
@@ -64,6 +72,11 @@ class Settings {
     this.canManageBranding = typeof hasPermission === 'function' && hasPermission('branding.edit');
     this.canManageGlobalBoard = typeof hasPermission === 'function'
       && hasPermission('global_board.manage');
+    this.canManageSecurity = typeof hasPermission === 'function' && hasPermission('system.admin');
+
+    if (this.securitySettingsPanel) {
+      this.securitySettingsPanel.hidden = !this.canManageSecurity;
+    }
 
     if (!this.globalSettingsPanel) {
       return;
@@ -78,7 +91,7 @@ class Settings {
 
   // header.js has already hidden the tabs this user's permissions don't allow.
   initializeTabs() {
-    if (!this.canManageBranding) {
+    if (!this.canManageBranding && !this.canManageSecurity) {
       document.getElementById('settings-tab-instance').style.display = 'none';
     }
     const globalBoardTab = document.getElementById('settings-tab-global-board');
@@ -334,6 +347,79 @@ class Settings {
           this.appNameStatus.className = 'settings-status';
         }
       }, 2000);
+    }
+  }
+
+  showBasicAuthStatus(message, type = 'info') {
+    if (!this.basicAuthStatus) {
+      return;
+    }
+
+    this.basicAuthStatus.textContent = message;
+    this.basicAuthStatus.className = `settings-status ${type}`;
+
+    if (type === 'success') {
+      setTimeout(() => {
+        if (this.basicAuthStatus) {
+          this.basicAuthStatus.textContent = '';
+          this.basicAuthStatus.className = 'settings-status';
+        }
+      }, 2000);
+    }
+  }
+
+  async loadBasicAuthMode() {
+    if (!this.canManageSecurity || !this.basicAuthSelect) {
+      return;
+    }
+
+    try {
+      const response = await this.fetchWithTimeout('/api/settings/basic-auth', {
+        cache: 'no-store'
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to load the Basic auth setting');
+      }
+      this.basicAuthSelect.value = data.mode;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        this.showBasicAuthStatus('Loading timed out. Please refresh the page.', 'error');
+      } else {
+        this.showBasicAuthStatus(`Error loading setting: ${error.message}`, 'error');
+      }
+    }
+  }
+
+  async saveBasicAuthMode() {
+    if (!this.canManageSecurity || !this.basicAuthSelect) {
+      return;
+    }
+
+    try {
+      this.showBasicAuthStatus('Saving...', 'info');
+
+      const response = await this.fetchWithTimeout('/api/settings/basic-auth', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ mode: this.basicAuthSelect.value })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to save the Basic auth setting');
+      }
+
+      this.basicAuthSelect.value = data.mode;
+      this.showBasicAuthStatus('Basic auth setting saved.', 'success');
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        this.showBasicAuthStatus('Save timed out. Please try again.', 'error');
+      } else {
+        this.showBasicAuthStatus(`Error saving setting: ${error.message}`, 'error');
+      }
     }
   }
 
@@ -760,6 +846,12 @@ class Settings {
   }
 
   attachEventListeners() {
+    if (this.canManageSecurity && this.basicAuthSaveBtn) {
+      this.basicAuthSaveBtn.addEventListener('click', () => {
+        this.saveBasicAuthMode();
+      });
+    }
+
     if (this.canManageBranding && this.brandingUploadBtn) {
       this.brandingUploadBtn.addEventListener('click', () => {
         this.uploadBrandingLogo();

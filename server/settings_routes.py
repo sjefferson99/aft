@@ -13,6 +13,7 @@ from utils import (
     create_error_response,
 )
 from global_board_utils import get_accessible_global_board
+from basic_auth_policy import BASIC_AUTH_MODES, get_basic_auth_mode, set_basic_auth_mode
 from settings_schema import (
     parse_default_global_board,
     SETTINGS_SCHEMA,
@@ -794,6 +795,105 @@ def update_card_scheduler_config():
         db.rollback()
         logger.error(f"Error updating card scheduler config: {str(e)}")
         return jsonify({"success": False, "message": str(e)}), 500
+    finally:
+        db.close()
+
+
+@settings_bp.route("/api/settings/basic-auth", methods=["GET"])
+@require_permission('system.admin')
+def get_basic_auth_setting():
+    """Get who may use HTTP Basic auth on this instance.
+    ---
+    tags:
+      - Settings
+    responses:
+      200:
+        description: The Basic auth mode
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: true
+            mode:
+              type: string
+              enum: [all, api_only_users, off]
+              description: >
+                all lets every account use Basic auth, api_only_users only
+                accounts marked API only, and off turns it off
+      401:
+        description: Authentication required
+      403:
+        description: Requires the system.admin permission
+      500:
+        description: Server error
+    """
+    db = SessionLocal()
+    try:
+        return jsonify({"success": True, "mode": get_basic_auth_mode(db)})
+    except Exception as e:
+        logger.error(f"Error reading basic auth setting: {e}")
+        return create_error_response("Failed to read the Basic auth setting", 500)
+    finally:
+        db.close()
+
+
+@settings_bp.route("/api/settings/basic-auth", methods=["PUT"])
+@require_permission('system.admin')
+def set_basic_auth_setting():
+    """Choose who may use HTTP Basic auth on this instance.
+    ---
+    tags:
+      - Settings
+    parameters:
+      - name: body
+        in: body
+        required: true
+        schema:
+          type: object
+          required:
+            - mode
+          properties:
+            mode:
+              type: string
+              enum: [all, api_only_users, off]
+    responses:
+      200:
+        description: Setting saved
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+              example: true
+            mode:
+              type: string
+              enum: [all, api_only_users, off]
+      400:
+        description: Invalid mode
+      401:
+        description: Authentication required
+      403:
+        description: Requires the system.admin permission
+      500:
+        description: Server error
+    """
+    data = request.get_json(silent=True)
+    mode = data.get("mode") if isinstance(data, dict) else None
+    if not isinstance(mode, str) or mode not in BASIC_AUTH_MODES:
+        return create_error_response(
+            f"mode must be one of: {', '.join(BASIC_AUTH_MODES)}", 400
+        )
+
+    db = SessionLocal()
+    try:
+        set_basic_auth_mode(db, mode)
+        logger.info(f"User {g.user.id} set Basic auth mode to {mode}")
+        return jsonify({"success": True, "mode": mode})
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error saving basic auth setting: {e}")
+        return create_error_response("Failed to save the Basic auth setting", 500)
     finally:
         db.close()
 
