@@ -408,3 +408,26 @@ Everything in AFT is available through the REST API, for integrations and automa
 Scripts and agents authenticate to the API with HTTP Basic auth, using an account's email or username and password. Give each integration its own account and make it API only, so a leaked password can't be used to sign in to the web app.
 
 In **User Management**, choose **Make API Only** on the account. It can then use the API but can't sign in with its password or a passkey, and any web session it already has ends at its next request. The account shows an **API only** badge in the user list. Choose **Allow Web Sign-in** to undo it. You can't make your own account API only.
+
+### AI agents (MCP)
+
+[aft-mcp](https://github.com/samcorky/aft-mcp) (by Sam Cork) turns the AFT API into tools an MCP client such as Claude Code can call: list boards, read cards, add cards and comments, move and promote them. It runs as a stdio subprocess and signs in as one AFT user.
+
+Give the agent its own API-only account with only the roles it needs: an edit role on the boards it works on, nothing global. AFT then refuses anything outside those boards, whatever the agent tries. aft-mcp exposes no delete tools, and in Claude Code you can allow the read tools (`mcp__aft__get_*`) and approve writes one at a time.
+
+#### Example: keeping the credentials off your machines
+
+aft-mcp holds the AFT credentials. To avoid putting them on every machine you run an agent from, run aft-mcp on a server behind SSH. Because MCP over stdio is just a command's input and output, the client can launch `ssh` instead of `python`:
+
+```
+MCP client ──stdio── ssh aft-broker prod ──SSH── server: forced command ── aft-mcp ──HTTPS── AFT
+```
+
+```json
+{ "mcpServers": { "aft": { "type": "stdio", "command": "ssh", "args": ["-T", "-o", "BatchMode=yes", "aft-broker", "prod"] } } }
+```
+
+- Each client machine has its own SSH key, locked to a forced command (`restrict,command="..."`). The command picks the AFT instance from the request, checks that key may use it, and runs aft-mcp with that instance's settings.
+- The credentials stay on the server, readable only by the broker account. Revoke a machine by removing its key, or the agent by disabling its AFT user.
+- aft-mcp runs from one pinned, reviewed commit with hash-pinned dependencies, instead of a copy on every machine.
+- Every session is an SSH login, so it is logged and can be audited.
