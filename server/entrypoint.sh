@@ -62,5 +62,17 @@ EOF
 
 echo "Configured public-board frame-ancestors: $embed_ancestors"
 
+# nginx resolves the server container at request time (#709), so it needs the
+# container's DNS server. Take it from resolv.conf (127.0.0.11 on Docker
+# networks, the gateway under Podman) rather than hard-coding Docker's address.
+# nginx needs IPv6 nameservers in brackets.
+RESOLVER_FILE="$EMBED_CSP_DIR/resolver.inc"
+resolvers=$(awk '/^nameserver[ \t]/ { ns = $2; if (ns ~ /:/) ns = "[" ns "]"; printf "%s ", ns }' /etc/resolv.conf 2>/dev/null)
+if [ -z "$resolvers" ]; then
+    resolvers="127.0.0.11 "
+fi
+echo "resolver ${resolvers}valid=10s ipv6=off;" > "$RESOLVER_FILE"
+echo "Configured upstream DNS resolver: $resolvers"
+
 # Start nginx
 exec nginx -g 'daemon off;'
