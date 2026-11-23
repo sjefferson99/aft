@@ -60,7 +60,8 @@ I wrote AFT because I couldn't find self hosted Kanban software that let you sch
 - **Self hosted** - A simple docker deployment that runs happily on a Raspberry Pi
 - **[Backups](www/docs/administration.md#backups)** - Scheduled database backups with retention, and restores from the app
 - **[Secure by default](www/docs/administration.md#security-and-access-control)** - HTTPS, passkey sign-in, sign-in rate limits and regular patching. Security reviews are in the [docs folder](docs)
-- **[API](www/docs/administration.md#api)** - The server exposes all functionality via API and the UI is a separate container on top of it, so you can work with AFT programmatically or replace the UI altogether. Scripts and agents sign in with personal [API tokens](www/docs/administration.md#api-tokens)
+- **[API](www/docs/administration.md#api)** - The server exposes all functionality via API and the UI is a separate container on top of it, so you can work with AFT programmatically or replace the UI altogether. Scripts and agents sign in with personal [API tokens](www/docs/administration.md#api-tokens), which can be read only and can expire
+- **[AI agents](www/docs/administration.md#ai-agents-mcp)** - Agents such as Claude Code can read and update boards through [aft-mcp](https://github.com/samcorky/aft-mcp), an MCP server for the AFT API. It signs in with an API token and is limited by the same roles as any user
 
 AFT should be easy to use without reading manuals. If it isn't, [log an issue](https://github.com/sjefferson99/aft/issues) and we'll fix it up.
 

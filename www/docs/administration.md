@@ -433,4 +433,29 @@ Give each integration its own account and make it API only, so its credentials c
 
 In **User Management**, choose **Make API Only** on the account. It can then use the API but can't sign in with its password or a passkey, and any web session it already has ends at its next request. The account shows an **API only** badge in the user list. Choose **Allow Web Sign-in** to undo it. You can't make your own account API only.
 
-An API-only account can't open its Profile page, so an administrator makes its tokens: choose **Create API Token** on the account in **User Management**. This needs the **administrator** role, like resetting a password, and only works for API-only accounts. HTTP Basic auth with the account's password also still works.
+An API-only account can't open its Profile page, so an administrator makes its tokens: choose **Create API Token** on the account in **User Management**. This needs the **administrator** role, like resetting a password, and only works for API-only accounts. HTTP Basic auth with the account's password also still works, but a token is safer: it can be read only, can expire, and can be revoked without changing the password.
+
+### AI agents (MCP)
+
+[aft-mcp](https://github.com/samcorky/aft-mcp) (by Sam Cork) turns the AFT API into tools an MCP client such as Claude Code can call: list boards, read cards, add cards and comments, move and promote them. It runs as a stdio subprocess and signs in as one AFT user with a personal [API token](#api-tokens).
+
+Give the agent its own API-only account with only the roles it needs: an edit role on the boards it works on, nothing global. AFT then refuses anything outside those boards, whatever the agent tries. An administrator creates the agent's token with **Create API Token** on that account in **User Management**. Make it read only if the agent only needs to look, and give it an expiry so a forgotten token stops on its own. aft-mcp exposes no delete tools, and in Claude Code you can allow the read tools (`mcp__aft__get_*`) and approve writes one at a time.
+
+Use one token per place the agent runs, named for that place. **Manage API Tokens** then shows when each was last used, and you can revoke one without stopping the others.
+
+#### Example: keeping the token off your machines
+
+aft-mcp holds the AFT token. To avoid putting it on every machine you run an agent from, run aft-mcp on a server behind SSH. Because MCP over stdio is just a command's input and output, the client can launch `ssh` instead of `python`:
+
+```
+MCP client ──stdio── ssh aft-broker prod ──SSH── server: forced command ── aft-mcp ──HTTPS── AFT
+```
+
+```json
+{ "mcpServers": { "aft": { "type": "stdio", "command": "ssh", "args": ["-T", "-o", "BatchMode=yes", "aft-broker", "prod"] } } }
+```
+
+- Each client machine has its own SSH key, locked to a forced command (`restrict,command="..."`). The command picks the AFT instance from the request, checks that key may use it, and runs aft-mcp with that instance's settings.
+- The token stays on the server, readable only by the broker account. Revoke a machine by removing its key, or the agent by revoking its token in **Manage API Tokens** (or disabling its AFT user).
+- aft-mcp runs from one pinned, reviewed commit with hash-pinned dependencies, instead of a copy on every machine.
+- Every session is an SSH login, so it is logged and can be audited.
