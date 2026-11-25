@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """Show AFT host status on a Pimoroni Inky pHAT e-ink display.
 
-Shows the URL clients connect to (hostname, with the IP address below), AFT health, load average, memory and swap
-use, and basic AFT counts, including users who signed in and cards
-edited in the last 24 hours. Counts come from read-only queries run inside the
-aft-db container with the credentials already in its environment, so no AFT
-login is stored here and no server changes are needed.
+Shows the URL clients connect to (hostname, with the IP address below), AFT
+health, load average, memory and swap use, and basic AFT counts, including
+users who signed in and cards edited in the last 24 hours. Counts come from
+read-only queries run inside the aft-db container with the credentials already
+in its environment, so no AFT login is stored here and no server changes are
+needed.
 
 Run with --preview out.png to render without a display.
 Settings come from environment variables, see aft-inky-status.env.
 """
 
 import argparse
+import http.client
 import os
 import signal
 import socket
@@ -125,7 +127,7 @@ def web_ok(settings):
     try:
         with urllib.request.urlopen(settings.health_url, timeout=settings.timeout) as response:
             return response.status == 200
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
         return False
 
 
