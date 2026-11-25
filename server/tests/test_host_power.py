@@ -102,6 +102,18 @@ class TestRequest:
         host_power.request_action('poweroff', ADMIN, '192.0.2.1', lambda *a: None)
         assert _request_file(request_dir) == 'poweroff'
 
+    def test_simultaneous_request_does_not_replace_the_first(self, request_dir, monkeypatch):
+        """Two requests can both pass the file check before either writes."""
+        host_power.request_action('reboot', ADMIN, '192.0.2.1', lambda *a: None)
+        monkeypatch.setattr(host_power, 'requested_action', lambda: None)
+
+        with pytest.raises(host_power.RequestRefused):
+            host_power.request_action('poweroff', ADMIN, '192.0.2.2', lambda *a: None)
+
+        assert _request_file(request_dir) == 'reboot'
+        assert os.listdir(request_dir) == ['request']
+        assert host_power.pending_request() is None
+
     def test_unrecognised_file_reported(self, request_dir):
         (request_dir / 'request').write_text('something else')
         assert host_power.requested_action() == 'unknown'

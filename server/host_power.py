@@ -263,8 +263,9 @@ def requested_action():
 
 
 def _write_request(action):
-    """Hand the action to the host. Written whole and then renamed into place,
-    so the host never reads a half-written file."""
+    """Hand the action to the host. Written whole and then linked into place,
+    so the host never reads a half-written file. Linking fails if a request
+    is already there, so a simultaneous request can't replace it."""
     directory = request_dir()
     temp_path = os.path.join(directory, f'.{REQUEST_FILENAME}.{uuid.uuid4().hex}')
     fd = os.open(temp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o644)
@@ -273,13 +274,14 @@ def _write_request(action):
             temp_file.write(action)
             temp_file.flush()
             os.fsync(temp_file.fileno())
-        os.replace(temp_path, _request_path())
-    except BaseException:
+        os.link(temp_path, _request_path())
+    except FileExistsError:
+        raise RequestRefused("The host hasn't acted on the last request yet. Cancel it first.")
+    finally:
         try:
             os.unlink(temp_path)
         except OSError:
             pass
-        raise
 
 
 def pending_request():
