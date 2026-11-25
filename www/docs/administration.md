@@ -345,6 +345,9 @@ Multi-worker support is unchanged. Socket.IO broadcasts go through Redis, and th
 
 **During a large database restore** with a single worker, other requests can slow to a few seconds while the backup file is read and validated, because that work runs in the same process. Requests return `503` while the database itself is being reloaded, whatever the worker count. The only exception is the progress route the restore page polls, `GET /api/database/restore/progress/<id>`, which doesn't use the database. In testing, a 75 MB restore took about 25 seconds in total.
 
+## Raspberry Pi Zero 2 W
+AFT runs on a Raspberry Pi Zero 2 W (512 MB RAM) with a 64-bit OS, compressed swap and the smaller settings above. The [Raspberry Pi guide](https://github.com/sjefferson99/aft/tree/main/contrib/raspberry-pi) covers the OS setup, an example `.env`, and a compose override that gives the server longer to start on a cold boot. It also has an optional status display for a Pimoroni Inky pHAT, showing the connection URL, AFT health, memory use and board counts.
+
 ## Sign-in rate limits
 AFT slows down password guessing. After too many failed attempts, further attempts get a "Too many attempts" message until the block ends. Blocks end by themselves, and people who are already signed in aren't affected. A blocked account can still sign in with a passkey. Failed passwords count across sign-in, password changes and adding a passkey, and only failures count. Limits apply to unknown usernames too, so a block doesn't show whether an account exists.
 

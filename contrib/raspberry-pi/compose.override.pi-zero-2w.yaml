@@ -1,0 +1,12 @@
+# Raspberry Pi Zero 2 W override. Copy it next to compose.yml as
+# compose.override.yaml, which docker compose merges automatically.
+#
+# On a Pi Zero 2 W the server can take over two minutes to become healthy on a
+# cold boot, while everything is being read back from the SD card and swap.
+# With the standard 40 second start period the healthcheck gives up first, and
+# nginx (which waits for a healthy server) never starts.
+services:
+  server:
+    healthcheck:
+      start_period: 180s
+      retries: 20
