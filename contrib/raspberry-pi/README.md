@@ -7,7 +7,7 @@ Tested with AFT v2026.11.2 on 64-bit Raspberry Pi OS Lite (Debian 13 trixie, ker
 | File | What it is |
 |---|---|
 | [`env.pi-zero-2w`](env.pi-zero-2w) | The `.env` values to change from `.env.example` |
-| [`compose.override.yaml`](compose.override.yaml) | Gives the server time to start on a cold boot |
+| [`compose.override.pi-zero-2w.yaml`](compose.override.pi-zero-2w.yaml) | Gives the server time to start on a cold boot. Copy it as `compose.override.yaml` |
 | [`inky-status/`](inky-status/) | Optional Inky pHAT status display, installed as a systemd service |
 
 **What to expect:** at idle, the whole system uses about 265 MB of the 462 MB the OS sees, with about 260 MB more in swap. Most of that swap is zram, which compresses about 200 MB down to about 40 MB of RAM. The stack is healthy about two minutes after power on. Pages are usable for one or two people, and slower than on a bigger machine.
@@ -68,7 +68,7 @@ The Raspberry Pi kernel turns off the memory cgroup, so `docker stats` shows `0B
 Install Docker Engine and the compose plugin, then follow the [quick start](https://github.com/sjefferson99/aft#quick-start) with these changes:
 
 1. **`.env`:** start from `.env.example`, then set the values in [`env.pi-zero-2w`](env.pi-zero-2w). The values are explained in [Database memory tuning](../../www/docs/administration.md#database-memory-tuning) and [Server workers and threads](../../www/docs/administration.md#server-workers-and-threads).
-2. **`compose.override.yaml`:** copy [`compose.override.yaml`](compose.override.yaml) next to `compose.yml`. Without it, the server's healthcheck can time out on a cold boot, and nginx never starts.
+2. **Compose override:** copy [`compose.override.pi-zero-2w.yaml`](compose.override.pi-zero-2w.yaml) next to `compose.yml` as `compose.override.yaml`, which docker compose merges automatically. Without it, the server's healthcheck can time out on a cold boot, and nginx never starts.
 3. **Origins:** add every address clients type into the browser to `CORS_ALLOWED_ORIGINS`, for example `https://aft-portable` and the Pi's IP address. Sign-in and live updates fail from any address that isn't listed.
 
 The web container creates a self-signed certificate the first time it starts, so HTTPS works straight away. Browsers will warn about the certificate until you replace it with a real one (see [HTTPS and Session Cookie Security](../../www/docs/administration.md#https-and-session-cookie-security)).
