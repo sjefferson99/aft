@@ -9,6 +9,7 @@ Tested with AFT v2026.11.2 on 64-bit Raspberry Pi OS Lite (Debian 13 trixie, ker
 | [`env.pi-zero-2w`](env.pi-zero-2w) | The `.env` values to change from `.env.example` |
 | [`compose.override.pi-zero-2w.yaml`](compose.override.pi-zero-2w.yaml) | Gives the server time to start on a cold boot. Copy it as `compose.override.yaml` |
 | [`inky-status/`](inky-status/) | Optional Inky pHAT status display, installed as a systemd service |
+| [`../host-control/`](../host-control/) | Optional: restart or shut down the Pi from AFT's Instance Settings |
 
 **What to expect:** at idle, the whole system uses about 265 MB of the 462 MB the OS sees, with about 260 MB more in swap. Most of that swap is zram, which compresses about 200 MB down to about 40 MB of RAM. The stack is healthy about two minutes after power on. Pages are usable for one or two people, and slower than on a bigger machine.
 
@@ -77,7 +78,11 @@ The web container creates a self-signed certificate the first time it starts, so
 
 The first `docker compose pull` and start are slow on a Pi Zero, so allow several minutes.
 
-## 3. Optional: Inky pHAT status display
+## 3. Optional: restart and shut down from AFT
+
+A headless Pi has no clean way to power off, and pulling the power risks the SD card. [`../host-control/`](../host-control/) lets administrators restart or shut down the Pi from Instance Settings. See [Restarting or shutting down the host](../../www/docs/administration.md#restarting-or-shutting-down-the-host). With the Inky pHAT display installed, the screen shows "Restarting..." or "Host shut down" as the Pi goes down.
+
+## 4. Optional: Inky pHAT status display
 
 [`inky-status/`](inky-status/) shows the host's status on a [Pimoroni Inky pHAT](https://shop.pimoroni.com/products/inky-phat) e-ink display:
 

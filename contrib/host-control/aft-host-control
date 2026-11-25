@@ -1,0 +1,51 @@
+#!/bin/sh
+# Acts on an AFT host restart or shut down request (#726).
+#
+# The AFT server container writes the word "reboot" or "poweroff" to the file
+# "request" in a folder it has mounted. Anything else is logged and ignored.
+# The request is deleted before acting, so it can't run again at boot.
+#
+#   aft-host-control          act on a waiting request
+#   aft-host-control --clear  delete a request left from before this boot
+set -u
+
+DIR=${AFT_HOST_CONTROL_DIR:?AFT_HOST_CONTROL_DIR is not set}
+REQUEST="$DIR/request"
+
+if [ "${1:-}" = "--clear" ]; then
+    if [ -e "$REQUEST" ] || [ -L "$REQUEST" ]; then
+        rm -f -- "$REQUEST"
+        echo "Deleted a request left from before this boot"
+    fi
+    exit 0
+fi
+
+# PathExists can start this after the file has already gone.
+[ -e "$REQUEST" ] || [ -L "$REQUEST" ] || exit 0
+
+# The container controls this folder, so only trust a small regular file.
+if [ -L "$REQUEST" ] || [ ! -f "$REQUEST" ]; then
+    rm -f -- "$REQUEST"
+    echo "Ignored a request that isn't a regular file"
+    exit 0
+fi
+ACTION=$(timeout 5 head -c 16 -- "$REQUEST" 2>/dev/null)
+
+if ! rm -f -- "$REQUEST"; then
+    echo "Couldn't delete $REQUEST, so not acting on it" >&2
+    exit 1
+fi
+
+case "$ACTION" in
+    reboot)
+        echo "Restarting the host, as asked from AFT"
+        exec systemctl reboot
+        ;;
+    poweroff)
+        echo "Shutting down the host, as asked from AFT"
+        exec systemctl poweroff
+        ;;
+    *)
+        echo "Ignored an unrecognised request"
+        ;;
+esac

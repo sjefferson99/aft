@@ -1,0 +1,14 @@
+[Unit]
+Description=Watch for AFT host restart and shut down requests
+Documentation=https://github.com/sjefferson99/aft/tree/main/contrib/host-control
+RequiresMountsFor=@HOST_CONTROL_DIR@
+# Clear a request left from before this boot before watching for new ones.
+After=aft-host-control-clear.service
+Requires=aft-host-control-clear.service
+
+[Path]
+PathExists=@HOST_CONTROL_DIR@/request
+Unit=aft-host-control.service
+
+[Install]
+WantedBy=multi-user.target

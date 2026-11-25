@@ -60,7 +60,7 @@ Remove or comment out the `nginx` service in `compose.example.yml` before renami
 
 **Instance Settings** in the user menu holds the settings for the whole instance, in tabs. You only see the tabs your permissions allow.
 
-- **Instance Settings**: the default theme, promoting or demoting global themes, branding, and who can use [HTTP Basic auth](#http-basic-auth)
+- **Instance Settings**: the default theme, promoting or demoting global themes, branding, who can use [HTTP Basic auth](#http-basic-auth), and on appliance installs [restarting or shutting down the host](#restarting-or-shutting-down-the-host)
 - **User Management**: one list for accounts and roles, including adding users and approving new registrations
 - **Role Management**: build custom roles from individual permissions
 - **Backup & Restore**: see [Backups](#backups)
@@ -346,7 +346,41 @@ Multi-worker support is unchanged. Socket.IO broadcasts go through Redis, and th
 **During a large database restore** with a single worker, other requests can slow to a few seconds while the backup file is read and validated, because that work runs in the same process. Requests return `503` while the database itself is being reloaded, whatever the worker count. The only exception is the progress route the restore page polls, `GET /api/database/restore/progress/<id>`, which doesn't use the database. In testing, a 75 MB restore took about 25 seconds in total.
 
 ## Raspberry Pi Zero 2 W
-AFT runs on a Raspberry Pi Zero 2 W (512 MB RAM) with a 64-bit OS, compressed swap and the smaller settings above. The [Raspberry Pi guide](https://github.com/sjefferson99/aft/tree/main/contrib/raspberry-pi) covers the OS setup, an example `.env`, and a compose override that gives the server longer to start on a cold boot. It also has an optional status display for a Pimoroni Inky pHAT, showing the connection URL, AFT health, memory use and board counts.
+AFT runs on a Raspberry Pi Zero 2 W (512 MB RAM) with a 64-bit OS, compressed swap and the smaller settings above. The [Raspberry Pi guide](https://github.com/sjefferson99/aft/tree/main/contrib/raspberry-pi) covers the OS setup, an example `.env`, and a compose override that gives the server longer to start on a cold boot. It also has an optional status display for a Pimoroni Inky pHAT, showing the connection URL, AFT health, memory use and board counts. A headless Pi has no clean way to power off, so consider [restarting or shutting down the host](#restarting-or-shutting-down-the-host) from AFT.
+
+## Restarting or shutting down the host
+On a machine that runs only AFT, such as a Raspberry Pi demo box with no keyboard, administrators can restart or shut down the machine from a **Host** section in Instance Settings, without signing in to it with SSH. Pulling the power instead risks the SD card and the database.
+
+**Only turn this on for a host dedicated to AFT.** It powers off the whole machine, including anything else running on it. It's off unless you set it up, and most installs should leave it off.
+
+The server container can't run commands on the host, and stays unprivileged. When asked, it writes `reboot` or `poweroff` to a file in a folder mounted from the host. A small systemd service on the host watches that folder, deletes the file, and then restarts or shuts down. It ignores anything else written there, so the container can only ask for those two things.
+
+### Setting it up
+1. On the host, install the service from [`contrib/host-control`](https://github.com/sjefferson99/aft/tree/main/contrib/host-control), giving it a folder next to your `compose.yml`:
+   ```sh
+   cd contrib/host-control
+   sudo ./install.sh /opt/docker/aft/host-control
+   ```
+   The installer creates the folder, owned by the server container's user (uid 1000), and enables the `aft-host-control.path` unit.
+2. Mount the folder into the server container. In `compose.yml`, or in `compose.override.yaml`:
+   ```yaml
+   services:
+     server:
+       volumes:
+         - ./host-control:/app/host-control
+   ```
+3. Set `HOST_POWER_CONTROL=true` in `.env`, then run `docker compose up -d server`.
+
+The **Host** section only appears when both the setting is on and the folder is mounted and writable. Otherwise the routes return 404.
+
+### Using it
+- Only users with the global **administrator** role see the section or can use it, and they must enter their password. Wrong passwords count toward the same limit as signing in (see [Sign-in rate limits](#sign-in-rate-limits)).
+- **Restart host** and **Shut down host** ask for confirmation. Everyone is disconnected, and there's no warning to other users first. After a shut down, the machine stays off until its power is turned off and on again.
+- Each request is logged with the administrator and their IP address, and every administrator gets a notification.
+- **During a backup or restore** the request waits and goes ahead as soon as it finishes, whether it succeeded or failed. The section shows the waiting request with a **Cancel request** button. A waiting request is dropped after 3 hours, or when the server restarts, so a stuck backup can't restart the host much later.
+- If the section says the host hasn't acted on a request, the host service isn't running. Check it with `systemctl status aft-host-control.path` and `journalctl -u aft-host-control`. Cancelling removes the request.
+
+To remove it, run `sudo ./uninstall.sh` from the same folder, set `HOST_POWER_CONTROL=false` and remove the mount.
 
 ## Sign-in rate limits
 AFT slows down password guessing. After too many failed attempts, further attempts get a "Too many attempts" message until the block ends. Blocks end by themselves, and people who are already signed in aren't affected. A blocked account can still sign in with a passkey. Failed passwords count across sign-in, password changes and adding a passkey, and only failures count. Limits apply to unknown usernames too, so a block doesn't show whether an account exists.

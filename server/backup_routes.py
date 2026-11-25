@@ -18,6 +18,7 @@ from security_validators import (
     validate_schema_integrity,
 )
 from notification_utils import create_notification as create_notification_internal
+from host_power import holds_host_power
 from restore_progress import (
     RESTORE_PROGRESS_HEADER,
     RestoreProgress,
@@ -287,6 +288,7 @@ def import_sql_file(mysql_cmd, sql_path, progress):
 
 @backup_bp.route("/api/database/backup", methods=["GET"])
 @require_permission('admin.database')
+@holds_host_power('backup')
 def backup_database():
     """Create a database backup with version information.
     ---
@@ -385,6 +387,7 @@ def backup_database():
 
 @backup_bp.route("/api/database/backup/manual", methods=["POST"])
 @require_permission('admin.database')
+@holds_host_power('backup')
 def create_manual_backup():
     """Create a manual backup and save to backups folder.
     ---
@@ -478,6 +481,7 @@ def create_manual_backup():
 
 @backup_bp.route("/api/database/restore", methods=["POST"])
 @require_permission('admin.database')
+@holds_host_power('restore')
 def restore_database():
     """Restore database from backup file with version checking.
     ---
@@ -539,6 +543,7 @@ def restore_database():
 
 
 @backup_bp.route("/api/auth/setup/restore", methods=["POST"])
+@holds_host_power('restore')
 def setup_restore():
     """Restore a backup instead of creating the first administrator.
 
@@ -936,6 +941,7 @@ def list_backups():
 
 @backup_bp.route("/api/database/backups/restore/<filename>", methods=["POST"])
 @require_permission('admin.database')
+@holds_host_power('restore')
 def restore_backup_from_file(filename):
     """Restore from a specific backup file (automatic or manual).
     ---
@@ -1415,6 +1421,7 @@ def delete_multiple_backups():
 
 @backup_bp.route("/api/database", methods=["DELETE"])
 @require_permission('admin.database')
+@holds_host_power('reset')
 def delete_database():
     """Delete all data from the database.
     ---

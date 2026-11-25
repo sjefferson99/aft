@@ -1,0 +1,18 @@
+[Unit]
+Description=Clear an AFT host request left from before this boot
+Documentation=https://github.com/sjefferson99/aft/tree/main/contrib/host-control
+DefaultDependencies=no
+RequiresMountsFor=@HOST_CONTROL_DIR@
+After=local-fs.target
+Before=aft-host-control.path shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/default/aft-host-control
+ExecStart=/usr/local/libexec/aft-host-control --clear
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=@HOST_CONTROL_DIR@
+PrivateNetwork=yes

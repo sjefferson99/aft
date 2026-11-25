@@ -16,7 +16,7 @@
   <script src="/js/pwa.js"></script>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/header.css">
-  <link rel="stylesheet" href="/css/settings.css?v=20261105a">
+  <link rel="stylesheet" href="/css/settings.css?v=20261125a">
 </head>
 <body>
   <!-- Header component will be loaded here -->
@@ -129,6 +129,26 @@
             <div id="basic-auth-status" class="settings-status" role="status" aria-live="polite"></div>
           </div>
         </section>
+
+        <section class="settings-section" id="host-power-panel" hidden aria-labelledby="host-power-title">
+          <h3 id="host-power-title">Host</h3>
+
+          <div class="setting-item" id="host-power-section">
+            <p class="setting-help" id="host-power-help">Restart or shut down the machine AFT runs on. Everyone is disconnected while it happens. A request made during a backup or restore waits until it finishes.</p>
+
+            <div class="branding-actions">
+              <button id="host-reboot-btn" class="btn btn-danger" type="button" aria-describedby="host-power-help">Restart host</button>
+              <button id="host-poweroff-btn" class="btn btn-danger" type="button" aria-describedby="host-power-help">Shut down host</button>
+            </div>
+
+            <div id="host-power-pending" class="host-power-pending" hidden>
+              <p id="host-power-pending-text" class="setting-help"></p>
+              <button id="host-power-cancel-btn" class="btn btn-secondary" type="button">Cancel request</button>
+            </div>
+
+            <div id="host-power-status" class="settings-status" role="status" aria-live="polite"></div>
+          </div>
+        </section>
       </div>
 
       <div class="settings-actions">
@@ -150,10 +170,28 @@
     </div>
   </main>
 
+  <div class="modal" id="host-power-modal" role="dialog" aria-modal="true" aria-labelledby="host-power-modal-title" aria-describedby="host-power-modal-message">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="host-power-modal-title">Restart host</h2>
+      </div>
+      <form id="host-power-form" class="modal-body" novalidate>
+        <p id="host-power-modal-message"></p>
+        <label for="host-power-password">Current Password</label>
+        <input type="password" id="host-power-password" class="modal-input" autocomplete="current-password" required aria-required="true" aria-describedby="host-power-modal-error">
+        <div id="host-power-modal-error" class="settings-status error" role="alert" hidden></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="host-power-modal-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-danger" id="host-power-modal-ok-btn">Restart</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="/js/utils.js?v=20261110a"></script>
   <script src="/js/notifications.js"></script>
   <script src="/js/header.js?v=20261116c"></script>
-  <script src="/js/settings.js?v=20261123a"></script>
+  <script src="/js/settings.js?v=20261125a"></script>
   <script src="/js/pwa-install.js"></script>
 </body>
 </html>

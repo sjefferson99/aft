@@ -35,6 +35,7 @@ from board_sharing import board_sharing_bp, configure_board_sharing_routes
 from card_search import card_search_bp
 from passkey_routes import passkey_bp, WEBAUTHN_SETTINGS
 from api_token_routes import api_token_bp
+from host_power_routes import host_power_bp
 from api_tokens import READ_ONLY_METHODS
 from broadcasting import (
     broadcast_failures,
@@ -321,6 +322,7 @@ app.register_blueprint(board_sharing_bp)
 app.register_blueprint(card_search_bp)
 app.register_blueprint(passkey_bp)
 app.register_blueprint(api_token_bp)
+app.register_blueprint(host_power_bp)
 
 if WEBAUTHN_SETTINGS:
     logger.info(
@@ -635,6 +637,11 @@ if should_init:
         # Clean up any stale lock files from previous container instances
         # This must happen AFTER acquiring init lock to prevent race conditions
         cleanup_stale_scheduler_locks()
+
+        # A held host restart from before this start would otherwise wait for a
+        # backup that will never finish, or go ahead long after it was asked for.
+        from host_power import clear_on_startup
+        clear_on_startup()
         
         # Now start all schedulers
         init_backup_scheduler()

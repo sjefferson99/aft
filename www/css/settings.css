@@ -899,3 +899,40 @@
 .global-board-name-input {
   cursor: text;
 }
+
+/* Host restart and shut down (Instance Settings > Host) */
+.btn-danger {
+  background: var(--error-color);
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.host-power-pending {
+  margin-top: 15px;
+  padding: 12px 15px;
+  border-left: 4px solid var(--warning-color);
+  background: color-mix(in srgb, var(--warning-color) 8%, transparent);
+  border-radius: 4px;
+}
+
+.host-power-pending[hidden] {
+  display: none;
+}
+
+.host-power-pending .setting-help {
+  margin-top: 0;
+}
+
+#host-power-form label {
+  display: block;
+  font-weight: 600;
+  color: var(--text-bold);
+}
+
+#host-power-modal-error {
+  margin-top: 10px;
+  padding: 0;
+}
