@@ -1,0 +1,27 @@
+[Unit]
+Description=AFT status on Inky pHAT e-ink display
+Documentation=https://github.com/sjefferson99/aft/tree/main/contrib/raspberry-pi
+Wants=network-online.target
+# Starting after docker draws the screen early in boot ("Starting: server") and
+# again as soon as the stack is healthy. On shutdown it stops before docker, so
+# it can still draw the shut-down screen.
+After=network-online.target docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/aft-inky-status
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/aft-inky-status/venv/bin/python /opt/aft-inky-status/aft_inky_status.py
+Restart=on-failure
+RestartSec=30
+# Leaves time for the shut-down screen to draw.
+TimeoutStopSec=90
+Nice=10
+# Runs as root for docker access (the docker group is root-equivalent anyway).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
