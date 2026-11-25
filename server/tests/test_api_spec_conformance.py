@@ -157,3 +157,11 @@ class TestSpecConformance:
 
         admin_listed = authenticated_session.get(f"{api_client}/api/users/{user_id}/tokens")
         _assert_matches_spec(spec, "/api/users/{user_id}/tokens", "get", admin_listed)
+
+    def test_host_power_status_matches_spec(self, api_client, authenticated_session, spec):
+        """pending and requested are null when nothing is waiting (#726)."""
+        response = authenticated_session.get(f"{api_client}/api/system/host")
+        if response.status_code == 404:
+            pytest.skip("Host power control is off on this stack")
+        assert response.json()["pending"] is None
+        _assert_matches_spec(spec, "/api/system/host", "get", response)

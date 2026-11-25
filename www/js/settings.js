@@ -26,6 +26,20 @@ class Settings {
     this.basicAuthSaveBtn = document.getElementById('basic-auth-save-btn');
     this.basicAuthStatus = document.getElementById('basic-auth-status');
     this.canManageSecurity = false;
+    this.hostPowerPanel = document.getElementById('host-power-panel');
+    this.hostRebootBtn = document.getElementById('host-reboot-btn');
+    this.hostPoweroffBtn = document.getElementById('host-poweroff-btn');
+    this.hostPowerPending = document.getElementById('host-power-pending');
+    this.hostPowerPendingText = document.getElementById('host-power-pending-text');
+    this.hostPowerCancelBtn = document.getElementById('host-power-cancel-btn');
+    this.hostPowerStatus = document.getElementById('host-power-status');
+    this.hostPowerModal = document.getElementById('host-power-modal');
+    this.hostPowerForm = document.getElementById('host-power-form');
+    this.hostPowerPassword = document.getElementById('host-power-password');
+    this.hostPowerModalError = document.getElementById('host-power-modal-error');
+    this.hostPowerAction = null;
+    this.hostPowerReturnFocus = null;
+    this.hostPowerPollTimer = null;
     this.tabs = Array.from(document.querySelectorAll('.settings-tab'));
     this.instancePanel = document.getElementById('settings-panel-instance');
     this.globalBoardPanel = document.getElementById('settings-panel-global-board');
@@ -61,6 +75,7 @@ class Settings {
     }
     if (this.canManageSecurity) {
       await this.loadBasicAuthMode();
+      await this.loadHostPower();
     }
     if (this.canManageGlobalBoard) {
       await this.loadGlobalBoards();
@@ -845,7 +860,219 @@ class Settings {
     }
   }
 
+  // Host restart and shut down (#726). The section only shows when the server
+  // says the feature is on, which it only is for global administrators.
+  async loadHostPower() {
+    if (!this.hostPowerPanel) {
+      return;
+    }
+
+    let data = null;
+    try {
+      const response = await this.fetchWithTimeout('/api/system/host', { cache: 'no-store' });
+      if (response.ok) {
+        data = await response.json();
+      } else if (response.status !== 403 && response.status !== 404) {
+        // Probably the host restarting: keep what is shown and keep checking.
+        return;
+      }
+    } catch (error) {
+      console.error('Error loading host power status:', error);
+      return;
+    }
+
+    if (!data || !data.enabled) {
+      this.hostPowerPanel.hidden = true;
+      this.stopHostPowerPolling();
+      return;
+    }
+
+    this.hostPowerPanel.hidden = false;
+    this.renderHostPower(data);
+  }
+
+  hostActionWord(action) {
+    return action === 'poweroff' ? 'shut down' : 'restart';
+  }
+
+  describeHostWork(work) {
+    const names = { backup: 'a backup', restore: 'a restore', reset: 'a database reset' };
+    const unique = [...new Set(work || [])].map(name => names[name] || 'a backup or restore');
+    if (unique.length === 0) {
+      return '';
+    }
+    if (unique.length === 1) {
+      return unique[0];
+    }
+    return `${unique.slice(0, -1).join(', ')} and ${unique[unique.length - 1]}`;
+  }
+
+  formatHostTime(isoString) {
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) {
+      return '';
+    }
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  renderHostPower(data) {
+    const pending = data.pending;
+    const requested = data.requested;
+    let text = '';
+
+    if (pending) {
+      const word = this.hostActionWord(pending.action);
+      const work = this.describeHostWork(pending.waiting_for);
+      const expires = this.formatHostTime(pending.expires_at);
+      text = work
+        ? `${pending.username} asked to ${word} the host. It will ${word} when ${work} finishes.`
+        : `${pending.username} asked to ${word} the host. It will ${word} shortly.`;
+      if (expires) {
+        text += ` The request is dropped if that hasn't happened by ${expires}.`;
+      }
+    } else if (requested) {
+      const word = requested === 'unknown' ? 'act on a request' : this.hostActionWord(requested);
+      text = `The host was asked to ${word} but hasn't done it yet. If this doesn't clear within a minute, the host service isn't running.`;
+    }
+
+    const waiting = Boolean(text);
+    this.hostPowerPendingText.textContent = text;
+    this.hostPowerPending.hidden = !waiting;
+    this.hostRebootBtn.disabled = waiting;
+    this.hostPoweroffBtn.disabled = waiting;
+
+    if (waiting) {
+      this.startHostPowerPolling();
+    } else {
+      this.stopHostPowerPolling();
+    }
+  }
+
+  startHostPowerPolling() {
+    if (!this.hostPowerPollTimer) {
+      this.hostPowerPollTimer = setInterval(() => this.loadHostPower(), 10000);
+    }
+  }
+
+  stopHostPowerPolling() {
+    if (this.hostPowerPollTimer) {
+      clearInterval(this.hostPowerPollTimer);
+      this.hostPowerPollTimer = null;
+    }
+  }
+
+  showHostPowerStatus(message, type = 'info') {
+    this.hostPowerStatus.textContent = message;
+    this.hostPowerStatus.className = `settings-status ${type}`;
+  }
+
+  showHostPowerModalError(message) {
+    this.hostPowerModalError.textContent = message;
+    this.hostPowerModalError.hidden = !message;
+  }
+
+  openHostPowerModal(action, trigger) {
+    this.hostPowerAction = action;
+    this.hostPowerReturnFocus = trigger;
+    const shutDown = action === 'poweroff';
+    document.getElementById('host-power-modal-title').textContent = shutDown ? 'Shut down host' : 'Restart host';
+    document.getElementById('host-power-modal-message').textContent = shutDown
+      ? 'The machine AFT runs on will shut down, and everyone will be disconnected. It stays off until someone turns its power off and on again by hand.'
+      : 'The machine AFT runs on will restart, and everyone will be disconnected until it is back, which can take a few minutes.';
+    document.getElementById('host-power-modal-ok-btn').textContent = shutDown ? 'Shut down' : 'Restart';
+    this.hostPowerPassword.value = '';
+    this.showHostPowerModalError('');
+    this.setHostPowerModalBusy(false);
+    this.hostPowerModal.classList.add('show');
+    setupModalEscapeClose(this.hostPowerModal, () => this.closeHostPowerModal());
+    this.hostPowerPassword.focus();
+  }
+
+  closeHostPowerModal() {
+    this.hostPowerModal.classList.remove('show');
+    const cleanup = this.hostPowerModal.__aftModalEscapeCleanup;
+    if (typeof cleanup === 'function') {
+      cleanup();
+    }
+    if (this.hostPowerReturnFocus && document.body.contains(this.hostPowerReturnFocus)) {
+      this.hostPowerReturnFocus.focus();
+    }
+    this.hostPowerReturnFocus = null;
+  }
+
+  setHostPowerModalBusy(busy) {
+    this.hostPowerModal.querySelectorAll('button, input').forEach((el) => {
+      el.disabled = busy;
+    });
+  }
+
+  async submitHostPower() {
+    const password = this.hostPowerPassword.value;
+    if (!password) {
+      this.showHostPowerModalError('Enter your current password.');
+      this.hostPowerPassword.focus();
+      return;
+    }
+
+    this.showHostPowerModalError('');
+    this.setHostPowerModalBusy(true);
+    try {
+      const response = await this.fetchWithTimeout(`/api/system/host/${this.hostPowerAction}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      }, 15000);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || 'The request failed');
+      }
+
+      this.closeHostPowerModal();
+      this.showHostPowerStatus(data.message || 'Request sent.', data.held ? 'info' : 'success');
+      this.renderHostPower(data);
+    } catch (error) {
+      this.setHostPowerModalBusy(false);
+      const message = error.name === 'AbortError' ? 'The request timed out. Please try again.' : error.message;
+      this.showHostPowerModalError(message);
+      this.hostPowerPassword.focus();
+    }
+  }
+
+  async cancelHostPower() {
+    this.hostPowerCancelBtn.disabled = true;
+    try {
+      const response = await this.fetchWithTimeout('/api/system/host/pending', { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || 'Cancelling failed');
+      }
+      this.showHostPowerStatus(data.message || 'Cancelled.', 'success');
+      this.renderHostPower(data);
+    } catch (error) {
+      const message = error.name === 'AbortError' ? 'Cancelling timed out. Please try again.' : error.message;
+      this.showHostPowerStatus(message, 'error');
+    } finally {
+      this.hostPowerCancelBtn.disabled = false;
+    }
+  }
+
   attachEventListeners() {
+    if (this.canManageSecurity && this.hostPowerPanel) {
+      this.hostRebootBtn.addEventListener('click', () => this.openHostPowerModal('reboot', this.hostRebootBtn));
+      this.hostPoweroffBtn.addEventListener('click', () => this.openHostPowerModal('poweroff', this.hostPoweroffBtn));
+      this.hostPowerCancelBtn.addEventListener('click', () => this.cancelHostPower());
+      document.getElementById('host-power-modal-cancel-btn').addEventListener('click', () => this.closeHostPowerModal());
+      this.hostPowerForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        this.submitHostPower();
+      });
+      this.hostPowerModal.addEventListener('click', (e) => {
+        if (e.target === this.hostPowerModal) {
+          this.closeHostPowerModal();
+        }
+      });
+    }
+
     if (this.canManageSecurity && this.basicAuthSaveBtn) {
       this.basicAuthSaveBtn.addEventListener('click', () => {
         this.saveBasicAuthMode();

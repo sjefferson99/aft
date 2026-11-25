@@ -33,19 +33,19 @@ def create_mobile_app_notification(user_id: int) -> bool:
     )
 
 
-def _resolve_recipient_user_ids(db, explicit_user_id=None):
+def _resolve_recipient_user_ids(db, explicit_user_id=None, for_admins=False):
     """Resolve recipient user IDs for internal notifications.
 
     Priority:
     1. Explicit user_id argument
-    2. Current authenticated request user
+    2. Current authenticated request user, unless for_admins is set
     3. Active/approved users with global administrator role
     4. First active/approved user as last-resort fallback
     """
     if explicit_user_id is not None:
         return [explicit_user_id]
 
-    if has_request_context() and getattr(g, 'user', None):
+    if not for_admins and has_request_context() and getattr(g, 'user', None):
         return [g.user.id]
 
     admin_user_ids = (
@@ -76,7 +76,7 @@ def _resolve_recipient_user_ids(db, explicit_user_id=None):
     return []
 
 
-def create_notification(subject: str, message: str, action_title: str = None, action_url: str = None, user_id: int = None) -> bool:
+def create_notification(subject: str, message: str, action_title: str = None, action_url: str = None, user_id: int = None, for_admins: bool = False) -> bool:
     """Create a notification in the database.
     
     This is a shared utility function for internal use (backup scheduler, 
@@ -92,6 +92,8 @@ def create_notification(subject: str, message: str, action_title: str = None, ac
         message: Notification message (truncated to 65535 chars if longer)
         action_title: Optional action button title (truncated to 100 chars if longer)
         action_url: Optional action button URL (truncated to 500 chars if longer)
+        for_admins: Notify every administrator even during a request, instead
+            of only the user making it
         
     Returns:
         True if notification created successfully, False otherwise
@@ -179,7 +181,7 @@ def create_notification(subject: str, message: str, action_title: str = None, ac
             logger.warning("Attempted to create notification with empty subject or message")
             return False
         
-        recipient_user_ids = _resolve_recipient_user_ids(db, explicit_user_id=user_id)
+        recipient_user_ids = _resolve_recipient_user_ids(db, explicit_user_id=user_id, for_admins=for_admins)
         if not recipient_user_ids:
             logger.warning("No eligible recipient users found for notification")
             return False

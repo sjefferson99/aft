@@ -13,6 +13,7 @@ from sqlalchemy import text
 from database import SessionLocal
 from models import Setting, Notification
 from notification_utils import create_notification
+from host_power import holds_host_power
 from scheduler_lock import (
     acquire_scheduler_lock,
     release_scheduler_lock,
@@ -620,6 +621,7 @@ class BackupScheduler:
         
         return ", ".join(parts) if parts else "less than a minute"
         
+    @holds_host_power('backup')
     def _create_backup(self):
         """Create a database backup file."""
         try:

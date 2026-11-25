@@ -76,6 +76,9 @@ services:
     volumes:
       - ./backups:/app/backups
       - backgrounds_volume:/var/www/images/backgrounds
+      # Host restart and shut down requests (HOST_POWER_CONTROL). Nothing acts
+      # on them in development, so it's safe to turn on for testing.
+      - ./host-control:/app/host-control
     networks:
       - aft
     healthcheck:

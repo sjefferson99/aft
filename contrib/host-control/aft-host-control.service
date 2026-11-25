@@ -1,0 +1,15 @@
+[Unit]
+Description=Act on an AFT host restart or shut down request
+Documentation=https://github.com/sjefferson99/aft/tree/main/contrib/host-control
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/aft-host-control
+ExecStart=/usr/local/libexec/aft-host-control
+TimeoutStartSec=30
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=@HOST_CONTROL_DIR@
+PrivateTmp=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX

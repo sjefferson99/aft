@@ -1,6 +1,7 @@
 .vscode
 data
 backups
+/host-control
 .env
 
 # Python virtual environments

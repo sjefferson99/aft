@@ -86,6 +86,10 @@ services:
     volumes:
       - ./backups:/app/backups
       - backgrounds_volume:/var/www/images/backgrounds
+      # Only on hosts dedicated to AFT, with HOST_POWER_CONTROL=true and the
+      # contrib/host-control service installed. See "Restarting or shutting
+      # down the host" in www/docs/administration.md.
+      # - ./host-control:/app/host-control
     networks:
       - aft
     healthcheck:
