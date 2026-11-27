@@ -15,7 +15,7 @@ fi
 
 echo "Installing packages..."
 apt-get install -y -q python3-venv python3-pil python3-numpy python3-spidev \
-    python3-smbus2 python3-libgpiod fonts-dejavu-core
+    python3-smbus2 python3-libgpiod python3-qrcode fonts-dejavu-core
 
 # The display uses SPI, and I2C to read its EEPROM. The inky library drives
 # chip select itself, so the kernel must not claim CE0 (spi0-0cs).

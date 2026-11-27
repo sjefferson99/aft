@@ -8,6 +8,10 @@ read-only queries run inside the aft-db container with the credentials already
 in its environment, so no AFT login is stored here and no server changes are
 needed.
 
+While the Wi-Fi hotspot fallback (#725) has the hotspot up, it shows how to
+join it instead: the network name, password and address, with a Wi-Fi QR code
+if python3-qrcode is installed.
+
 Run with --preview out.png to render without a display.
 Settings come from environment variables, see aft-inky-status.env.
 """
@@ -25,6 +29,7 @@ import urllib.request
 from PIL import Image, ImageDraw, ImageFont
 
 WHITE, BLACK, COLOUR = 0, 1, 2
+HOTSPOT_CONNECTION = "aft-hotspot"
 FONT_DIR = "/usr/share/fonts/truetype/dejavu"
 STATS_SQL = (
     "SELECT "
@@ -71,6 +76,54 @@ def has_wireless():
         return any(os.path.isdir(f"/sys/class/net/{name}/wireless") for name in os.listdir("/sys/class/net"))
     except OSError:
         return False
+
+
+def hotspot_info(settings):
+    """Return {"ssid", "password", "address"} while the AFT hotspot is up, else None."""
+    rc, out = run(
+        ["nmcli", "-s", "-t", "-e", "no", "-f",
+         "GENERAL.STATE,802-11-wireless.ssid,802-11-wireless-security.psk,IP4.ADDRESS",
+         "connection", "show", "id", HOTSPOT_CONNECTION],
+        settings.timeout,
+    )
+    return parse_hotspot(out) if rc == 0 else None
+
+
+def parse_hotspot(out):
+    """Parse nmcli -t -f output. Only an active hotspot counts.
+
+    The output is keyed by field, because nmcli leaves out fields with no
+    value: an inactive connection has no GENERAL.STATE or IP4.ADDRESS line.
+    """
+    fields = {}
+    for line in out.splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            fields.setdefault(key.split("[")[0], value)
+    if fields.get("GENERAL.STATE") != "activated":
+        return None
+    address = fields.get("IP4.ADDRESS", "").split("/")[0] or "10.42.0.1"
+    return {"ssid": fields.get("802-11-wireless.ssid", ""),
+            "password": fields.get("802-11-wireless-security.psk", ""), "address": address}
+
+
+def wifi_qr_payload(ssid, password):
+    """The Wi-Fi QR code text phones understand, with its special characters escaped."""
+    def esc(value):
+        return "".join("\\" + c if c in '\\;,:"' else c for c in value)
+    return f"WIFI:T:WPA;S:{esc(ssid)};P:{esc(password)};;"
+
+
+def qr_matrix(text):
+    """QR code modules as rows of booleans, or None without python3-qrcode."""
+    try:
+        import qrcode
+    except ImportError:
+        return None
+    qr = qrcode.QRCode(border=0, error_correction=qrcode.constants.ERROR_CORRECT_L)
+    qr.add_data(text)
+    qr.make(fit=True)
+    return qr.get_matrix()
 
 
 def read_meminfo():
@@ -160,11 +213,14 @@ def collect(settings):
         problem = "Web not responding"
     if problem is None and stats is None:
         problem = "DB query failed"
-    ip = get_ip()
+    hotspot = hotspot_info(settings)
+    # The hotspot has no default route, so take its own address.
+    ip = hotspot["address"] if hotspot else get_ip()
     if problem is None and ip is None:
         problem = "No Wi-Fi" if has_wireless() else "No network"
     return {
         "ip": ip,
+        "hotspot": hotspot,
         "problem": problem,
         "load": os.getloadavg(),
         "mem_used": mem["MemTotal"] - mem["MemAvailable"],
@@ -182,6 +238,20 @@ def fmt_mib(mib):
 def build_screen(status, settings):
     """Return (lines, footer_left). Lines are (text, colour, bold), with values
     rounded so small changes don't force a slow e-ink refresh."""
+    hotspot = status.get("hotspot")
+    if hotspot:
+        lines = [
+            ("Join Wi-Fi", COLOUR, True),
+            (hotspot["ssid"], BLACK, True),
+            (hotspot["password"], BLACK, True),
+            (f"{settings.scheme}://{hotspot['address']}/", COLOUR, True),
+        ]
+        if status["problem"]:
+            lines.append((status["problem"], COLOUR, True))
+            return lines, "AFT NOT OK"
+        if status["aft"] is not None:
+            lines.append((f"Boards {status['aft'][0]}  Cards {status['aft'][1]}", BLACK, False))
+        return lines, "AFT OK"
     l1, l5, l15 = status["load"]
     lines = [
         (f"{settings.scheme}://{settings.host}/", COLOUR, True),
@@ -215,13 +285,39 @@ def fit_font(draw, text, size, bold, max_width):
     return font
 
 
-def render(size, lines, footer_left, footer_right, footer_mid=""):
-    """Draw the screen onto a palette image the size of the display."""
+def draw_qr(draw, matrix, right, height, margin):
+    """Draw the QR code against the right edge, as big as fits. Returns its left x."""
+    modules = len(matrix)
+    scale = (height - 2 * margin) // modules
+    if scale < 2:
+        return right
+    side = modules * scale
+    left = right - side
+    top = (height - side) // 2
+    for y, row in enumerate(matrix):
+        for x, dark in enumerate(row):
+            if dark:
+                draw.rectangle((left + x * scale, top + y * scale,
+                                left + (x + 1) * scale - 1, top + (y + 1) * scale - 1), fill=BLACK)
+    return left
+
+
+def render(size, lines, footer_left, footer_right, footer_mid="", qr=None):
+    """Draw the screen onto a palette image the size of the display.
+
+    With a QR matrix, the code goes on the right and the text and footer fit
+    beside it, leaving out footer_mid.
+    """
     width, height = size
     img = Image.new("P", size, WHITE)
     img.putpalette([255, 255, 255, 0, 0, 0, 200, 0, 0] + [0, 0, 0] * 253)
     draw = ImageDraw.Draw(img)
     margin = 3
+    if qr:
+        # The panel's white border is the code's quiet zone on the right.
+        qr_left = draw_qr(draw, qr, width - 1, height, margin)
+        if qr_left < width - 1:
+            width, footer_mid = qr_left - 2 * margin, ""
     rows = 5  # fixed row height, so fewer lines leave space rather than grow
     footer_font = load_font(max(8, height // 11))
     footer_h = footer_font.getbbox("0:")[3] + 1
@@ -239,6 +335,13 @@ def render(size, lines, footer_left, footer_right, footer_mid=""):
     if footer_mid:
         draw.text((width // 2 + 8, height - 1), footer_mid, fill=BLACK, font=footer_font, anchor="md")
     return img
+
+
+def screen_image(size, status, settings):
+    lines, footer = build_screen(status, settings)
+    hotspot = status.get("hotspot")
+    qr = qr_matrix(wifi_qr_payload(hotspot["ssid"], hotspot["password"])) if hotspot else None
+    return render(size, lines, footer, time.strftime("%H:%M"), status["ip"] or "", qr)
 
 
 def shutdown_kind():
@@ -295,8 +398,7 @@ def main():
 
     if args.preview:
         status = collect(settings)
-        lines, footer = build_screen(status, settings)
-        render((212, 104), lines, footer, time.strftime("%H:%M"), status["ip"] or "").convert("RGB").save(args.preview)
+        screen_image((212, 104), status, settings).convert("RGB").save(args.preview)
         return 0
 
     display = get_display(settings)
@@ -329,12 +431,13 @@ def main():
         screen = (lines, footer, status["ip"])
         # Redraw when what's shown changes, but at most once per min_redraw,
         # because each refresh flashes the panel for about 13 seconds. The
-        # first draw and changes to the URL or AFT health skip that wait.
-        health = (status["ip"], status["problem"])
+        # first draw and changes to the URL, the hotspot or AFT health skip
+        # that wait.
+        health = (status["ip"], status["problem"], status["hotspot"])
         urgent = health != last_health
         if screen != last_screen and (urgent or time.monotonic() - last_draw >= settings.min_redraw):
             started = time.monotonic()
-            show(display, render(size, lines, footer, time.strftime("%H:%M"), status["ip"] or ""))
+            show(display, screen_image(size, status, settings))
             print(f"Drew screen in {time.monotonic() - started:.1f}s: {footer}"
                   + (f" ({status['problem']})" if status["problem"] else ""), flush=True)
             last_screen, last_health, last_draw = screen, health, time.monotonic()
