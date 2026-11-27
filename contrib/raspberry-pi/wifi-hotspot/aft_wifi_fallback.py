@@ -371,12 +371,17 @@ def try_saved_networks(settings):
 class Fallback:
     """The auto-mode state machine, kept apart from the loop so it can be tested."""
 
-    def __init__(self, settings, now):
+    def __init__(self, settings, now, hotspot_active=False):
         self.settings = settings
         # Counting from start gives saved networks start_wait to join at boot.
         self.disconnected_since = now
         self.hotspot_since = None
         self.retry_at = 0.0
+        # A hotspot that was already up, such as after switching from always
+        # to auto, looks for a saved network on the first check rather than a
+        # whole interval later. The look still waits while clients are joined.
+        if hotspot_active and settings.rescan:
+            self.hotspot_since = now - settings.rescan
 
     def step(self, now, state, clients=lambda: 0):
         """Act on the current Wi-Fi state. Returns the action taken, for tests and logs."""
@@ -416,7 +421,7 @@ def serve(settings, stopping):
         hotspot_up(settings)
     log(f"Mode {settings.mode}, interface {settings.interface}, hotspot {settings.ssid!r} on channel {settings.channel}")
 
-    fallback = Fallback(settings, time.monotonic())
+    fallback = Fallback(settings, time.monotonic(), hotspot_active=state == "hotspot")
     while not stopping():
         state = wifi_state(settings.interface)
         now = time.monotonic()

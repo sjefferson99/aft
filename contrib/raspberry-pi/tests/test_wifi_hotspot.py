@@ -212,6 +212,17 @@ def test_rescans_after_the_interval_unless_clients_are_connected():
     assert f.step(400, "hotspot", clients=lambda: 0) == "rescan"
 
 
+def test_a_hotspot_already_up_rescans_on_the_first_check():
+    f = fallback.Fallback(settings(), now=1000, hotspot_active=True)
+    assert f.step(1000, "hotspot", clients=lambda: 1) is None
+    assert f.step(1010, "hotspot", clients=lambda: 0) == "rescan"
+
+
+def test_a_hotspot_already_up_stays_with_rescan_off():
+    f = fallback.Fallback(settings(AFT_HOTSPOT_RESCAN="0"), now=1000, hotspot_active=True)
+    assert f.step(10 ** 6, "hotspot") is None
+
+
 def test_never_rescans_with_zero():
     f = fallback.Fallback(settings(AFT_HOTSPOT_RESCAN="0"), now=0)
     f.step(0, "hotspot")

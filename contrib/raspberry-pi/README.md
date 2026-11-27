@@ -189,7 +189,7 @@ sudo aft-hotspot auto     # the default: start the hotspot only when no saved ne
 sudo aft-hotspot off      # never start the hotspot
 ```
 
-Switching to `always` takes the Pi off its saved network straight away, so an SSH session over that network ends. Join the hotspot to sign in again. The mode is kept across restarts.
+Switching to `always` takes the Pi off its saved network straight away, so an SSH session over that network ends. Join the hotspot to sign in again. Switching back to `auto` looks for a saved network straight away, unless clients are still joined to the hotspot. The mode is kept across restarts.
 
 ### Settings
 
