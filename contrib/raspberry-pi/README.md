@@ -9,6 +9,7 @@ Tested with AFT v2026.11.2 on 64-bit Raspberry Pi OS Lite (Debian 13 trixie, ker
 | [`env.pi-zero-2w`](env.pi-zero-2w) | The `.env` values to change from `.env.example` |
 | [`compose.override.pi-zero-2w.yaml`](compose.override.pi-zero-2w.yaml) | Gives the server time to start on a cold boot. Copy it as `compose.override.yaml` |
 | [`inky-status/`](inky-status/) | Optional Inky pHAT status display, installed as a systemd service |
+| [`wifi-hotspot/`](wifi-hotspot/) | Optional Wi-Fi hotspot when no saved network is in range, installed as a systemd service |
 | [`../host-control/`](../host-control/) | Optional: restart or shut down the Pi from AFT's Instance Settings |
 
 **What to expect:** at idle, the whole system uses about 265 MB of the 462 MB the OS sees, with about 260 MB more in swap. Most of that swap is zram, which compresses about 200 MB down to about 40 MB of RAM. The stack is healthy about two minutes after power on. Pages are usable for one or two people, and slower than on a bigger machine.
@@ -87,6 +88,7 @@ A headless Pi has no clean way to power off, and pulling the power risks the SD 
 [`inky-status/`](inky-status/) shows the host's status on a [Pimoroni Inky pHAT](https://shop.pimoroni.com/products/inky-phat) e-ink display:
 
 - the URL clients connect to (`https://<hostname>/`), with the IP address at the bottom for clients that can't resolve the name
+- while the [Wi-Fi hotspot](#5-optional-wi-fi-hotspot) is up, how to join it in place of the URL and system figures: the network name, the password, `https://10.42.0.1/` and a QR code that phones can scan to join
 - AFT health: `AFT OK`, or the first problem in red, such as `Starting: server`, `Down: db`, `Web not responding`, `DB query failed` or `No Wi-Fi`
 - load average, and memory and swap use
 - non-archived boards and cards, users who signed in in the last 24 hours, and cards edited in the last 24 hours
@@ -112,7 +114,7 @@ If it changed the SPI or I2C settings it asks you to reboot. Otherwise the displ
 
 ### How it updates
 
-Each refresh flashes the panel and takes about 13 seconds on the red pHAT. The service checks every 30 seconds, or every 10 seconds while AFT is unhealthy. It redraws when anything shown changes, but at most once a minute. A change in AFT health or the IP address redraws at once.
+Each refresh flashes the panel and takes about 13 seconds on the red pHAT. The service checks every 30 seconds, or every 10 seconds while AFT is unhealthy. It redraws when anything shown changes, but at most once a minute. A change in AFT health, the IP address or the hotspot redraws at once.
 
 At boot the screen first shows `Starting: server`, then `AFT OK` as soon as the stack is healthy. The panel keeps its last picture without power, so at shutdown it shows "Host shut down", and on a reboot "Restarting...". To show the shut-down notice by hand, stop the service, then run the script with `--offline`.
 
@@ -137,3 +139,67 @@ sudo /opt/aft-inky-status/venv/bin/python /opt/aft-inky-status/aft_inky_status.p
 ```
 
 Stop the service before running a preview or test against the real display, because only one process can drive it.
+
+## 5. Optional: Wi-Fi hotspot
+
+When the Pi is somewhere with no saved Wi-Fi network, such as a portable demo, clients have no way to reach it. [`wifi-hotspot/`](wifi-hotspot/) makes the Pi start its own Wi-Fi network in that case, so clients can join it and open AFT at `https://10.42.0.1/`. The hotspot only reaches AFT on the Pi: clients joined to it have no internet access.
+
+It uses NetworkManager, which Raspberry Pi OS uses from bookworm on, so nothing else is installed except `iw`.
+
+### How it works
+
+- About 60 seconds after boot, if the Pi hasn't joined a saved network, it starts the hotspot. It does the same 60 seconds after losing a network.
+- The hotspot is WPA2 only, with a password the installer makes up for each Pi. There's no way to run it as an open network.
+- While the hotspot is up and no clients are connected, every 5 minutes it takes the hotspot down to look for a saved network, and joins one if it's in range. On the Pi a look took about 10 seconds, and longer if a saved network in range fails to connect. The Pi Zero 2 W has a single radio, so it can't look while the hotspot is up. While any client is connected it doesn't look, so a demo isn't interrupted.
+- With a saved network in range, nothing changes.
+
+### Before you install
+
+1. **Wi-Fi country:** the hotspot needs one set. Raspberry Pi Imager sets it with the Wi-Fi details. Check with `iw reg get`, and set it with `sudo raspi-config nonint do_wifi_country GB`, using your country code.
+2. **Origins:** add `https://10.42.0.1` to `CORS_ALLOWED_ORIGINS` in AFT's `.env`, then run `docker compose up -d`. Clients on the hotspot usually can't resolve the Pi's name, so they use this address, and sign-in and live updates fail from an address that isn't listed. For example:
+
+   ```sh
+   CORS_ALLOWED_ORIGINS=https://aft-portable,https://192.168.1.50,https://10.42.0.1
+   ```
+
+### Install
+
+Copy the `wifi-hotspot` folder to the Pi, then run:
+
+```sh
+cd wifi-hotspot
+sudo ./install.sh
+```
+
+The installer installs the `aft-wifi-fallback` service and the `aft-hotspot` command, creates the settings with a new password, and shows the network name and password. Reinstalling keeps your settings. To remove it, run `sudo ./uninstall.sh`.
+
+### Joining the hotspot
+
+Join the network shown by `sudo aft-hotspot status`, or on the Inky pHAT display, then open `https://10.42.0.1/`. With the display installed, phones can join by scanning the QR code on it. If you installed the display before the hotspot existed, run its `install.sh` again to add the QR code package. Browsers warn about the self-signed certificate, as they do on any address.
+
+To sign in to the Pi with SSH while it's running the hotspot, join the hotspot and use `ssh <user>@10.42.0.1`.
+
+### Using the hotspot with a saved network in range
+
+To run the hotspot even where the Pi could join a saved network, for example so that clients at a demo join the Pi directly, switch the mode:
+
+```sh
+sudo aft-hotspot always   # keep the hotspot up and never join a saved network
+sudo aft-hotspot auto     # the default: start the hotspot only when no saved network is in range
+sudo aft-hotspot off      # never start the hotspot
+```
+
+Switching to `always` takes the Pi off its saved network straight away, so an SSH session over that network ends. Join the hotspot to sign in again. Switching back to `auto` looks for a saved network straight away, unless clients are still joined to the hotspot. The mode is kept across restarts.
+
+### Settings
+
+Settings are in `/etc/default/aft-wifi-fallback`, which only root can read because it holds the password. Each one is explained in the file:
+- the mode, network name and password
+- the 2.4 GHz channel, 6 unless you change it
+- how long to wait before starting the hotspot, how often to look for a saved network, and how long to wait for one to connect
+
+Apply changes with `sudo systemctl restart aft-wifi-fallback`. A new password or network name disconnects clients from the hotspot. Check the service with `systemctl status aft-wifi-fallback` and `journalctl -u aft-wifi-fallback`, which logs a line each time the hotspot starts or a saved network is joined.
+
+### Memory
+
+Measured on the Pi Zero 2 W: the service uses about 9 MB, part of it in swap, and about 1% of the CPU. While the hotspot is up, NetworkManager's dnsmasq, which gives clients their addresses, uses another 2 to 4 MB. Other memory use didn't change measurably.

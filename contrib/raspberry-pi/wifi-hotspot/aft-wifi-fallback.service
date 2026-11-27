@@ -1,0 +1,22 @@
+[Unit]
+Description=AFT Wi-Fi hotspot fallback
+Documentation=https://github.com/sjefferson99/aft/tree/main/contrib/raspberry-pi
+Wants=NetworkManager.service
+After=NetworkManager.service
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 /opt/aft-wifi-fallback/aft_wifi_fallback.py run
+# Mode "off" exits cleanly, which leaves the service stopped.
+Restart=on-failure
+RestartSec=30
+# Runs as root to manage NetworkManager connections.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/NetworkManager/system-connections
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
